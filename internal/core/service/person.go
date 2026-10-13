@@ -78,6 +78,11 @@ func (s *Service) GetPerson(ctx context.Context, id string) (domain.Person, erro
 	return s.persons.Get(ctx, id)
 }
 
+// GetPersonBySourcedID returns a person by business key (used by standards providers).
+func (s *Service) GetPersonBySourcedID(ctx context.Context, sourcedID string) (domain.Person, error) {
+	return s.persons.GetBySourcedID(ctx, sourcedID)
+}
+
 // ListPersons returns a page of persons.
 func (s *Service) ListPersons(ctx context.Context, params port.ListParams) (port.Page[domain.Person], error) {
 	return s.persons.List(ctx, params)

@@ -19,11 +19,18 @@ func New(svc *service.Service) *Handler {
 	return &Handler{svc: svc}
 }
 
-// Register attaches the person routes to the given router group (mounted at /api/v1).
-func (h *Handler) Register(rg *gin.RouterGroup) {
-	rg.GET("/persons", h.listPersons)
-	rg.POST("/persons", h.createPerson)
-	rg.GET("/persons/:id", h.getPerson)
-	rg.PUT("/persons/:id", h.updatePerson)
-	rg.DELETE("/persons/:id", h.deletePerson)
+// Guards are the per-operation authorization middlewares applied to routes.
+type Guards struct {
+	Read  gin.HandlerFunc
+	Write gin.HandlerFunc
+}
+
+// Register attaches the person routes to the given router group (mounted at
+// /api/v1), guarding reads and writes with the supplied middleware.
+func (h *Handler) Register(rg *gin.RouterGroup, g Guards) {
+	rg.GET("/persons", g.Read, h.listPersons)
+	rg.POST("/persons", g.Write, h.createPerson)
+	rg.GET("/persons/:id", g.Read, h.getPerson)
+	rg.PUT("/persons/:id", g.Write, h.updatePerson)
+	rg.DELETE("/persons/:id", g.Write, h.deletePerson)
 }

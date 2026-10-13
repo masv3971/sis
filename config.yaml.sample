@@ -1,0 +1,40 @@
+# Sample SIS configuration. Point SIS_CONFIG_YAML at a copy of this file.
+# Environment variables (SIS_ADDR, SIS_DATABASE_URL, SIS_JWT_SECRET, ...)
+# override these values.
+common:
+  production: false
+  log:
+    level: info
+    json: true
+
+sis:
+  api_server:
+    addr: ":8080"
+    read_timeout: 15s
+    write_timeout: 15s
+    shutdown_timeout: 10s
+
+  db:
+    # Empty selects the in-memory store. Example Postgres DSN:
+    connection_string: "postgres://sis:sis@localhost:5432/sis?sslmode=disable"
+
+  auth:
+    jwt_secret: "change-me"
+    token_ttl: 1h
+    bootstrap:
+      admin_username: "admin"
+      admin_password: "change-me"
+      client_id: "svc1"
+      client_secret: "change-me"
+      client_scopes: ["sis.read", "sis.write"]
+    # OIDC Relying Party (delegated login) — scaffold, not yet wired.
+    oidc:
+      issuer_url: ""
+      client_id: ""
+      client_secret: ""
+      redirect_url: ""
+
+  bus:
+    enabled: false
+    url: "nats://localhost:4222"
+    subject: "sis.events"
