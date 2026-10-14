@@ -6,16 +6,15 @@ import (
 	"testing"
 	"time"
 
-	"log/slog"
-
 	"github.com/SUNET/sis/internal/adapter/outbound/postgres"
 	"github.com/SUNET/sis/internal/core/domain"
 	"github.com/SUNET/sis/internal/core/port"
+	"github.com/SUNET/sis/pkg/logger"
 )
 
 // newStore connects to the database named by SIS_TEST_DATABASE_URL, skipping
 // the test when it is unset so `go test ./...` stays hermetic.
-func newStore(t *testing.T) *postgres.Store {
+func newStore(t *testing.T) *postgres.Service {
 	t.Helper()
 	url := os.Getenv("SIS_TEST_DATABASE_URL")
 	if url == "" {
@@ -23,7 +22,7 @@ func newStore(t *testing.T) *postgres.Store {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	t.Cleanup(cancel)
-	store, err := postgres.New(ctx, url, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	store, err := postgres.New(ctx, url, logger.NewWithWriter("test", false, os.Stderr))
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}

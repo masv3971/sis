@@ -36,6 +36,9 @@ export function Login({ onLogin }: { onLogin: () => void }) {
       <button type="submit" disabled={busy}>
         {busy ? "Signing in…" : "Sign in"}
       </button>
+      <button type="button" className="ghost" onClick={() => (window.location.href = "/auth/oidc/login")}>
+        Sign in with SSO
+      </button>
     </form>
   );
 }

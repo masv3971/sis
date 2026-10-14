@@ -1,10 +1,11 @@
 // Package oeapi is the inbound Open Education API v6.0 read provider: it
 // publishes the canonical data in OEAPI shapes with the OEAPI page envelope
-// (read-only GET). Mounted behind the read scope.
+// (read-only GET). Entry points are methods on Client; route declarations
+// live in the httpserver package.
 package oeapi
 
 import (
-	"errors"
+	"context"
 	"net/http"
 	"strconv"
 
@@ -16,97 +17,97 @@ import (
 	"github.com/SUNET/sis/internal/core/port"
 	"github.com/SUNET/sis/internal/core/service"
 	"github.com/SUNET/sis/internal/readmodel"
+	"github.com/SUNET/sis/pkg/helpers"
+	"github.com/SUNET/sis/pkg/logger"
+	"github.com/SUNET/sis/pkg/model"
 )
 
 const defaultPageSize = 10
 
-// Handler serves the OEAPI read endpoints.
-type Handler struct {
-	cat *readmodel.Catalog
+// Client bundles the OEAPI handlers with the read-model Client and a logger.
+// It is a "Client" rather than a "Service" because it owns no runtime
+// resources and has nothing to shut down.
+//
+// The receiver is named c to match the vc convention; the gin.Context
+// parameter is therefore named gc to avoid shadowing.
+type Client struct {
+	catalog *readmodel.Client
+	log     *logger.Log
 }
 
-// New returns a Handler reading from the catalog.
-func New(cat *readmodel.Catalog) *Handler {
-	return &Handler{cat: cat}
+// New builds the oeapi Client.
+func New(_ context.Context, _ *model.Cfg, catalog *readmodel.Client, log *logger.Log) (*Client, error) {
+	return &Client{catalog: catalog, log: log.New("oeapi")}, nil
 }
 
-// Register attaches the OEAPI routes to the group.
-func (h *Handler) Register(rg *gin.RouterGroup) {
-	rg.GET("/persons", h.listPersons)
-	rg.GET("/persons/:id", h.getPerson)
-	rg.GET("/organizations", listEntities(h.cat.Organizations, dto.FromOrganization))
-	rg.GET("/organizations/:id", getEntity(h.cat.Organizations, dto.FromOrganization))
-	rg.GET("/academic-sessions", listEntities(h.cat.AcademicSessions, dto.FromAcademicSession))
-	rg.GET("/academic-sessions/:id", getEntity(h.cat.AcademicSessions, dto.FromAcademicSession))
-	rg.GET("/courses", listEntities(h.cat.Courses, dto.FromCourse))
-	rg.GET("/courses/:id", getEntity(h.cat.Courses, dto.FromCourse))
-	rg.GET("/offerings", listEntities(h.cat.Offerings, dto.FromOffering))
-	rg.GET("/offerings/:id", getEntity(h.cat.Offerings, dto.FromOffering))
-	rg.GET("/associations", listEntities(h.cat.Enrollments, dto.FromAssociation))
-	rg.GET("/associations/:id", getEntity(h.cat.Enrollments, dto.FromAssociation))
-}
-
-func (h *Handler) listPersons(c *gin.Context) {
-	pageNumber, pageSize := page(c)
-	p, err := h.cat.Persons.ListPersons(c.Request.Context(), pageParams(pageNumber, pageSize))
+// ListPersons publishes persons in the OEAPI page envelope.
+func (c *Client) ListPersons(gc *gin.Context) {
+	pageNumber, pageSize := page(gc)
+	p, err := c.catalog.Persons.ListPersons(gc.Request.Context(), pageParams(pageNumber, pageSize))
 	if err != nil {
-		serverError(c)
+		helpers.WriteError(gc, err)
 		return
 	}
 	out := make([]dto.Person, 0, len(p.Items))
 	for _, person := range p.Items {
 		out = append(out, dto.FromPerson(person))
 	}
-	c.JSON(http.StatusOK, dto.NewPage(out, pageNumber, pageSize, p.Total))
+	gc.JSON(http.StatusOK, dto.NewPage(out, pageNumber, pageSize, p.Total))
 }
 
-func (h *Handler) getPerson(c *gin.Context) {
-	p, err := h.cat.Persons.GetPersonBySourcedID(c.Request.Context(), c.Param("id"))
+// GetPerson publishes a single person by sourcedId in OEAPI shape.
+func (c *Client) GetPerson(gc *gin.Context) {
+	p, err := c.catalog.Persons.GetPersonBySourcedID(gc.Request.Context(), gc.Param("id"))
 	if err != nil {
-		notFoundOrServer(c, err)
+		helpers.WriteError(gc, err)
 		return
 	}
-	c.JSON(http.StatusOK, dto.FromPerson(p))
+	gc.JSON(http.StatusOK, dto.FromPerson(p))
 }
 
-// listEntities builds an OEAPI paged list handler for an entity type.
-func listEntities[T any, PT domain.EntityPtr[T], D any](svc *service.Resource[T, PT], mapFn func(PT) D) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		pageNumber, pageSize := page(c)
-		res, err := svc.List(c.Request.Context(), pageParams(pageNumber, pageSize))
+// The generic handlers below could not be methods on *Client: Go does not
+// allow type parameters on methods, so they are free functions that take
+// *Client as the first argument. Each returns a gin.HandlerFunc the
+// httpserver can mount directly.
+
+// List builds an OEAPI paged list handler for an entity type.
+func List[T any, PT domain.EntityPtr[T], D any](_ *Client, svc *service.Resource[T, PT], mapFn func(PT) D) gin.HandlerFunc {
+	return func(gc *gin.Context) {
+		pageNumber, pageSize := page(gc)
+		res, err := svc.List(gc.Request.Context(), pageParams(pageNumber, pageSize))
 		if err != nil {
-			serverError(c)
+			helpers.WriteError(gc, err)
 			return
 		}
 		out := make([]D, 0, len(res.Items))
 		for _, e := range res.Items {
 			out = append(out, mapFn(e))
 		}
-		c.JSON(http.StatusOK, dto.NewPage(out, pageNumber, pageSize, res.Total))
+		gc.JSON(http.StatusOK, dto.NewPage(out, pageNumber, pageSize, res.Total))
 	}
 }
 
-// getEntity builds a get-by-sourcedId handler for an entity type.
-func getEntity[T any, PT domain.EntityPtr[T], D any](svc *service.Resource[T, PT], mapFn func(PT) D) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		e, err := svc.GetBySourcedID(c.Request.Context(), c.Param("id"))
+// Get builds a get-by-sourcedId handler for an entity type.
+func Get[T any, PT domain.EntityPtr[T], D any](_ *Client, svc *service.Resource[T, PT], mapFn func(PT) D) gin.HandlerFunc {
+	return func(gc *gin.Context) {
+		e, err := svc.GetBySourcedID(gc.Request.Context(), gc.Param("id"))
 		if err != nil {
-			notFoundOrServer(c, err)
+			helpers.WriteError(gc, err)
 			return
 		}
-		c.JSON(http.StatusOK, mapFn(e))
+		gc.JSON(http.StatusOK, mapFn(e))
 	}
 }
 
 // page parses OEAPI pageNumber/pageSize (1-based) query parameters.
-func page(c *gin.Context) (pageNumber, pageSize int) {
+func page(gc *gin.Context) (pageNumber, pageSize int) {
 	pageNumber, pageSize = 1, defaultPageSize
-	if v := c.Query("pageNumber"); v != "" {
+	if v := gc.Query("pageNumber"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 1 {
 			pageNumber = n
 		}
 	}
-	if v := c.Query("pageSize"); v != "" {
+	if v := gc.Query("pageSize"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 1 {
 			pageSize = n
 		}
@@ -116,16 +117,4 @@ func page(c *gin.Context) (pageNumber, pageSize int) {
 
 func pageParams(pageNumber, pageSize int) port.ListParams {
 	return port.ListParams{Limit: pageSize, Offset: (pageNumber - 1) * pageSize}
-}
-
-func serverError(c *gin.Context) {
-	c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
-}
-
-func notFoundOrServer(c *gin.Context, err error) {
-	if errors.Is(err, domain.ErrNotFound) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
-		return
-	}
-	serverError(c)
 }

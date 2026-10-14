@@ -11,8 +11,8 @@ import (
 )
 
 func newOrgResource() *service.Resource[domain.Organization, *domain.Organization] {
-	repo := memory.NewDocRepo[domain.Organization, *domain.Organization]()
-	return service.NewResource[domain.Organization, *domain.Organization](repo, nil, nil)
+	repo := memory.NewDocRepo[domain.Organization]()
+	return service.NewResource(repo, nil, nil)
 }
 
 func TestResource_CreateValidationAndID(t *testing.T) {

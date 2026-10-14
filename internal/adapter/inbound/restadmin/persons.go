@@ -1,6 +1,11 @@
+// Package restadmin is the inbound native /api/v1 REST adapter: it translates
+// HTTP into service-layer calls for persons and the generic entity resources.
+// Entry points are methods on Client; route declarations live in the
+// httpserver package.
 package restadmin
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 
@@ -8,28 +13,40 @@ import (
 
 	"github.com/SUNET/sis/internal/core/domain"
 	"github.com/SUNET/sis/internal/core/port"
+	"github.com/SUNET/sis/internal/readmodel"
+	"github.com/SUNET/sis/pkg/helpers"
+	"github.com/SUNET/sis/pkg/logger"
+	"github.com/SUNET/sis/pkg/model"
 )
 
 const defaultLimit = 50
 
-func (h *Handler) listPersons(c *gin.Context) {
-	params := port.ListParams{Limit: defaultLimit, Sort: c.Query("sort"), Filter: c.Query("filter")}
-	if v := c.Query("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			params.Limit = n
-		}
-	}
-	if v := c.Query("offset"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			params.Offset = n
-		}
-	}
-	page, err := h.svc.ListPersons(c.Request.Context(), params)
+// Client bundles the /api/v1 handlers with the read-model Client (through
+// which it reaches both the person service and the generic entity resources)
+// and a logger. It is a "Client" rather than a "Service" because it owns no
+// runtime resources and has nothing to shut down.
+//
+// The receiver is named c to match the vc convention; the gin.Context
+// parameter is therefore named gc to avoid shadowing.
+type Client struct {
+	catalog *readmodel.Client
+	log     *logger.Log
+}
+
+// New builds the restadmin Client.
+func New(_ context.Context, _ *model.Cfg, catalog *readmodel.Client, log *logger.Log) (*Client, error) {
+	return &Client{catalog: catalog, log: log.New("restadmin")}, nil
+}
+
+// ListPersons lists persons with limit/offset paging.
+func (c *Client) ListPersons(gc *gin.Context) {
+	params := listParams(gc)
+	page, err := c.catalog.Persons.ListPersons(gc.Request.Context(), params)
 	if err != nil {
-		writeServiceErr(c, err)
+		helpers.WriteError(gc, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
+	gc.JSON(http.StatusOK, gin.H{
 		"persons": page.Items,
 		"total":   page.Total,
 		"limit":   params.Limit,
@@ -37,48 +54,68 @@ func (h *Handler) listPersons(c *gin.Context) {
 	})
 }
 
-func (h *Handler) createPerson(c *gin.Context) {
+// CreatePerson creates a person from the JSON body.
+func (c *Client) CreatePerson(gc *gin.Context) {
 	var p domain.Person
-	if err := c.ShouldBindJSON(&p); err != nil {
-		writeErr(c, http.StatusBadRequest, "invalid_body", err.Error())
+	if err := gc.ShouldBindJSON(&p); err != nil {
+		helpers.WriteError(gc, err)
 		return
 	}
-	created, err := h.svc.CreatePerson(c.Request.Context(), p)
+	created, err := c.catalog.Persons.CreatePerson(gc.Request.Context(), p)
 	if err != nil {
-		writeServiceErr(c, err)
+		helpers.WriteError(gc, err)
 		return
 	}
-	c.JSON(http.StatusCreated, created)
+	gc.JSON(http.StatusCreated, created)
 }
 
-func (h *Handler) getPerson(c *gin.Context) {
-	p, err := h.svc.GetPerson(c.Request.Context(), c.Param("id"))
+// GetPerson returns a single person by id.
+func (c *Client) GetPerson(gc *gin.Context) {
+	p, err := c.catalog.Persons.GetPerson(gc.Request.Context(), gc.Param("id"))
 	if err != nil {
-		writeServiceErr(c, err)
+		helpers.WriteError(gc, err)
 		return
 	}
-	c.JSON(http.StatusOK, p)
+	gc.JSON(http.StatusOK, p)
 }
 
-func (h *Handler) updatePerson(c *gin.Context) {
+// UpdatePerson replaces a person; the path id is authoritative over the body.
+func (c *Client) UpdatePerson(gc *gin.Context) {
 	var p domain.Person
-	if err := c.ShouldBindJSON(&p); err != nil {
-		writeErr(c, http.StatusBadRequest, "invalid_body", err.Error())
+	if err := gc.ShouldBindJSON(&p); err != nil {
+		helpers.WriteError(gc, err)
 		return
 	}
-	p.ID = c.Param("id") // path is authoritative over any id in the body
-	updated, err := h.svc.UpdatePerson(c.Request.Context(), p)
+	p.ID = gc.Param("id")
+	updated, err := c.catalog.Persons.UpdatePerson(gc.Request.Context(), p)
 	if err != nil {
-		writeServiceErr(c, err)
+		helpers.WriteError(gc, err)
 		return
 	}
-	c.JSON(http.StatusOK, updated)
+	gc.JSON(http.StatusOK, updated)
 }
 
-func (h *Handler) deletePerson(c *gin.Context) {
-	if err := h.svc.DeletePerson(c.Request.Context(), c.Param("id")); err != nil {
-		writeServiceErr(c, err)
+// DeletePerson removes a person by id.
+func (c *Client) DeletePerson(gc *gin.Context) {
+	if err := c.catalog.Persons.DeletePerson(gc.Request.Context(), gc.Param("id")); err != nil {
+		helpers.WriteError(gc, err)
 		return
 	}
-	c.Status(http.StatusNoContent)
+	gc.Status(http.StatusNoContent)
+}
+
+// listParams parses limit/offset/sort/filter query parameters.
+func listParams(gc *gin.Context) port.ListParams {
+	params := port.ListParams{Limit: defaultLimit, Sort: gc.Query("sort"), Filter: gc.Query("filter")}
+	if v := gc.Query("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			params.Limit = n
+		}
+	}
+	if v := gc.Query("offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			params.Offset = n
+		}
+	}
+	return params
 }

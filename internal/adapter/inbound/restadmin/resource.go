@@ -2,101 +2,92 @@ package restadmin
 
 import (
 	"net/http"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/SUNET/sis/internal/core/domain"
-	"github.com/SUNET/sis/internal/core/port"
 	"github.com/SUNET/sis/internal/core/service"
+	"github.com/SUNET/sis/pkg/helpers"
 )
 
-// Registrar attaches one resource's routes to the API group under the guards.
-type Registrar func(rg *gin.RouterGroup, g Guards)
+// The generic resource handlers below could not be methods on *Client: Go
+// does not allow type parameters on methods, so they are free functions that
+// take *Client as the first argument. Each returns a gin.HandlerFunc the
+// httpserver can mount directly. The _ parameter keeps the signature uniform
+// in case we later want to log 5xx paths off *Client.
 
-// Resource builds a Registrar exposing generic CRUD for entity type T at /path.
-func Resource[T any, PT domain.EntityPtr[T]](path string, svc *service.Resource[T, PT]) Registrar {
-	h := &resourceHandler[T, PT]{svc: svc}
-	return func(rg *gin.RouterGroup, g Guards) {
-		rg.GET("/"+path, g.Read, h.list)
-		rg.POST("/"+path, g.Write, h.create)
-		rg.GET("/"+path+"/:id", g.Read, h.get)
-		rg.PUT("/"+path+"/:id", g.Write, h.update)
-		rg.DELETE("/"+path+"/:id", g.Write, h.delete)
-	}
-}
-
-type resourceHandler[T any, PT domain.EntityPtr[T]] struct {
-	svc *service.Resource[T, PT]
-}
-
-func (h *resourceHandler[T, PT]) list(c *gin.Context) {
-	params := port.ListParams{Limit: defaultLimit, Sort: c.Query("sort"), Filter: c.Query("filter")}
-	if v := c.Query("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			params.Limit = n
+// ResourceList lists entities of type T with limit/offset paging.
+func ResourceList[T any, PT domain.EntityPtr[T]](_ *Client, svc *service.Resource[T, PT]) gin.HandlerFunc {
+	return func(gc *gin.Context) {
+		params := listParams(gc)
+		page, err := svc.List(gc.Request.Context(), params)
+		if err != nil {
+			helpers.WriteError(gc, err)
+			return
 		}
+		gc.JSON(http.StatusOK, gin.H{
+			"items":  page.Items,
+			"total":  page.Total,
+			"limit":  params.Limit,
+			"offset": params.Offset,
+		})
 	}
-	if v := c.Query("offset"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			params.Offset = n
+}
+
+// ResourceCreate creates an entity of type T from the JSON body.
+func ResourceCreate[T any, PT domain.EntityPtr[T]](_ *Client, svc *service.Resource[T, PT]) gin.HandlerFunc {
+	return func(gc *gin.Context) {
+		e := PT(new(T))
+		if err := gc.ShouldBindJSON(e); err != nil {
+			helpers.WriteError(gc, err)
+			return
 		}
+		created, err := svc.Create(gc.Request.Context(), e)
+		if err != nil {
+			helpers.WriteError(gc, err)
+			return
+		}
+		gc.JSON(http.StatusCreated, created)
 	}
-	page, err := h.svc.List(c.Request.Context(), params)
-	if err != nil {
-		writeServiceErr(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{
-		"items":  page.Items,
-		"total":  page.Total,
-		"limit":  params.Limit,
-		"offset": params.Offset,
-	})
 }
 
-func (h *resourceHandler[T, PT]) create(c *gin.Context) {
-	e := PT(new(T))
-	if err := c.ShouldBindJSON(e); err != nil {
-		writeErr(c, http.StatusBadRequest, "invalid_body", err.Error())
-		return
+// ResourceGet returns a single entity of type T by id.
+func ResourceGet[T any, PT domain.EntityPtr[T]](_ *Client, svc *service.Resource[T, PT]) gin.HandlerFunc {
+	return func(gc *gin.Context) {
+		e, err := svc.Get(gc.Request.Context(), gc.Param("id"))
+		if err != nil {
+			helpers.WriteError(gc, err)
+			return
+		}
+		gc.JSON(http.StatusOK, e)
 	}
-	created, err := h.svc.Create(c.Request.Context(), e)
-	if err != nil {
-		writeServiceErr(c, err)
-		return
-	}
-	c.JSON(http.StatusCreated, created)
 }
 
-func (h *resourceHandler[T, PT]) get(c *gin.Context) {
-	e, err := h.svc.Get(c.Request.Context(), c.Param("id"))
-	if err != nil {
-		writeServiceErr(c, err)
-		return
+// ResourceUpdate replaces an entity; the path id is authoritative over the body.
+func ResourceUpdate[T any, PT domain.EntityPtr[T]](_ *Client, svc *service.Resource[T, PT]) gin.HandlerFunc {
+	return func(gc *gin.Context) {
+		e := PT(new(T))
+		if err := gc.ShouldBindJSON(e); err != nil {
+			helpers.WriteError(gc, err)
+			return
+		}
+		e.SetID(gc.Param("id"))
+		updated, err := svc.Update(gc.Request.Context(), e)
+		if err != nil {
+			helpers.WriteError(gc, err)
+			return
+		}
+		gc.JSON(http.StatusOK, updated)
 	}
-	c.JSON(http.StatusOK, e)
 }
 
-func (h *resourceHandler[T, PT]) update(c *gin.Context) {
-	e := PT(new(T))
-	if err := c.ShouldBindJSON(e); err != nil {
-		writeErr(c, http.StatusBadRequest, "invalid_body", err.Error())
-		return
+// ResourceDelete removes an entity of type T by id.
+func ResourceDelete[T any, PT domain.EntityPtr[T]](_ *Client, svc *service.Resource[T, PT]) gin.HandlerFunc {
+	return func(gc *gin.Context) {
+		if err := svc.Delete(gc.Request.Context(), gc.Param("id")); err != nil {
+			helpers.WriteError(gc, err)
+			return
+		}
+		gc.Status(http.StatusNoContent)
 	}
-	e.SetID(c.Param("id")) // path is authoritative over any id in the body
-	updated, err := h.svc.Update(c.Request.Context(), e)
-	if err != nil {
-		writeServiceErr(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, updated)
-}
-
-func (h *resourceHandler[T, PT]) delete(c *gin.Context) {
-	if err := h.svc.Delete(c.Request.Context(), c.Param("id")); err != nil {
-		writeServiceErr(c, err)
-		return
-	}
-	c.Status(http.StatusNoContent)
 }

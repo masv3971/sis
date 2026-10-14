@@ -1,15 +1,16 @@
 package httpserver
 
 import (
-	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/SUNET/sis/pkg/logger"
 )
 
 // requestLogger logs one line per request after it completes.
-func requestLogger(log *slog.Logger) gin.HandlerFunc {
+func requestLogger(log *logger.Log) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
 		c.Next()

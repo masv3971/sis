@@ -15,6 +15,15 @@ export function clearToken(): void {
   localStorage.removeItem(TOKEN_KEY);
 }
 
+// consumeTokenFromHash picks up an access token delivered by the OIDC callback
+// as a URL fragment (#access_token=...), stores it, and cleans the URL.
+export function consumeTokenFromHash(): void {
+  if (!location.hash.startsWith("#access_token=")) return;
+  const token = decodeURIComponent(location.hash.slice("#access_token=".length));
+  if (token) setToken(token);
+  history.replaceState(null, "", location.pathname + location.search);
+}
+
 export class UnauthorizedError extends Error {}
 
 export async function login(username: string, password: string): Promise<void> {
@@ -43,11 +52,18 @@ async function authFetch(path: string, init: RequestInit = {}): Promise<Response
 
 async function errorMessage(res: Response, fallback: string): Promise<string> {
   try {
-    const body = (await res.json()) as { message?: string; error?: string };
-    return body.message || body.error || fallback;
+    const body = (await res.json()) as {
+      error?: { title?: string; details?: unknown };
+    };
+    const e = body.error;
+    if (e) {
+      if (typeof e.details === "string") return e.details;
+      if (typeof e.title === "string") return e.title;
+    }
   } catch {
-    return fallback;
+    // fall through to the fallback
   }
+  return fallback;
 }
 
 export interface Contact {

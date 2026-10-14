@@ -20,8 +20,8 @@ type DocRepo[T any, PT domain.EntityPtr[T]] struct {
 	typeName string
 }
 
-// NewDocRepo returns a doc repository for entity type T backed by the store.
-func NewDocRepo[T any, PT domain.EntityPtr[T]](s *Store) *DocRepo[T, PT] {
+// NewDocRepo returns a doc repository for entity type T backed by the service.
+func NewDocRepo[T any, PT domain.EntityPtr[T]](s *Service) *DocRepo[T, PT] {
 	return &DocRepo[T, PT]{pool: s.pool, typeName: PT(new(T)).EntityType()}
 }
 

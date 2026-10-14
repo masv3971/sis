@@ -5,19 +5,22 @@ package postgres
 import (
 	"context"
 	"fmt"
-	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/SUNET/sis/pkg/logger"
 )
 
-// Store owns the connection pool and provides the repositories.
-type Store struct {
+// Service owns the connection pool and provides the repositories. It is a
+// "Service" rather than a "Client" because it holds a runtime resource (the
+// pgx pool) that must be released on shutdown via Close.
+type Service struct {
 	pool *pgxpool.Pool
-	log  *slog.Logger
+	log  *logger.Log
 }
 
 // New connects to Postgres, verifies connectivity, and runs migrations.
-func New(ctx context.Context, databaseURL string, log *slog.Logger) (*Store, error) {
+func New(ctx context.Context, databaseURL string, log *logger.Log) (*Service, error) {
 	pool, err := pgxpool.New(ctx, databaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("connect postgres: %w", err)
@@ -31,26 +34,26 @@ func New(ctx context.Context, databaseURL string, log *slog.Logger) (*Store, err
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
 	log.Info("postgres connected and migrated")
-	return &Store{pool: pool, log: log}, nil
+	return &Service{pool: pool, log: log}, nil
 }
 
-// Persons returns the Person repository backed by this store.
-func (s *Store) Persons() *PersonRepository {
+// Persons returns the Person repository backed by this service.
+func (s *Service) Persons() *PersonRepository {
 	return &PersonRepository{pool: s.pool}
 }
 
-// Accounts returns the Account repository backed by this store.
-func (s *Store) Accounts() *AccountRepository {
+// Accounts returns the Account repository backed by this service.
+func (s *Service) Accounts() *AccountRepository {
 	return &AccountRepository{pool: s.pool}
 }
 
-// Clients returns the OAuth2 client repository backed by this store.
-func (s *Store) Clients() *ClientRepository {
+// Clients returns the OAuth2 client repository backed by this service.
+func (s *Service) Clients() *ClientRepository {
 	return &ClientRepository{pool: s.pool}
 }
 
 // Close releases the connection pool.
-func (s *Store) Close(_ context.Context) error {
+func (s *Service) Close(_ context.Context) error {
 	s.log.Info("closing postgres pool")
 	s.pool.Close()
 	return nil

@@ -1,8 +1,13 @@
-// Package authapi is the inbound HTTP adapter for authentication: local login
-// and the OAuth2 client-credentials token endpoint.
+// Package authapi is the inbound HTTP adapter for authentication: local login,
+// the OAuth2 client-credentials token endpoint, and OIDC RP login. The entry
+// points are methods on Client; route declarations live in the httpserver
+// package.
 package authapi
 
 import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"net/http"
 	"time"
@@ -10,22 +15,37 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/SUNET/sis/internal/auth"
+	"github.com/SUNET/sis/pkg/logger"
+	"github.com/SUNET/sis/pkg/model"
 )
 
-// Handler serves the auth endpoints.
-type Handler struct {
-	svc *auth.Service
+const oidcCookieTTL = 300 // seconds
+
+// Client bundles the auth handlers with the dependencies they need (the auth
+// Client, the post-login redirect URL, and a logger for operational-error
+// paths). It is a "Client" rather than a "Service" because it owns no runtime
+// resources — just configuration and injected deps — and has nothing to shut
+// down.
+//
+// OIDC capability is checked on the auth Client directly (OIDCEnabled); the
+// httpserver only mounts the OIDC routes when that returns true, so handlers
+// here can assume OIDC is enabled when they are called.
+//
+// The receiver is named c to match the vc convention; the gin.Context
+// parameter is therefore named gc to avoid shadowing.
+type Client struct {
+	auth         *auth.Client
+	postLoginURL string
+	log          *logger.Log
 }
 
-// New returns a Handler backed by the auth service.
-func New(svc *auth.Service) *Handler {
-	return &Handler{svc: svc}
-}
-
-// Register attaches the (unauthenticated) auth routes to the engine.
-func (h *Handler) Register(engine *gin.Engine) {
-	engine.POST("/auth/login", h.login)
-	engine.POST("/oauth/token", h.token)
+// New builds the authapi Client.
+func New(_ context.Context, cfg *model.Cfg, authClient *auth.Client, log *logger.Log) (*Client, error) {
+	return &Client{
+		auth:         authClient,
+		postLoginURL: cfg.SIS.Auth.OIDC.PostLoginRedirectURL,
+		log:          log.New("authapi"),
+	}, nil
 }
 
 type loginRequest struct {
@@ -33,51 +53,102 @@ type loginRequest struct {
 	Password string `json:"password" binding:"required"`
 }
 
-func (h *Handler) login(c *gin.Context) {
+// Login handles local username/password login, returning a signed token.
+func (c *Client) Login(gc *gin.Context) {
 	var req loginRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request"})
+	if err := gc.ShouldBindJSON(&req); err != nil {
+		gc.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request"})
 		return
 	}
-	tok, err := h.svc.Authenticate(c.Request.Context(), req.Username, req.Password)
+	tok, err := c.auth.Authenticate(gc.Request.Context(), req.Username, req.Password)
 	if err != nil {
-		writeAuthError(c, err)
+		c.writeAuthError(gc, err)
 		return
 	}
-	c.JSON(http.StatusOK, tokenResponse(tok))
+	gc.JSON(http.StatusOK, tokenResponse(tok))
 }
 
-// token implements the OAuth2 client-credentials grant (RFC 6749 §4.4).
+// Token implements the OAuth2 client-credentials grant (RFC 6749 §4.4).
 // Credentials come from form fields or HTTP Basic auth.
-func (h *Handler) token(c *gin.Context) {
-	if c.PostForm("grant_type") != "client_credentials" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported_grant_type"})
+func (c *Client) Token(gc *gin.Context) {
+	if gc.PostForm("grant_type") != "client_credentials" {
+		gc.JSON(http.StatusBadRequest, gin.H{"error": "unsupported_grant_type"})
 		return
 	}
-	clientID, secret := c.PostForm("client_id"), c.PostForm("client_secret")
+	clientID, secret := gc.PostForm("client_id"), gc.PostForm("client_secret")
 	if clientID == "" {
-		if id, s, ok := c.Request.BasicAuth(); ok {
-			clientID, secret = id, s
+		if id, sec, ok := gc.Request.BasicAuth(); ok {
+			clientID, secret = id, sec
 		}
 	}
-	tok, err := h.svc.ClientCredentials(c.Request.Context(), clientID, secret)
+	tok, err := c.auth.ClientCredentials(gc.Request.Context(), clientID, secret)
 	if err != nil {
 		if errors.Is(err, auth.ErrInvalidCredentials) {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_client"})
+			gc.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_client"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+		c.log.Error("client-credentials token issue failed", "err", err)
+		gc.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
 		return
 	}
-	c.JSON(http.StatusOK, tokenResponse(tok))
+	gc.JSON(http.StatusOK, tokenResponse(tok))
 }
 
-func writeAuthError(c *gin.Context, err error) {
-	if errors.Is(err, auth.ErrInvalidCredentials) {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_credentials"})
+// OIDCLogin starts the OIDC RP flow by redirecting to the provider.
+func (c *Client) OIDCLogin(gc *gin.Context) {
+	state, nonce := randToken(), randToken()
+	gc.SetSameSite(http.SameSiteLaxMode)
+	gc.SetCookie("oidc_state", state, oidcCookieTTL, "/", "", false, true)
+	gc.SetCookie("oidc_nonce", nonce, oidcCookieTTL, "/", "", false, true)
+	gc.Redirect(http.StatusFound, c.auth.OIDCAuthCodeURL(state, nonce))
+}
+
+// OIDCCallback completes the OIDC RP flow and hands a token to the SPA via the
+// URL fragment.
+func (c *Client) OIDCCallback(gc *gin.Context) {
+	state, err := gc.Cookie("oidc_state")
+	if err != nil || state == "" || gc.Query("state") != state {
+		gc.JSON(http.StatusBadRequest, gin.H{"error": "invalid_state"})
 		return
 	}
-	c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+	nonce, _ := gc.Cookie("oidc_nonce")
+
+	claims, err := c.auth.OIDCExchange(gc.Request.Context(), gc.Query("code"), nonce)
+	if err != nil {
+		// Expected on bad state/code/nonce mismatch but also on provider
+		// outages — log once so operators can tell them apart.
+		c.log.Warn("oidc exchange failed", "err", err)
+		gc.JSON(http.StatusUnauthorized, gin.H{"error": "oidc_failed"})
+		return
+	}
+	tok, err := c.auth.IssueForOIDC(gc.Request.Context(), claims.Subject, claims.Email, claims.Name)
+	if err != nil {
+		c.writeAuthError(gc, err)
+		return
+	}
+
+	// Clear the one-shot cookies and hand the token to the SPA via the URL
+	// fragment (kept out of server logs and the Referer header).
+	gc.SetCookie("oidc_state", "", -1, "/", "", false, true)
+	gc.SetCookie("oidc_nonce", "", -1, "/", "", false, true)
+	gc.Redirect(http.StatusFound, c.postLoginURL+"#access_token="+tok.AccessToken)
+}
+
+func randToken() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+// writeAuthError maps auth errors to HTTP responses, logging only the server
+// faults so expected 401s do not pollute the operational log.
+func (c *Client) writeAuthError(gc *gin.Context, err error) {
+	if errors.Is(err, auth.ErrInvalidCredentials) {
+		gc.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_credentials"})
+		return
+	}
+	c.log.Error("auth handler internal error", "err", err)
+	gc.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
 }
 
 func tokenResponse(t auth.Token) gin.H {

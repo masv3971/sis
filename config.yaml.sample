@@ -1,6 +1,5 @@
 # Sample SIS configuration. Point SIS_CONFIG_YAML at a copy of this file.
-# Environment variables (SIS_ADDR, SIS_DATABASE_URL, SIS_JWT_SECRET, ...)
-# override these values.
+# SIS_CONFIG_YAML is the only environment variable the service reads.
 common:
   production: false
   log:
@@ -38,3 +37,8 @@ sis:
     enabled: false
     url: "nats://localhost:4222"
     subject: "sis.events"
+
+  # Built React SPA. Set to the directory containing index.html + assets/.
+  # Baked into the Docker image at /web; leave empty for API-only operation.
+  web:
+    root: ""

@@ -2,19 +2,35 @@ package configuration_test
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/SUNET/sis/pkg/configuration"
 )
 
-func TestNewAppliesDefaults(t *testing.T) {
-	t.Setenv("SIS_CONFIG_YAML", "")
+func writeConfig(t *testing.T, body string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	return path
+}
+
+func TestNewLoadsFileAndDefaults(t *testing.T) {
+	path := writeConfig(t, "sis:\n  db:\n    connection_string: \"postgres://x\"\n")
+	t.Setenv("SIS_CONFIG_YAML", path)
 
 	cfg, err := configuration.New(context.Background(), "sis")
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	if cfg.SIS.DB.ConnectionString != "postgres://x" {
+		t.Fatalf("expected db from file, got %q", cfg.SIS.DB.ConnectionString)
+	}
+	// Defaults fill unset fields.
 	if cfg.SIS.APIServer.Addr != ":8080" {
 		t.Fatalf("expected default addr :8080, got %q", cfg.SIS.APIServer.Addr)
 	}
@@ -26,22 +42,16 @@ func TestNewAppliesDefaults(t *testing.T) {
 	}
 }
 
-func TestEnvOverridesWin(t *testing.T) {
-	t.Setenv("SIS_ADDR", ":9999")
-	t.Setenv("SIS_DATABASE_URL", "postgres://x")
-	t.Setenv("SIS_TOKEN_TTL", "30m")
+func TestNewRequiresConfigPath(t *testing.T) {
+	t.Setenv("SIS_CONFIG_YAML", "")
+	if _, err := configuration.New(context.Background(), "sis"); err == nil {
+		t.Fatal("expected an error when SIS_CONFIG_YAML is unset")
+	}
+}
 
-	cfg, err := configuration.New(context.Background(), "sis")
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	if cfg.SIS.APIServer.Addr != ":9999" {
-		t.Fatalf("env override addr failed: %q", cfg.SIS.APIServer.Addr)
-	}
-	if cfg.SIS.DB.ConnectionString != "postgres://x" {
-		t.Fatalf("env override db failed: %q", cfg.SIS.DB.ConnectionString)
-	}
-	if cfg.SIS.Auth.TokenTTL != 30*time.Minute {
-		t.Fatalf("env override token_ttl failed: %s", cfg.SIS.Auth.TokenTTL)
+func TestNewErrorsOnMissingFile(t *testing.T) {
+	t.Setenv("SIS_CONFIG_YAML", "/no/such/config.yaml")
+	if _, err := configuration.New(context.Background(), "sis"); err == nil {
+		t.Fatal("expected an error for a missing config file")
 	}
 }

@@ -8,8 +8,11 @@ import (
 	"github.com/SUNET/sis/internal/core/service"
 )
 
-// Catalog holds the per-entity services the provider adapters read from.
-type Catalog struct {
+// Client holds the per-entity services the provider adapters read from. It is
+// a "Client" rather than a "Service" because it owns no runtime resources —
+// it is a bundle of already-built per-entity services, assembled once at
+// startup, with nothing to shut down.
+type Client struct {
 	Persons          *service.Service
 	Organizations    *service.Resource[domain.Organization, *domain.Organization]
 	AcademicSessions *service.Resource[domain.AcademicSession, *domain.AcademicSession]
