@@ -8,6 +8,8 @@ import {
   UnauthorizedError,
 } from "./api";
 
+// PAGE_SIZE is the page size requested. The server may clamp it to its
+// configured max_limit, so navigation uses the size it reports back.
 const PAGE_SIZE = 50;
 
 const emptyForm: Person = { givenName: "", familyName: "", status: "active" };
@@ -16,6 +18,7 @@ export function Persons({ onUnauthorized }: { onUnauthorized: () => void }) {
   const [persons, setPersons] = useState<Person[]>([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
+  const [pageSize, setPageSize] = useState(PAGE_SIZE);
   const [form, setForm] = useState<Person>(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [error, setError] = useState("");
@@ -25,16 +28,18 @@ export function Persons({ onUnauthorized }: { onUnauthorized: () => void }) {
     else setError((e as Error).message);
   }
 
-  async function load(at: number) {
+  async function load(at: number): Promise<void> {
     try {
       const page = await listPersons(PAGE_SIZE, at);
+      const size = page.limit > 0 ? page.limit : PAGE_SIZE;
       // Deleting the last row of the last page leaves it empty; step back.
       if (page.persons.length === 0 && at > 0 && page.total > 0) {
-        return load(Math.max(0, at - PAGE_SIZE));
+        return load(Math.max(0, at - size));
       }
       setPersons(page.persons);
       setTotal(page.total);
       setOffset(at);
+      setPageSize(size);
     } catch (e) {
       fail(e);
     }
@@ -164,15 +169,15 @@ export function Persons({ onUnauthorized }: { onUnauthorized: () => void }) {
             )}
           </tbody>
         </table>
-        {total > PAGE_SIZE && (
+        {total > pageSize && (
           <div className="row pager">
-            <button className="ghost" disabled={offset === 0} onClick={() => load(Math.max(0, offset - PAGE_SIZE))}>
+            <button className="ghost" disabled={offset === 0} onClick={() => load(Math.max(0, offset - pageSize))}>
               Previous
             </button>
             <span className="muted">
               {first}–{last} of {total}
             </span>
-            <button className="ghost" disabled={last >= total} onClick={() => load(offset + PAGE_SIZE)}>
+            <button className="ghost" disabled={last >= total} onClick={() => load(offset + pageSize)}>
               Next
             </button>
           </div>
