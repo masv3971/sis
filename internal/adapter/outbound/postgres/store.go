@@ -52,9 +52,25 @@ func (s *Service) Clients() *ClientRepository {
 	return &ClientRepository{pool: s.pool}
 }
 
-// Close releases the connection pool.
-func (s *Service) Close(_ context.Context) error {
+// Close releases the connection pool. pgxpool.Close blocks until every
+// borrowed connection is returned and ignores contexts, so it runs in a
+// goroutine and Close returns when ctx is done even if a connection is still
+// held. The inbound side cancels in-flight requests before this runs (see
+// adapter.Service.Close), so a stuck borrower is the exception; when it
+// happens the pool finishes closing in the background and the process exit
+// reaps whatever is left.
+func (s *Service) Close(ctx context.Context) error {
 	s.log.Info("closing postgres pool")
-	s.pool.Close()
-	return nil
+	done := make(chan struct{})
+	go func() {
+		s.pool.Close()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		s.log.Warn("postgres pool close did not finish before shutdown deadline", "err", ctx.Err())
+		return fmt.Errorf("close postgres pool: %w", ctx.Err())
+	}
 }

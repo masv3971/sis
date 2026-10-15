@@ -165,6 +165,11 @@ func (s *Client) Authenticate(ctx context.Context, username, plain string) (Toke
 		return Token{}, err
 	case acc.Status != domain.StatusActive:
 		return Token{}, ErrInvalidCredentials
+	case acc.OIDCIssuer != "" || acc.PasswordHash == "":
+		// OIDC-provisioned accounts have no local password and must sign
+		// in through their provider. Rejecting before Verify also covers
+		// legacy OIDC rows that still carry a random hash.
+		return Token{}, ErrInvalidCredentials
 	}
 	ok, err := password.Verify(plain, acc.PasswordHash)
 	if err != nil || !ok {

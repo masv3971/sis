@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -10,7 +9,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/SUNET/sis/internal/auth/password"
 	"github.com/SUNET/sis/internal/auth/token"
 	"github.com/SUNET/sis/internal/core/domain"
 )
@@ -57,22 +55,17 @@ func oidcUsername(issuer, subject string) string {
 	return oidcUsernamePrefix + hex.EncodeToString(sum[:6]) + ":" + subject
 }
 
-// provisionOIDCAccount creates a read-only account bound to issuer+subject,
-// with an unusable random password (local login can never match it).
+// provisionOIDCAccount creates a read-only account bound to issuer+subject.
+// It stores no password hash: OIDC accounts never sign in locally
+// (Authenticate rejects them outright), so there is nothing to verify and no
+// reason to pay for an Argon2 hash on every first login. Keeping provisioning
+// free of Argon2 also keeps OIDC callbacks outside the memory budget that
+// max_concurrent_logins protects.
 func (s *Client) provisionOIDCAccount(ctx context.Context, issuer, subject string) (domain.Account, error) {
-	b := make([]byte, 24)
-	if _, err := rand.Read(b); err != nil {
-		return domain.Account{}, err
-	}
-	hash, err := password.Hash(hex.EncodeToString(b))
-	if err != nil {
-		return domain.Account{}, err
-	}
 	now := time.Now().UTC()
 	acc := domain.Account{
 		ID:           uuid.NewString(),
 		Username:     oidcUsername(issuer, subject),
-		PasswordHash: hash,
 		Roles:        []domain.AuthRole{domain.AuthRoleReadOnly},
 		Status:       domain.StatusActive,
 		OIDCIssuer:   issuer,

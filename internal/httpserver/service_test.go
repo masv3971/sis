@@ -88,3 +88,42 @@ func TestNewFailsWhenAddressInUse(t *testing.T) {
 		t.Fatal("expected New to fail on a busy address")
 	}
 }
+
+// TestCloseCancelsInFlightRequestsAfterDeadline checks that a handler blocked
+// on downstream work (simulated by waiting on its request context) is aborted
+// once the shutdown deadline passes, and that Close returns within it.
+func TestCloseCancelsInFlightRequestsAfterDeadline(t *testing.T) {
+	started, aborted := make(chan struct{}), make(chan struct{})
+	h := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-r.Context().Done()
+		close(aborted)
+	})
+	log := logger.NewWithWriter("test", false, "error", io.Discard)
+	s, err := start(context.Background(), testCfg("127.0.0.1:0").SIS.HTTPServer, h, log)
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+
+	go func() {
+		if resp, err := http.Get("http://" + s.Addr().String() + "/"); err == nil {
+			_ = resp.Body.Close()
+		}
+	}()
+	<-started
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	begin := time.Now()
+	if err := s.Close(ctx); err == nil {
+		t.Fatal("expected deadline error from Close")
+	}
+	if d := time.Since(begin); d > time.Second {
+		t.Fatalf("Close took %v, want it bounded by ctx", d)
+	}
+	select {
+	case <-aborted:
+	case <-time.After(time.Second):
+		t.Fatal("in-flight request context was not cancelled")
+	}
+}

@@ -124,6 +124,11 @@ func New(ctx context.Context, cfg *model.Cfg, log *logger.Log) (*Service, error)
 // Close shuts the adapter graph down in dependency order: inbound first (so
 // no new work enters the graph), then outbound persistence. Errors from both
 // stages are joined so the caller sees every failure.
+//
+// The whole teardown is bounded by ctx: if the HTTP drain hits the deadline,
+// httpserver.Close cancels in-flight request contexts (aborting their
+// postgres queries) and force-closes connections, and postgres.Close returns
+// on ctx.Done rather than blocking on a still-borrowed connection.
 func (s *Service) Close(ctx context.Context) error {
 	s.log.Info("stopping adapters")
 	var errs []error

@@ -40,7 +40,12 @@ type Guards struct {
 type Service struct {
 	server *http.Server
 	addr   net.Addr
-	log    *logger.Log
+	// cancelRequests cancels the base context every request context derives
+	// from. Close calls it when the graceful drain deadline passes so handlers
+	// blocked on downstream work (e.g. a postgres query) abort and release
+	// their pooled connections before the outbound pool is closed.
+	cancelRequests context.CancelFunc
+	log            *logger.Log
 }
 
 // Addr returns the address the listener is bound to (useful with ":0").
@@ -150,13 +155,25 @@ func New(ctx context.Context, cfg *model.Cfg, authSvc *auth.Client, catalog *rea
 		}
 	}
 
+	return start(ctx, hc, engine, log)
+}
+
+// start binds the listener and serves handler in the background. Every
+// request context derives from a base context owned by the Service, so Close
+// can abort in-flight handlers once the graceful drain deadline passes.
+func start(ctx context.Context, hc model.HTTPServer, handler http.Handler, log *logger.Log) (*Service, error) {
+	// Detach from ctx's cancellation: the server outlives New's ctx and is
+	// stopped only by Close.
+	baseCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	s := &Service{
-		log: log,
+		log:            log,
+		cancelRequests: cancel,
 		server: &http.Server{
 			Addr:         hc.Addr,
-			Handler:      engine,
+			Handler:      handler,
 			ReadTimeout:  hc.ReadTimeout,
 			WriteTimeout: hc.WriteTimeout,
+			BaseContext:  func(net.Listener) context.Context { return baseCtx },
 		},
 	}
 
@@ -164,6 +181,7 @@ func New(ctx context.Context, cfg *model.Cfg, authSvc *auth.Client, catalog *rea
 	// startup) instead of only being logged from the serve goroutine.
 	ln, err := (&net.ListenConfig{}).Listen(ctx, "tcp", hc.Addr)
 	if err != nil {
+		cancel()
 		return nil, fmt.Errorf("listen %s: %w", hc.Addr, err)
 	}
 	s.addr = ln.Addr()
@@ -190,8 +208,18 @@ func registerResource[T any, PT domain.EntityPtr[T]](rg *gin.RouterGroup, g Guar
 	rg.DELETE("/"+path+"/:id", g.Write, restadmin.ResourceDelete(h, svc))
 }
 
-// Close gracefully shuts down the HTTP server.
+// Close gracefully shuts down the HTTP server, waiting for in-flight requests
+// until ctx is done. If the deadline passes first, it cancels every request
+// context (so handlers blocked on downstream I/O abort and release pooled
+// resources) and force-closes the remaining connections, returning the
+// deadline error. Close therefore never outlives ctx.
 func (s *Service) Close(ctx context.Context) error {
 	s.log.Info("stopping http server")
-	return s.server.Shutdown(ctx)
+	defer s.cancelRequests()
+	if err := s.server.Shutdown(ctx); err != nil {
+		s.log.Warn("graceful shutdown deadline passed; aborting in-flight requests", "err", err)
+		s.cancelRequests()
+		return errors.Join(err, s.server.Close())
+	}
+	return nil
 }

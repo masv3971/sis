@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/SUNET/sis/internal/adapter/outbound/memory"
+	"github.com/SUNET/sis/internal/auth/password"
 	"github.com/SUNET/sis/internal/auth/token"
 	"github.com/SUNET/sis/internal/core/domain"
 )
@@ -92,6 +93,49 @@ func TestIssueForOIDC_SameSubjectDifferentIssuerIsDistinct(t *testing.T) {
 	b, _ := accounts.GetByOIDC(ctx, "https://other.example.org", "same")
 	if a.ID == "" || a.ID == b.ID {
 		t.Fatalf("expected two distinct accounts, got %q and %q", a.ID, b.ID)
+	}
+}
+
+// TestIssueForOIDC_ProvisionsWithoutPassword checks that provisioning stores
+// no Argon2 hash and that the account cannot be used for local login.
+func TestIssueForOIDC_ProvisionsWithoutPassword(t *testing.T) {
+	svc, accounts := newAuthService()
+	ctx := context.Background()
+	if _, err := svc.IssueForOIDC(ctx, &OIDCClaims{Issuer: testIssuer, Subject: "sub-1"}); err != nil {
+		t.Fatal(err)
+	}
+	acc, err := accounts.GetByOIDC(ctx, testIssuer, "sub-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if acc.PasswordHash != "" {
+		t.Fatalf("expected no password hash, got %q", acc.PasswordHash)
+	}
+	if _, err := svc.Authenticate(ctx, acc.Username, ""); err != ErrInvalidCredentials {
+		t.Fatalf("expected local login to be rejected, got %v", err)
+	}
+}
+
+// TestAuthenticate_RejectsOIDCAccountWithLegacyHash covers OIDC rows created
+// before provisioning stopped hashing: they still carry a valid hash, but
+// local login must be refused because the account is OIDC-bound.
+func TestAuthenticate_RejectsOIDCAccountWithLegacyHash(t *testing.T) {
+	svc, accounts := newAuthService()
+	ctx := context.Background()
+	hash, err := password.Hash("known")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if err := accounts.Upsert(ctx, domain.Account{
+		ID: "legacy", Username: "oidc:legacy", PasswordHash: hash,
+		Roles: []domain.AuthRole{domain.AuthRoleReadOnly}, Status: domain.StatusActive,
+		OIDCIssuer: testIssuer, OIDCSubject: "legacy", CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Authenticate(ctx, "oidc:legacy", "known"); err != ErrInvalidCredentials {
+		t.Fatalf("expected ErrInvalidCredentials, got %v", err)
 	}
 }
 

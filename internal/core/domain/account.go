@@ -20,7 +20,8 @@ const (
 // Account is a human login. Local accounts sign in with Username and
 // PasswordHash. OIDC accounts are bound to the provider identity
 // (OIDCIssuer, OIDCSubject) and are only ever found by that pair, never by
-// email, so a federated user cannot take over a local account.
+// email, so a federated user cannot take over a local account. OIDC accounts
+// have an empty PasswordHash and are rejected by local password login.
 type Account struct {
 	ID           string
 	Username     string
