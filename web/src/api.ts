@@ -1,5 +1,5 @@
-// Thin client for the native /api/v1 surface plus /auth/login. The JWT is kept
-// in localStorage and attached as a Bearer token to API calls.
+// Thin client for the native /api/v1 surface plus /auth. The JWT is kept in
+// localStorage and attached as a Bearer token to API calls.
 
 const TOKEN_KEY = "sis_token";
 
@@ -26,15 +26,42 @@ export function consumeTokenFromHash(): void {
 
 export class UnauthorizedError extends Error {}
 
+// InvalidCredentialsError is a 401 from /auth/login: wrong username or
+// password. Any other failure (network, 5xx) is a plain Error so the UI can
+// tell the user to retry instead of blaming their password.
+export class InvalidCredentialsError extends Error {}
+
 export async function login(username: string, password: string): Promise<void> {
-  const res = await fetch("/auth/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password }),
-  });
-  if (!res.ok) throw new Error("Login failed");
+  let res: Response;
+  try {
+    res = await fetch("/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+  } catch {
+    throw new Error("Cannot reach the server. Check your connection and try again.");
+  }
+  if (res.status === 401) throw new InvalidCredentialsError("Invalid username or password");
+  if (!res.ok) throw new Error(`Sign-in failed (server error ${res.status}). Try again later.`);
   const data = (await res.json()) as { access_token: string };
   setToken(data.access_token);
+}
+
+export interface AuthConfig {
+  oidc: boolean;
+}
+
+// authConfig reports which login methods the server offers. On failure it
+// assumes none beyond local login, so the UI never shows a dead SSO link.
+export async function authConfig(): Promise<AuthConfig> {
+  try {
+    const res = await fetch("/auth/config");
+    if (!res.ok) return { oidc: false };
+    return (await res.json()) as AuthConfig;
+  } catch {
+    return { oidc: false };
+  }
 }
 
 async function authFetch(path: string, init: RequestInit = {}): Promise<Response> {
@@ -71,6 +98,13 @@ export interface Contact {
   value: string;
 }
 
+export interface Identifier {
+  type: string;
+  value: string;
+}
+
+// Person mirrors domain.Person. Every field the server returns is listed so a
+// read-modify-write round trip (PUT is a full replacement) keeps them all.
 export interface Person {
   id?: string;
   sourcedId?: string;
@@ -79,34 +113,52 @@ export interface Person {
   familyName: string;
   middleName?: string;
   roles?: string[];
+  identifiers?: Identifier[];
   emails?: Contact[];
+  phones?: Contact[];
+  dateOfBirth?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
-interface PersonList {
-  persons: Person[] | null;
+export interface PersonPage {
+  persons: Person[];
   total: number;
+  limit: number;
+  offset: number;
 }
 
-export async function listPersons(): Promise<Person[]> {
-  const res = await authFetch("/api/v1/persons?limit=200");
+export async function listPersons(limit: number, offset: number): Promise<PersonPage> {
+  const q = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  const res = await authFetch(`/api/v1/persons?${q}`);
   if (!res.ok) throw new Error(await errorMessage(res, "Failed to load persons"));
-  const data = (await res.json()) as PersonList;
-  return data.persons ?? [];
+  const data = (await res.json()) as Omit<PersonPage, "persons"> & { persons: Person[] | null };
+  return { ...data, persons: data.persons ?? [] };
+}
+
+// toWritable strips server-managed fields; the API rejects unknown fields and
+// sets id/timestamps itself.
+function toWritable(p: Person): Person {
+  const { id, createdAt, updatedAt, ...rest } = p;
+  return rest;
 }
 
 export async function createPerson(p: Person): Promise<Person> {
-  const res = await authFetch("/api/v1/persons", { method: "POST", body: JSON.stringify(p) });
+  const res = await authFetch("/api/v1/persons", { method: "POST", body: JSON.stringify(toWritable(p)) });
   if (!res.ok) throw new Error(await errorMessage(res, "Create failed"));
   return (await res.json()) as Person;
 }
 
 export async function updatePerson(id: string, p: Person): Promise<Person> {
-  const res = await authFetch(`/api/v1/persons/${id}`, { method: "PUT", body: JSON.stringify(p) });
+  const res = await authFetch(`/api/v1/persons/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify(toWritable(p)),
+  });
   if (!res.ok) throw new Error(await errorMessage(res, "Update failed"));
   return (await res.json()) as Person;
 }
 
 export async function deletePerson(id: string): Promise<void> {
-  const res = await authFetch(`/api/v1/persons/${id}`, { method: "DELETE" });
+  const res = await authFetch(`/api/v1/persons/${encodeURIComponent(id)}`, { method: "DELETE" });
   if (!res.ok) throw new Error(await errorMessage(res, "Delete failed"));
 }

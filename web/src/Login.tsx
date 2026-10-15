@@ -1,11 +1,16 @@
-import { useState, type FormEvent } from "react";
-import { login } from "./api";
+import { useEffect, useState, type FormEvent } from "react";
+import { authConfig, InvalidCredentialsError, login } from "./api";
 
 export function Login({ onLogin }: { onLogin: () => void }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [oidc, setOidc] = useState(false);
+
+  useEffect(() => {
+    authConfig().then((c) => setOidc(c.oidc));
+  }, []);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -14,8 +19,8 @@ export function Login({ onLogin }: { onLogin: () => void }) {
     try {
       await login(username, password);
       onLogin();
-    } catch {
-      setError("Invalid username or password");
+    } catch (err) {
+      setError(err instanceof InvalidCredentialsError ? "Invalid username or password" : (err as Error).message);
     } finally {
       setBusy(false);
     }
@@ -36,9 +41,11 @@ export function Login({ onLogin }: { onLogin: () => void }) {
       <button type="submit" disabled={busy}>
         {busy ? "Signing in…" : "Sign in"}
       </button>
-      <button type="button" className="ghost" onClick={() => (window.location.href = "/auth/oidc/login")}>
-        Sign in with SSO
-      </button>
+      {oidc && (
+        <button type="button" className="ghost" onClick={() => (window.location.href = "/auth/oidc/login")}>
+          Sign in with SSO
+        </button>
+      )}
     </form>
   );
 }

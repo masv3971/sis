@@ -2,6 +2,7 @@ package httpserver
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net"
 	"net/http"
@@ -49,6 +50,29 @@ func TestNewServesOnceReturned(t *testing.T) {
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+}
+
+func TestAuthConfigReportsOIDCDisabled(t *testing.T) {
+	s, err := newTestServer(t, "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close(context.Background()) })
+
+	resp, err := http.Get("http://" + s.Addr().String() + "/auth/config")
+	if err != nil {
+		t.Fatalf("GET /auth/config: %v", err)
+	}
+	defer resp.Body.Close()
+	var body struct {
+		OIDC *bool `json:"oidc"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK || body.OIDC == nil || *body.OIDC {
+		t.Fatalf("expected 200 {\"oidc\":false}, got %d %+v", resp.StatusCode, body)
 	}
 }
 

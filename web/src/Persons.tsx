@@ -8,25 +8,40 @@ import {
   UnauthorizedError,
 } from "./api";
 
+const PAGE_SIZE = 50;
+
 const emptyForm: Person = { givenName: "", familyName: "", status: "active" };
 
 export function Persons({ onUnauthorized }: { onUnauthorized: () => void }) {
   const [persons, setPersons] = useState<Person[]>([]);
+  const [total, setTotal] = useState(0);
+  const [offset, setOffset] = useState(0);
   const [form, setForm] = useState<Person>(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [error, setError] = useState("");
 
-  async function refresh() {
+  function fail(e: unknown) {
+    if (e instanceof UnauthorizedError) onUnauthorized();
+    else setError((e as Error).message);
+  }
+
+  async function load(at: number) {
     try {
-      setPersons(await listPersons());
+      const page = await listPersons(PAGE_SIZE, at);
+      // Deleting the last row of the last page leaves it empty; step back.
+      if (page.persons.length === 0 && at > 0 && page.total > 0) {
+        return load(Math.max(0, at - PAGE_SIZE));
+      }
+      setPersons(page.persons);
+      setTotal(page.total);
+      setOffset(at);
     } catch (e) {
-      if (e instanceof UnauthorizedError) onUnauthorized();
-      else setError((e as Error).message);
+      fail(e);
     }
   }
 
   useEffect(() => {
-    refresh();
+    load(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -38,23 +53,18 @@ export function Persons({ onUnauthorized }: { onUnauthorized: () => void }) {
       else await createPerson(form);
       setForm(emptyForm);
       setEditingId(null);
-      await refresh();
+      await load(offset);
     } catch (e) {
-      if (e instanceof UnauthorizedError) onUnauthorized();
-      else setError((e as Error).message);
+      fail(e);
     }
   }
 
+  // edit starts from a full copy of the person: PUT replaces the whole
+  // record, so any field the form does not show (identifiers, emails,
+  // phones, dateOfBirth, ...) must be sent back unchanged.
   function edit(p: Person) {
     setEditingId(p.id ?? null);
-    setForm({
-      givenName: p.givenName,
-      familyName: p.familyName,
-      middleName: p.middleName,
-      status: p.status,
-      sourcedId: p.sourcedId,
-      roles: p.roles,
-    });
+    setForm(structuredClone(p));
   }
 
   function cancel() {
@@ -66,12 +76,14 @@ export function Persons({ onUnauthorized }: { onUnauthorized: () => void }) {
   async function remove(id: string) {
     try {
       await deletePerson(id);
-      await refresh();
+      await load(offset);
     } catch (e) {
-      if (e instanceof UnauthorizedError) onUnauthorized();
-      else setError((e as Error).message);
+      fail(e);
     }
   }
+
+  const first = total === 0 ? 0 : offset + 1;
+  const last = offset + persons.length;
 
   return (
     <div className="grid">
@@ -115,7 +127,7 @@ export function Persons({ onUnauthorized }: { onUnauthorized: () => void }) {
       </section>
 
       <section className="card">
-        <h2>People ({persons.length})</h2>
+        <h2>People ({total})</h2>
         <table>
           <thead>
             <tr>
@@ -152,6 +164,19 @@ export function Persons({ onUnauthorized }: { onUnauthorized: () => void }) {
             )}
           </tbody>
         </table>
+        {total > PAGE_SIZE && (
+          <div className="row pager">
+            <button className="ghost" disabled={offset === 0} onClick={() => load(Math.max(0, offset - PAGE_SIZE))}>
+              Previous
+            </button>
+            <span className="muted">
+              {first}–{last} of {total}
+            </span>
+            <button className="ghost" disabled={last >= total} onClick={() => load(offset + PAGE_SIZE)}>
+              Next
+            </button>
+          </div>
+        )}
       </section>
     </div>
   );

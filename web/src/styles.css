@@ -152,3 +152,8 @@ th {
   font-size: 13px;
   margin: 0 0 12px;
 }
+
+.pager {
+  justify-content: space-between;
+  margin-top: 12px;
+}

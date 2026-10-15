@@ -85,6 +85,7 @@ func New(ctx context.Context, cfg *model.Cfg, authSvc *auth.Client, catalog *rea
 
 	// Unauthenticated auth endpoints: local login, client-credentials token,
 	// and (when configured) OIDC RP login.
+	engine.GET("/auth/config", authH.Config)
 	engine.POST("/auth/login", authH.Login)
 	engine.POST("/oauth/token", authH.Token)
 	if authSvc.OIDCEnabled() {

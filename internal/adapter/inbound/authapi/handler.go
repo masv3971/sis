@@ -48,6 +48,13 @@ func New(_ context.Context, cfg *model.Cfg, authClient *auth.Client, log *logger
 	}, nil
 }
 
+// Config reports which login methods are available, so the web UI only
+// offers SSO when the OIDC routes are actually mounted. Public: it reveals
+// nothing beyond what probing /auth/oidc/login would.
+func (c *Client) Config(gc *gin.Context) {
+	gc.JSON(http.StatusOK, gin.H{"oidc": c.auth.OIDCEnabled()})
+}
+
 type loginRequest struct {
 	Username string `json:"username" binding:"required"`
 	Password string `json:"password" binding:"required"`
