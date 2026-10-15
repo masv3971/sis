@@ -16,6 +16,17 @@ import (
 
 const uniqueViolation = "23505"
 
+// maxPrealloc bounds the result-slice capacity reserved up front for a List,
+// so a large caller-supplied limit cannot force a huge allocation (or a
+// negative-cap panic) before any row is scanned. Results beyond this simply
+// grow the slice as rows arrive.
+const maxPrealloc = 256
+
+// preallocCap returns a safe initial capacity for a page of up to limit rows.
+func preallocCap(limit int) int {
+	return min(max(limit, 0), maxPrealloc)
+}
+
 // personColumns is the shared projection for person reads.
 const personColumns = `id, sourced_id, status, given_name, family_name,
 	middle_name, date_of_birth, roles, identifiers, emails, phones,
@@ -37,6 +48,13 @@ func (r *PersonRepository) Create(ctx context.Context, p domain.Person) error {
 		p.ID, p.SourcedID, p.Status, p.GivenName, p.FamilyName,
 		p.MiddleName, p.DateOfBirth, roles, ids, emails, phones,
 		p.CreatedAt, p.UpdatedAt)
+	return mapUniqueViolation(err)
+}
+
+// mapUniqueViolation translates a Postgres unique-key violation into
+// domain.ErrConflict (HTTP 409) so Create and Update report a business-key
+// collision identically; any other error passes through unchanged.
+func mapUniqueViolation(err error) error {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation {
 		return domain.ErrConflict
@@ -44,7 +62,8 @@ func (r *PersonRepository) Create(ctx context.Context, p domain.Person) error {
 	return err
 }
 
-// Update replaces a person, returning domain.ErrNotFound if it does not exist.
+// Update replaces a person, returning domain.ErrNotFound if it does not exist
+// and domain.ErrConflict if the new sourcedId belongs to another person.
 func (r *PersonRepository) Update(ctx context.Context, p domain.Person) error {
 	roles, ids, emails, phones, err := marshalArrays(p)
 	if err != nil {
@@ -59,7 +78,7 @@ func (r *PersonRepository) Update(ctx context.Context, p domain.Person) error {
 		p.MiddleName, p.DateOfBirth, roles, ids, emails, phones,
 		p.UpdatedAt)
 	if err != nil {
-		return err
+		return mapUniqueViolation(err)
 	}
 	if tag.RowsAffected() == 0 {
 		return domain.ErrNotFound
@@ -77,14 +96,16 @@ func (r *PersonRepository) GetBySourcedID(ctx context.Context, sourcedID string)
 	return r.scanOne(ctx, `SELECT `+personColumns+` FROM persons WHERE sourced_id=$1`, sourcedID)
 }
 
-// List returns a page of persons ordered by family then given name.
+// List returns a page of persons ordered by family name, given name, then id.
+// The unique id tie-breaker makes the order total so rows cannot move between
+// pages for people who share a name.
 func (r *PersonRepository) List(ctx context.Context, params port.ListParams) (port.Page[domain.Person], error) {
 	var total int
 	if err := r.pool.QueryRow(ctx, `SELECT count(*) FROM persons`).Scan(&total); err != nil {
 		return port.Page[domain.Person]{}, err
 	}
 
-	query := `SELECT ` + personColumns + ` FROM persons ORDER BY family_name, given_name OFFSET $1`
+	query := `SELECT ` + personColumns + ` FROM persons ORDER BY family_name, given_name, id OFFSET $1`
 	args := []any{params.Offset}
 	if params.Limit > 0 {
 		query += ` LIMIT $2`
@@ -97,7 +118,7 @@ func (r *PersonRepository) List(ctx context.Context, params port.ListParams) (po
 	}
 	defer rows.Close()
 
-	items := make([]domain.Person, 0, params.Limit)
+	items := make([]domain.Person, 0, preallocCap(params.Limit))
 	for rows.Next() {
 		p, err := scanPerson(rows)
 		if err != nil {

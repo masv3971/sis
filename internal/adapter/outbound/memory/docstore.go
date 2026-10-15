@@ -46,13 +46,20 @@ func (r *DocRepo[T, PT]) Create(_ context.Context, e PT) error {
 	return nil
 }
 
-// Update replaces an existing entity, maintaining the sourcedId index.
+// Update replaces an existing entity, maintaining the sourcedId index. A
+// sourcedId already owned by a different entity is rejected with
+// domain.ErrConflict, matching Create and the Postgres UNIQUE constraint.
 func (r *DocRepo[T, PT]) Update(_ context.Context, e PT) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	old, ok := r.byID[e.GetID()]
 	if !ok {
 		return domain.ErrNotFound
+	}
+	if sid := e.GetSourcedID(); sid != "" {
+		if owner, taken := r.sourcedToID[sid]; taken && owner != e.GetID() {
+			return domain.ErrConflict
+		}
 	}
 	if prev, err := unmarshalDoc[T, PT](old); err == nil {
 		if oldSID := prev.GetSourcedID(); oldSID != e.GetSourcedID() {
@@ -106,16 +113,8 @@ func (r *DocRepo[T, PT]) List(_ context.Context, params port.ListParams) (port.P
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].GetSourcedID() < items[j].GetSourcedID() })
 
-	total := len(items)
-	lo := params.Offset
-	if lo > total {
-		lo = total
-	}
-	hi := total
-	if params.Limit > 0 && lo+params.Limit < hi {
-		hi = lo + params.Limit
-	}
-	return port.Page[PT]{Items: items[lo:hi], Total: total}, nil
+	lo, hi := pageBounds(len(items), params.Offset, params.Limit)
+	return port.Page[PT]{Items: items[lo:hi], Total: len(items)}, nil
 }
 
 // Delete removes an entity by id.

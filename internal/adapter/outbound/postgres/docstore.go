@@ -6,7 +6,6 @@ import (
 	"errors"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/SUNET/sis/internal/core/domain"
@@ -35,14 +34,11 @@ func (r *DocRepo[T, PT]) Create(ctx context.Context, e PT) error {
 		`INSERT INTO entities (type, id, sourced_id, data, created_at, updated_at)
 		 VALUES ($1,$2,$3,$4,$5,$6)`,
 		r.typeName, e.GetID(), e.GetSourcedID(), data, e.GetCreatedAt(), e.GetUpdatedAt())
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation {
-		return domain.ErrConflict
-	}
-	return err
+	return mapUniqueViolation(err)
 }
 
-// Update replaces an entity, returning domain.ErrNotFound if absent.
+// Update replaces an entity, returning domain.ErrNotFound if absent and
+// domain.ErrConflict if the new sourcedId belongs to another entity.
 func (r *DocRepo[T, PT]) Update(ctx context.Context, e PT) error {
 	data, err := json.Marshal(e)
 	if err != nil {
@@ -53,7 +49,7 @@ func (r *DocRepo[T, PT]) Update(ctx context.Context, e PT) error {
 		 WHERE type=$1 AND id=$2`,
 		r.typeName, e.GetID(), e.GetSourcedID(), data, e.GetUpdatedAt())
 	if err != nil {
-		return err
+		return mapUniqueViolation(err)
 	}
 	if tag.RowsAffected() == 0 {
 		return domain.ErrNotFound
@@ -91,7 +87,7 @@ func (r *DocRepo[T, PT]) List(ctx context.Context, params port.ListParams) (port
 	}
 	defer rows.Close()
 
-	items := make([]PT, 0, params.Limit)
+	items := make([]PT, 0, preallocCap(params.Limit))
 	for rows.Next() {
 		var data []byte
 		if err := rows.Scan(&data); err != nil {

@@ -38,12 +38,20 @@ func (r *PersonRepository) Create(_ context.Context, p domain.Person) error {
 	return nil
 }
 
-// Update replaces an existing person.
+// Update replaces an existing person, rejecting a sourcedId already held by a
+// different person (mirrors the Postgres UNIQUE constraint).
 func (r *PersonRepository) Update(_ context.Context, p domain.Person) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, ok := r.byID[p.ID]; !ok {
 		return domain.ErrNotFound
+	}
+	if p.SourcedID != "" {
+		for id, e := range r.byID {
+			if id != p.ID && e.SourcedID == p.SourcedID {
+				return domain.ErrConflict
+			}
+		}
 	}
 	r.byID[p.ID] = p
 	return nil
@@ -72,7 +80,9 @@ func (r *PersonRepository) GetBySourcedID(_ context.Context, sourcedID string) (
 	return domain.Person{}, domain.ErrNotFound
 }
 
-// List returns a page of persons sorted by family then given name.
+// List returns a page of persons sorted by family name, given name, then id.
+// The unique id tie-breaker keeps the order total, so pages are stable across
+// calls even though map iteration is randomised.
 func (r *PersonRepository) List(_ context.Context, params port.ListParams) (port.Page[domain.Person], error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -81,21 +91,30 @@ func (r *PersonRepository) List(_ context.Context, params port.ListParams) (port
 		items = append(items, p)
 	}
 	sort.Slice(items, func(i, j int) bool {
-		if items[i].FamilyName == items[j].FamilyName {
-			return items[i].GivenName < items[j].GivenName
+		a, b := items[i], items[j]
+		if a.FamilyName != b.FamilyName {
+			return a.FamilyName < b.FamilyName
 		}
-		return items[i].FamilyName < items[j].FamilyName
+		if a.GivenName != b.GivenName {
+			return a.GivenName < b.GivenName
+		}
+		return a.ID < b.ID
 	})
-	total := len(items)
-	lo := params.Offset
-	if lo > total {
-		lo = total
+	lo, hi := pageBounds(len(items), params.Offset, params.Limit)
+	return port.Page[domain.Person]{Items: items[lo:hi], Total: len(items)}, nil
+}
+
+// pageBounds returns the [lo:hi) slice bounds for a page of a total-length
+// result. It never adds offset and limit together, so attacker-chosen values
+// near MaxInt cannot overflow into a negative bound. A non-positive limit
+// means "no limit" (the inbound adapters are responsible for capping it).
+func pageBounds(total, offset, limit int) (lo, hi int) {
+	lo = min(max(offset, 0), total)
+	hi = total
+	if limit > 0 && limit < total-lo {
+		hi = lo + limit
 	}
-	hi := total
-	if params.Limit > 0 && lo+params.Limit < hi {
-		hi = lo + params.Limit
-	}
-	return port.Page[domain.Person]{Items: items[lo:hi], Total: total}, nil
+	return lo, hi
 }
 
 // Delete removes a person by id.
