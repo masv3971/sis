@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/SUNET/sis/internal/adapter/outbound/memory"
 	"github.com/SUNET/sis/internal/auth/token"
@@ -10,27 +11,26 @@ import (
 )
 
 // newAuthService builds a minimal auth.Client wired to in-memory repositories
-// and a trivial token issuer. Internal (white-box) test helper: avoids going
-// through New, which reads config and would try to initialise the OIDC RP.
+// and a trivial token issuer, without going through New.
 func newAuthService() (*Client, *memory.AccountRepository) {
 	accounts := memory.NewAccountRepository()
-	clients := memory.NewClientRepository()
 	return &Client{
 		accounts: accounts,
-		clients:  clients,
-		issuer:   token.NewIssuer("secret", "sis", 0),
+		clients:  memory.NewClientRepository(),
+		issuer:   token.NewIssuer("secret", "sis", time.Hour),
 	}, accounts
 }
+
+const testIssuer = "https://idp.example.org"
 
 func TestIssueForOIDC_ProvisionsReadOnlyOnFirstLogin(t *testing.T) {
 	svc, accounts := newAuthService()
 	ctx := context.Background()
 
-	if _, err := svc.IssueForOIDC(ctx, "sub-1", "ada@uni.edu", "Ada"); err != nil {
+	if _, err := svc.IssueForOIDC(ctx, &OIDCClaims{Issuer: testIssuer, Subject: "sub-1", Email: "ada@uni.edu"}); err != nil {
 		t.Fatalf("first OIDC login: %v", err)
 	}
-
-	acc, err := accounts.GetByUsername(ctx, "ada@uni.edu")
+	acc, err := accounts.GetByOIDC(ctx, testIssuer, "sub-1")
 	if err != nil {
 		t.Fatalf("expected provisioned account: %v", err)
 	}
@@ -39,33 +39,65 @@ func TestIssueForOIDC_ProvisionsReadOnlyOnFirstLogin(t *testing.T) {
 	}
 }
 
-func TestIssueForOIDC_ReusesExistingAccount(t *testing.T) {
+func TestIssueForOIDC_SameIdentityReusesAccount(t *testing.T) {
 	svc, accounts := newAuthService()
 	ctx := context.Background()
+	claims := &OIDCClaims{Issuer: testIssuer, Subject: "sub-1"}
 
-	// Pre-create an admin account for this identity.
+	if _, err := svc.IssueForOIDC(ctx, claims); err != nil {
+		t.Fatal(err)
+	}
+	first, _ := accounts.GetByOIDC(ctx, testIssuer, "sub-1")
+	if _, err := svc.IssueForOIDC(ctx, claims); err != nil {
+		t.Fatal(err)
+	}
+	second, _ := accounts.GetByOIDC(ctx, testIssuer, "sub-1")
+	if first.ID != second.ID {
+		t.Fatalf("second login created a new account: %s != %s", first.ID, second.ID)
+	}
+}
+
+// TestIssueForOIDC_EmailDoesNotLinkToLocalAccount is the regression test for
+// the review finding: an OIDC identity claiming an admin's email must not
+// receive the admin's roles.
+func TestIssueForOIDC_EmailDoesNotLinkToLocalAccount(t *testing.T) {
+	svc, _ := newAuthService()
+	ctx := context.Background()
 	if err := svc.EnsureAccount(ctx, "boss@uni.edu", "pw", []domain.AuthRole{domain.AuthRoleAdmin}); err != nil {
 		t.Fatalf("seed admin: %v", err)
 	}
 
-	if _, err := svc.IssueForOIDC(ctx, "sub-2", "boss@uni.edu", "Boss"); err != nil {
-		t.Fatalf("OIDC login for existing account: %v", err)
+	tok, err := svc.IssueForOIDC(ctx, &OIDCClaims{Issuer: testIssuer, Subject: "attacker", Email: "boss@uni.edu"})
+	if err != nil {
+		t.Fatalf("OIDC login: %v", err)
 	}
-
-	acc, _ := accounts.GetByUsername(ctx, "boss@uni.edu")
-	if len(acc.Roles) != 1 || acc.Roles[0] != domain.AuthRoleAdmin {
-		t.Fatalf("existing account must keep its role, got %v", acc.Roles)
+	claims, err := svc.issuer.Parse(tok.AccessToken)
+	if err != nil {
+		t.Fatalf("parse token: %v", err)
+	}
+	if len(claims.Roles) != 1 || claims.Roles[0] != string(domain.AuthRoleReadOnly) {
+		t.Fatalf("OIDC identity inherited roles via email: %v", claims.Roles)
 	}
 }
 
-func TestIssueForOIDC_FallsBackToSubjectWithoutEmail(t *testing.T) {
+func TestIssueForOIDC_SameSubjectDifferentIssuerIsDistinct(t *testing.T) {
 	svc, accounts := newAuthService()
 	ctx := context.Background()
-
-	if _, err := svc.IssueForOIDC(ctx, "sub-only", "", ""); err != nil {
-		t.Fatalf("OIDC login without email: %v", err)
+	for _, iss := range []string{testIssuer, "https://other.example.org"} {
+		if _, err := svc.IssueForOIDC(ctx, &OIDCClaims{Issuer: iss, Subject: "same"}); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if _, err := accounts.GetByUsername(ctx, "sub-only"); err != nil {
-		t.Fatalf("expected account keyed by subject: %v", err)
+	a, _ := accounts.GetByOIDC(ctx, testIssuer, "same")
+	b, _ := accounts.GetByOIDC(ctx, "https://other.example.org", "same")
+	if a.ID == "" || a.ID == b.ID {
+		t.Fatalf("expected two distinct accounts, got %q and %q", a.ID, b.ID)
+	}
+}
+
+func TestIssueForOIDC_RejectsMissingIdentity(t *testing.T) {
+	svc, _ := newAuthService()
+	if _, err := svc.IssueForOIDC(context.Background(), &OIDCClaims{Issuer: testIssuer}); err != ErrInvalidCredentials {
+		t.Fatalf("expected ErrInvalidCredentials, got %v", err)
 	}
 }

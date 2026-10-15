@@ -65,7 +65,7 @@ func (c *Client) Login(gc *gin.Context) {
 		c.writeAuthError(gc, err)
 		return
 	}
-	gc.JSON(http.StatusOK, tokenResponse(tok))
+	writeToken(gc, tok)
 }
 
 // Token implements the OAuth2 client-credentials grant (RFC 6749 §4.4).
@@ -91,7 +91,7 @@ func (c *Client) Token(gc *gin.Context) {
 		gc.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
 		return
 	}
-	gc.JSON(http.StatusOK, tokenResponse(tok))
+	writeToken(gc, tok)
 }
 
 // OIDCLogin starts the OIDC RP flow by redirecting to the provider.
@@ -121,7 +121,7 @@ func (c *Client) OIDCCallback(gc *gin.Context) {
 		gc.JSON(http.StatusUnauthorized, gin.H{"error": "oidc_failed"})
 		return
 	}
-	tok, err := c.auth.IssueForOIDC(gc.Request.Context(), claims.Subject, claims.Email, claims.Name)
+	tok, err := c.auth.IssueForOIDC(gc.Request.Context(), claims)
 	if err != nil {
 		c.writeAuthError(gc, err)
 		return
@@ -129,6 +129,7 @@ func (c *Client) OIDCCallback(gc *gin.Context) {
 
 	// Clear the one-shot cookies and hand the token to the SPA via the URL
 	// fragment (kept out of server logs and the Referer header).
+	noStore(gc)
 	gc.SetCookie("oidc_state", "", -1, "/", "", false, true)
 	gc.SetCookie("oidc_nonce", "", -1, "/", "", false, true)
 	gc.Redirect(http.StatusFound, c.postLoginURL+"#access_token="+tok.AccessToken)
@@ -151,10 +152,20 @@ func (c *Client) writeAuthError(gc *gin.Context, err error) {
 	gc.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
 }
 
-func tokenResponse(t auth.Token) gin.H {
-	return gin.H{
+// writeToken writes a successful token response. RFC 6749 §5.1 requires
+// responses carrying tokens to forbid caching.
+func writeToken(gc *gin.Context, t auth.Token) {
+	noStore(gc)
+	gc.JSON(http.StatusOK, gin.H{
 		"access_token": t.AccessToken,
 		"token_type":   t.TokenType,
 		"expires_in":   int(time.Until(t.ExpiresAt).Seconds()),
-	}
+	})
+}
+
+// noStore stops browsers and intermediaries from caching a response that
+// carries credentials.
+func noStore(gc *gin.Context) {
+	gc.Header("Cache-Control", "no-store")
+	gc.Header("Pragma", "no-cache")
 }

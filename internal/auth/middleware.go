@@ -63,6 +63,13 @@ func ClaimsFrom(c *gin.Context) *token.Claims {
 	return claims
 }
 
+// abort ends the request with a JSON error whose code follows the status, so
+// clients can tell a failed authentication (401 unauthorized) from missing
+// permissions (403 forbidden).
 func abort(c *gin.Context, status int, msg string) {
-	c.AbortWithStatusJSON(status, gin.H{"error": "unauthorized", "message": msg})
+	code := "unauthorized"
+	if status == http.StatusForbidden {
+		code = "forbidden"
+	}
+	c.AbortWithStatusJSON(status, gin.H{"error": code, "message": msg})
 }

@@ -17,14 +17,18 @@ const (
 	ScopeWrite = "sis.write"
 )
 
-// Account is a local human login (username/password). OIDC-federated logins map
-// onto accounts too once the RP flow lands.
+// Account is a human login. Local accounts sign in with Username and
+// PasswordHash. OIDC accounts are bound to the provider identity
+// (OIDCIssuer, OIDCSubject) and are only ever found by that pair, never by
+// email, so a federated user cannot take over a local account.
 type Account struct {
 	ID           string
 	Username     string
 	PasswordHash string
 	Roles        []AuthRole
 	Status       Status
+	OIDCIssuer   string
+	OIDCSubject  string
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }

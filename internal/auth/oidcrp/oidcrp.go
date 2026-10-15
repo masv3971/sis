@@ -13,8 +13,11 @@ import (
 	"github.com/SUNET/sis/pkg/model"
 )
 
-// Claims is the subset of verified ID-token claims the service uses.
+// Claims is the subset of verified ID-token claims the service uses. Issuer
+// and Subject together are the stable identity of the user; Email and Name
+// are informational and must not be used to match local accounts.
 type Claims struct {
+	Issuer  string
 	Subject string
 	Email   string
 	Name    string
@@ -84,5 +87,5 @@ func (r *Client) Exchange(ctx context.Context, code, nonce string) (*Claims, err
 	if err := idToken.Claims(&c); err != nil {
 		return nil, err
 	}
-	return &Claims{Subject: idToken.Subject, Email: c.Email, Name: c.Name}, nil
+	return &Claims{Issuer: idToken.Issuer, Subject: idToken.Subject, Email: c.Email, Name: c.Name}, nil
 }

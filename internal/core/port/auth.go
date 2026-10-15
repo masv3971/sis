@@ -6,9 +6,13 @@ import (
 	"github.com/SUNET/sis/internal/core/domain"
 )
 
-// AccountRepository is the persistence port for local login accounts.
+// AccountRepository is the persistence port for login accounts.
 type AccountRepository interface {
 	GetByUsername(ctx context.Context, username string) (domain.Account, error)
+	// GetByOIDC returns the account bound to an OIDC issuer+subject pair.
+	GetByOIDC(ctx context.Context, issuer, subject string) (domain.Account, error)
+	// Upsert inserts or updates by username. The OIDC binding is written on
+	// insert only, so re-seeding an account never changes who can use it.
 	Upsert(ctx context.Context, a domain.Account) error
 }
 

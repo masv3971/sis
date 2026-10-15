@@ -11,18 +11,29 @@ import (
 	"github.com/SUNET/sis/pkg/logger"
 )
 
-// apiPrefixes lists path prefixes that MUST never be swallowed by the SPA
-// catch-all. A request under any of these that reaches NoRoute is a genuine
-// 404 (unknown API endpoint) and must stay a 404 JSON response — otherwise a
-// typo in an API path would return the SPA, which browsers would render and
-// which API clients would see as a 200 with HTML in the body.
-var apiPrefixes = []string{
-	"/api/",
-	"/auth/",
-	"/oauth/",
-	"/oeapi/",
-	"/eduapi/",
+// apiRoots lists the API path roots that must never be swallowed by the SPA
+// catch-all. A request for a root itself or anything below it that reaches
+// NoRoute is a genuine 404 (unknown API endpoint) and must stay a 404 JSON
+// response — otherwise a typo in an API path would return the SPA, which API
+// clients would see as a 200 with HTML in the body.
+var apiRoots = []string{
+	"/api",
+	"/auth",
+	"/oauth",
+	"/oeapi",
+	"/eduapi",
 	"/healthz",
+}
+
+// isAPIPath reports whether path is an API root or lies below one. "/apix"
+// is not an API path; "/api" and "/api/v1/x" are.
+func isAPIPath(path string) bool {
+	for _, root := range apiRoots {
+		if path == root || strings.HasPrefix(path, root+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 // mountSPA wires the built React bundle at root onto engine: /assets/* serves
@@ -62,12 +73,9 @@ func mountSPA(engine *gin.Engine, root string, log *logger.Log) error {
 		}
 		// API paths that fall through to NoRoute are honest-to-goodness 404s;
 		// returning HTML there would mask routing bugs.
-		path := gc.Request.URL.Path
-		for _, p := range apiPrefixes {
-			if strings.HasPrefix(path, p) {
-				gc.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
-				return
-			}
+		if isAPIPath(gc.Request.URL.Path) {
+			gc.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
+			return
 		}
 		gc.File(indexPath)
 	})

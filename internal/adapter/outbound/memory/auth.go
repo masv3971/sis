@@ -31,13 +31,31 @@ func (r *AccountRepository) GetByUsername(_ context.Context, username string) (d
 	return a, nil
 }
 
-// Upsert inserts or updates by username, preserving id and created_at on update.
+// GetByOIDC returns the account bound to an OIDC issuer+subject pair.
+func (r *AccountRepository) GetByOIDC(_ context.Context, issuer, subject string) (domain.Account, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if subject == "" {
+		return domain.Account{}, domain.ErrNotFound
+	}
+	for _, a := range r.byUsername {
+		if a.OIDCIssuer == issuer && a.OIDCSubject == subject {
+			return a, nil
+		}
+	}
+	return domain.Account{}, domain.ErrNotFound
+}
+
+// Upsert inserts or updates by username, preserving id, created_at and the
+// OIDC binding on update.
 func (r *AccountRepository) Upsert(_ context.Context, a domain.Account) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if existing, ok := r.byUsername[a.Username]; ok {
 		a.ID = existing.ID
 		a.CreatedAt = existing.CreatedAt
+		a.OIDCIssuer = existing.OIDCIssuer
+		a.OIDCSubject = existing.OIDCSubject
 	} else if a.ID == "" {
 		a.ID = uuid.NewString()
 	}
