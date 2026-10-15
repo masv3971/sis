@@ -12,6 +12,10 @@ import (
 // ListParams carries pagination/sort/filter options common to list queries.
 // Each inbound adapter maps its own conventions (OEAPI pageNumber/pageSize,
 // OneRoster limit/offset) onto this shared shape.
+//
+// Repositories treat Limit <= 0 as "unbounded", so inbound adapters must
+// reject non-positive limits and clamp larger ones to the configured
+// cfg.SIS.APIServer.MaxLimit before calling a repository.
 type ListParams struct {
 	Limit  int
 	Offset int

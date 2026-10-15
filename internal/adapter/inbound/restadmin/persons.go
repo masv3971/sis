@@ -7,7 +7,6 @@ package restadmin
 import (
 	"context"
 	"net/http"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
 
@@ -29,18 +28,23 @@ const defaultLimit = 50
 // The receiver is named c to match the vc convention; the gin.Context
 // parameter is therefore named gc to avoid shadowing.
 type Client struct {
-	catalog *readmodel.Client
-	log     *logger.Log
+	catalog  *readmodel.Client
+	maxLimit int
+	log      *logger.Log
 }
 
 // New builds the restadmin Client.
-func New(_ context.Context, _ *model.Cfg, catalog *readmodel.Client, log *logger.Log) (*Client, error) {
-	return &Client{catalog: catalog, log: log.New("restadmin")}, nil
+func New(_ context.Context, cfg *model.Cfg, catalog *readmodel.Client, log *logger.Log) (*Client, error) {
+	return &Client{catalog: catalog, maxLimit: cfg.SIS.APIServer.MaxLimit, log: log.New("restadmin")}, nil
 }
 
 // ListPersons lists persons with limit/offset paging.
 func (c *Client) ListPersons(gc *gin.Context) {
-	params := listParams(gc)
+	params, err := c.listParams(gc)
+	if err != nil {
+		helpers.WriteError(gc, err)
+		return
+	}
 	page, err := c.catalog.Persons.ListPersons(gc.Request.Context(), params)
 	if err != nil {
 		helpers.WriteError(gc, err)
@@ -104,18 +108,9 @@ func (c *Client) DeletePerson(gc *gin.Context) {
 	gc.Status(http.StatusNoContent)
 }
 
-// listParams parses limit/offset/sort/filter query parameters.
-func listParams(gc *gin.Context) port.ListParams {
-	params := port.ListParams{Limit: defaultLimit, Sort: gc.Query("sort"), Filter: gc.Query("filter")}
-	if v := gc.Query("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			params.Limit = n
-		}
-	}
-	if v := gc.Query("offset"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			params.Offset = n
-		}
-	}
-	return params
+// listParams parses limit/offset/sort/filter query parameters. limit must be
+// positive and is clamped to the configured max_limit, so a caller can never
+// request an unbounded page.
+func (c *Client) listParams(gc *gin.Context) (port.ListParams, error) {
+	return helpers.ParseLimitOffset(gc, defaultLimit, c.maxLimit)
 }

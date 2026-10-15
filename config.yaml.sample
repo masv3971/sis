@@ -12,6 +12,9 @@ sis:
     read_timeout: 15s
     write_timeout: 15s
     shutdown_timeout: 10s
+    # Largest page size any list endpoint returns (limit / pageSize); larger
+    # requests are clamped. Default 500.
+    max_limit: 500
 
   db:
     # Empty selects the in-memory store. Example Postgres DSN:

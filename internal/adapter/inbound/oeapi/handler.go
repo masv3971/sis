@@ -7,7 +7,6 @@ package oeapi
 import (
 	"context"
 	"net/http"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
 
@@ -31,19 +30,24 @@ const defaultPageSize = 10
 // The receiver is named c to match the vc convention; the gin.Context
 // parameter is therefore named gc to avoid shadowing.
 type Client struct {
-	catalog *readmodel.Client
-	log     *logger.Log
+	catalog  *readmodel.Client
+	maxLimit int
+	log      *logger.Log
 }
 
 // New builds the oeapi Client.
-func New(_ context.Context, _ *model.Cfg, catalog *readmodel.Client, log *logger.Log) (*Client, error) {
-	return &Client{catalog: catalog, log: log.New("oeapi")}, nil
+func New(_ context.Context, cfg *model.Cfg, catalog *readmodel.Client, log *logger.Log) (*Client, error) {
+	return &Client{catalog: catalog, maxLimit: cfg.SIS.APIServer.MaxLimit, log: log.New("oeapi")}, nil
 }
 
 // ListPersons publishes persons in the OEAPI page envelope.
 func (c *Client) ListPersons(gc *gin.Context) {
-	pageNumber, pageSize := page(gc)
-	p, err := c.catalog.Persons.ListPersons(gc.Request.Context(), pageParams(pageNumber, pageSize))
+	pageNumber, pageSize, params, err := c.page(gc)
+	if err != nil {
+		helpers.WriteError(gc, err)
+		return
+	}
+	p, err := c.catalog.Persons.ListPersons(gc.Request.Context(), params)
 	if err != nil {
 		helpers.WriteError(gc, err)
 		return
@@ -71,10 +75,14 @@ func (c *Client) GetPerson(gc *gin.Context) {
 // httpserver can mount directly.
 
 // List builds an OEAPI paged list handler for an entity type.
-func List[T any, PT domain.EntityPtr[T], D any](_ *Client, svc *service.Resource[T, PT], mapFn func(PT) D) gin.HandlerFunc {
+func List[T any, PT domain.EntityPtr[T], D any](c *Client, svc *service.Resource[T, PT], mapFn func(PT) D) gin.HandlerFunc {
 	return func(gc *gin.Context) {
-		pageNumber, pageSize := page(gc)
-		res, err := svc.List(gc.Request.Context(), pageParams(pageNumber, pageSize))
+		pageNumber, pageSize, params, err := c.page(gc)
+		if err != nil {
+			helpers.WriteError(gc, err)
+			return
+		}
+		res, err := svc.List(gc.Request.Context(), params)
 		if err != nil {
 			helpers.WriteError(gc, err)
 			return
@@ -99,22 +107,10 @@ func Get[T any, PT domain.EntityPtr[T], D any](_ *Client, svc *service.Resource[
 	}
 }
 
-// page parses OEAPI pageNumber/pageSize (1-based) query parameters.
-func page(gc *gin.Context) (pageNumber, pageSize int) {
-	pageNumber, pageSize = 1, defaultPageSize
-	if v := gc.Query("pageNumber"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 1 {
-			pageNumber = n
-		}
-	}
-	if v := gc.Query("pageSize"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 1 {
-			pageSize = n
-		}
-	}
-	return pageNumber, pageSize
-}
-
-func pageParams(pageNumber, pageSize int) port.ListParams {
-	return port.ListParams{Limit: pageSize, Offset: (pageNumber - 1) * pageSize}
+// page parses OEAPI pageNumber/pageSize (1-based) query parameters. pageSize
+// is clamped to the configured max_limit and a pageNumber whose offset would
+// overflow is rejected, so neither input can produce an unbounded or negative
+// query.
+func (c *Client) page(gc *gin.Context) (pageNumber, pageSize int, params port.ListParams, err error) {
+	return helpers.ParsePageNumberSize(gc, defaultPageSize, c.maxLimit)
 }

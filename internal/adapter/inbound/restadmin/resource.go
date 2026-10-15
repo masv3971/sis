@@ -13,13 +13,18 @@ import (
 // The generic resource handlers below could not be methods on *Client: Go
 // does not allow type parameters on methods, so they are free functions that
 // take *Client as the first argument. Each returns a gin.HandlerFunc the
-// httpserver can mount directly. The _ parameter keeps the signature uniform
-// in case we later want to log 5xx paths off *Client.
+// httpserver can mount directly. Handlers that do not need the Client discard
+// it with _ but keep the signature uniform.
 
-// ResourceList lists entities of type T with limit/offset paging.
-func ResourceList[T any, PT domain.EntityPtr[T]](_ *Client, svc *service.Resource[T, PT]) gin.HandlerFunc {
+// ResourceList lists entities of type T with limit/offset paging, bounded by
+// the Client's configured max_limit.
+func ResourceList[T any, PT domain.EntityPtr[T]](c *Client, svc *service.Resource[T, PT]) gin.HandlerFunc {
 	return func(gc *gin.Context) {
-		params := listParams(gc)
+		params, err := c.listParams(gc)
+		if err != nil {
+			helpers.WriteError(gc, err)
+			return
+		}
 		page, err := svc.List(gc.Request.Context(), params)
 		if err != nil {
 			helpers.WriteError(gc, err)

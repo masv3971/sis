@@ -34,6 +34,9 @@ func TestNewLoadsFileAndDefaults(t *testing.T) {
 	if cfg.SIS.APIServer.Addr != ":8080" {
 		t.Fatalf("expected default addr :8080, got %q", cfg.SIS.APIServer.Addr)
 	}
+	if cfg.SIS.APIServer.MaxLimit != 500 {
+		t.Fatalf("expected default max_limit 500, got %d", cfg.SIS.APIServer.MaxLimit)
+	}
 	if cfg.SIS.Auth.TokenTTL != time.Hour {
 		t.Fatalf("expected default token_ttl 1h, got %s", cfg.SIS.Auth.TokenTTL)
 	}

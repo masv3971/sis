@@ -46,6 +46,9 @@ type APIServer struct {
 	ReadTimeout     time.Duration `yaml:"read_timeout" default:"15s" validate:"gt=0"`
 	WriteTimeout    time.Duration `yaml:"write_timeout" default:"15s" validate:"gt=0"`
 	ShutdownTimeout time.Duration `yaml:"shutdown_timeout" default:"10s" validate:"gt=0"`
+	// MaxLimit is the largest page size any list endpoint returns (limit on
+	// /api/v1 and Edu-API, pageSize on OEAPI). Larger requests are clamped.
+	MaxLimit int `yaml:"max_limit" default:"500" validate:"gt=0"`
 }
 
 // DB configures persistence. An empty ConnectionString selects the in-memory store.

@@ -30,18 +30,24 @@ const defaultLimit = 100
 // The receiver is named c to match the vc convention; the gin.Context
 // parameter is therefore named gc to avoid shadowing.
 type Client struct {
-	catalog *readmodel.Client
-	log     *logger.Log
+	catalog  *readmodel.Client
+	maxLimit int
+	log      *logger.Log
 }
 
 // New builds the eduapi Client.
-func New(_ context.Context, _ *model.Cfg, catalog *readmodel.Client, log *logger.Log) (*Client, error) {
-	return &Client{catalog: catalog, log: log.New("eduapi")}, nil
+func New(_ context.Context, cfg *model.Cfg, catalog *readmodel.Client, log *logger.Log) (*Client, error) {
+	return &Client{catalog: catalog, maxLimit: cfg.SIS.APIServer.MaxLimit, log: log.New("eduapi")}, nil
 }
 
 // ListPersons publishes persons in Edu-API shape with an X-Total-Count header.
 func (c *Client) ListPersons(gc *gin.Context) {
-	page, err := c.catalog.Persons.ListPersons(gc.Request.Context(), limitOffset(gc))
+	params, err := c.limitOffset(gc)
+	if err != nil {
+		helpers.WriteError(gc, err)
+		return
+	}
+	page, err := c.catalog.Persons.ListPersons(gc.Request.Context(), params)
 	if err != nil {
 		helpers.WriteError(gc, err)
 		return
@@ -70,9 +76,14 @@ func (c *Client) GetPerson(gc *gin.Context) {
 // httpserver can mount directly.
 
 // List builds a list handler for an entity type, mapping each item under key.
-func List[T any, PT domain.EntityPtr[T], D any](_ *Client, svc *service.Resource[T, PT], key string, mapFn func(PT) D) gin.HandlerFunc {
+func List[T any, PT domain.EntityPtr[T], D any](c *Client, svc *service.Resource[T, PT], key string, mapFn func(PT) D) gin.HandlerFunc {
 	return func(gc *gin.Context) {
-		page, err := svc.List(gc.Request.Context(), limitOffset(gc))
+		params, err := c.limitOffset(gc)
+		if err != nil {
+			helpers.WriteError(gc, err)
+			return
+		}
+		page, err := svc.List(gc.Request.Context(), params)
 		if err != nil {
 			helpers.WriteError(gc, err)
 			return
@@ -98,18 +109,9 @@ func Get[T any, PT domain.EntityPtr[T], D any](_ *Client, svc *service.Resource[
 	}
 }
 
-// limitOffset parses OneRoster-style limit/offset query parameters.
-func limitOffset(gc *gin.Context) port.ListParams {
-	params := port.ListParams{Limit: defaultLimit, Sort: gc.Query("sort"), Filter: gc.Query("filter")}
-	if v := gc.Query("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			params.Limit = n
-		}
-	}
-	if v := gc.Query("offset"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			params.Offset = n
-		}
-	}
-	return params
+// limitOffset parses OneRoster-style limit/offset query parameters. limit must
+// be positive and is clamped to the configured max_limit, so a caller can
+// never request an unbounded page.
+func (c *Client) limitOffset(gc *gin.Context) (port.ListParams, error) {
+	return helpers.ParseLimitOffset(gc, defaultLimit, c.maxLimit)
 }
