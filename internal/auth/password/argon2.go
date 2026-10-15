@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 
 	"golang.org/x/crypto/argon2"
@@ -57,6 +58,13 @@ func Verify(plain, encoded string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	got := argon2.IDKey([]byte(plain), salt, t, m, p, uint32(len(want)))
+	// Bound-check the key length before casting to uint32: a hostile PHC
+	// string could otherwise encode a key larger than argon2 accepts, and
+	// rejecting zero-length keys also fails fast on malformed hashes.
+	wantLen := uint64(len(want))
+	if wantLen == 0 || wantLen > math.MaxUint32 {
+		return false, errors.New("invalid key length")
+	}
+	got := argon2.IDKey([]byte(plain), salt, t, m, p, uint32(wantLen))
 	return subtle.ConstantTimeCompare(got, want) == 1, nil
 }
