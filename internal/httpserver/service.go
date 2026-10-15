@@ -7,6 +7,8 @@ package httpserver
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -37,8 +39,12 @@ type Guards struct {
 // Service owns the gin engine and the HTTP server.
 type Service struct {
 	server *http.Server
+	addr   net.Addr
 	log    *logger.Log
 }
+
+// Addr returns the address the listener is bound to (useful with ":0").
+func (s *Service) Addr() net.Addr { return s.addr }
 
 // New builds the gin engine, declares every route, and starts serving in the
 // background. It returns once the listener is accepting connections. Each
@@ -136,8 +142,9 @@ func New(ctx context.Context, cfg *model.Cfg, authSvc *auth.Client, catalog *rea
 
 	// Built React SPA, when configured. Empty root means API-only (the dev
 	// workflow runs `vite dev` on :5173 and proxies to this service).
-	if cfg.SIS.Web.Root != "" {
-		if err := mountSPA(engine, cfg.SIS.Web.Root, log.New("spa")); err != nil {
+	hc := cfg.SIS.HTTPServer
+	if hc.Web.Root != "" {
+		if err := mountSPA(engine, hc.Web.Root, log.New("spa")); err != nil {
 			return nil, err
 		}
 	}
@@ -145,16 +152,24 @@ func New(ctx context.Context, cfg *model.Cfg, authSvc *auth.Client, catalog *rea
 	s := &Service{
 		log: log,
 		server: &http.Server{
-			Addr:         cfg.SIS.APIServer.Addr,
+			Addr:         hc.Addr,
 			Handler:      engine,
-			ReadTimeout:  cfg.SIS.APIServer.ReadTimeout,
-			WriteTimeout: cfg.SIS.APIServer.WriteTimeout,
+			ReadTimeout:  hc.ReadTimeout,
+			WriteTimeout: hc.WriteTimeout,
 		},
 	}
 
+	// Bind synchronously so an invalid or busy address fails New (and thus
+	// startup) instead of only being logged from the serve goroutine.
+	ln, err := (&net.ListenConfig{}).Listen(ctx, "tcp", hc.Addr)
+	if err != nil {
+		return nil, fmt.Errorf("listen %s: %w", hc.Addr, err)
+	}
+	s.addr = ln.Addr()
+	s.log.Info("sis listening", "addr", s.addr.String())
+
 	go func() {
-		s.log.Info("sis listening", "addr", cfg.SIS.APIServer.Addr)
-		if err := s.server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := s.server.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			s.log.Error("http server error", "err", err)
 		}
 	}()

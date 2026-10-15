@@ -28,14 +28,17 @@ func main() {
 	services := make(map[string]service)
 	serviceName := "sis"
 
-	log := logger.New(serviceName, true)
-	mainLog := log.New("main")
-
+	// Configuration comes first so the real logger can honour
+	// common.log.{json,level}. A fixed JSON/info bootstrap logger reports a
+	// configuration failure, since there is no config to build from yet.
 	cfg, err := configuration.New(ctx, serviceName)
 	if err != nil {
-		mainLog.Error("configuration failed", "err", err)
-		panic(err)
+		logger.New(serviceName, true, "info").New("main").Error("configuration failed", "err", err)
+		os.Exit(1)
 	}
+
+	log := logger.New(serviceName, cfg.Common.Log.JSON, cfg.Common.Log.Level)
+	mainLog := log.New("main")
 
 	// Adapter composition root: outbound persistence (postgres or memory),
 	// event publisher, support Clients (readmodel, auth, oidcrp) and the
@@ -44,7 +47,7 @@ func main() {
 	adapterSvc, err := adapter.New(ctx, cfg, log)
 	if err != nil {
 		mainLog.Error("adapter init failed", "err", err)
-		panic(err)
+		os.Exit(1)
 	}
 	services["adapter"] = adapterSvc
 
@@ -54,7 +57,7 @@ func main() {
 	<-termChan
 	mainLog.Info("shutdown signal received")
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.SIS.APIServer.ShutdownTimeout)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.SIS.HTTPServer.ShutdownTimeout)
 	defer cancel()
 	for name, svc := range services {
 		if err := svc.Close(shutdownCtx); err != nil {

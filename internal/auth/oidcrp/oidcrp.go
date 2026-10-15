@@ -27,12 +27,12 @@ type Client struct {
 }
 
 // New builds the OIDC Relying Party from configuration, following the SUNET/vc
-// shape New(ctx, cfg, deps..., log). When cfg.SIS.Auth.OIDC.IssuerURL is empty
+// shape New(ctx, cfg, deps..., log). When cfg.SIS.Auth.OIDCRP.IssuerURL is empty
 // delegated login is disabled: (nil, nil) is returned so main can wire the
 // resulting (possibly nil) Client into the HTTP server unconditionally. When
 // set, provider discovery runs and a failure is reported.
 func New(ctx context.Context, cfg *model.Cfg, log *logger.Log) (*Client, error) {
-	oc := cfg.SIS.Auth.OIDC
+	oc := cfg.SIS.Auth.OIDCRP
 	if oc.IssuerURL == "" {
 		return nil, nil
 	}

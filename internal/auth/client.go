@@ -50,20 +50,23 @@ type Client struct {
 
 // New builds the auth Client from configuration, following the SUNET/vc shape
 // New(ctx, cfg, deps..., log). It derives the JWT signing secret from
-// cfg.SIS.Auth (generating a random ephemeral one with a warning when unset,
-// dev-only — tokens do not survive a restart), builds the token issuer, wires
+// cfg.SIS.Auth (generating a random ephemeral one with a warning when unset
+// outside production; refusing to start in production), builds the token issuer, wires
 // the OIDC Relying Party when configured, and seeds any bootstrap
 // admin/machine credentials from config so main does not have to.
 func New(ctx context.Context, cfg *model.Cfg, accounts port.AccountRepository, clients port.ClientRepository, log *logger.Log) (*Client, error) {
 	log = log.New("auth")
+	secret, err := jwtSecret(cfg, log)
+	if err != nil {
+		return nil, err
+	}
 	client := &Client{
 		accounts: accounts,
 		clients:  clients,
-		issuer:   token.NewIssuer(jwtSecret(cfg, log), "sis", cfg.SIS.Auth.TokenTTL),
+		issuer:   token.NewIssuer(secret, "sis", cfg.SIS.Auth.TokenTTL),
 		log:      log,
 	}
 
-	var err error
 	client.oidcRP, err = oidcrp.New(ctx, cfg, log)
 	if err != nil {
 		return nil, err
@@ -95,16 +98,28 @@ func (s *Client) Issuer() *token.Issuer {
 	return s.issuer
 }
 
-// jwtSecret returns the configured signing secret, or a random ephemeral one
-// (dev only — tokens do not survive a restart) with a warning.
-func jwtSecret(cfg *model.Cfg, log *logger.Log) string {
+// errEphemeralSecretInProduction is returned when production config omits
+// jwt_secret. Configuration validation already rejects this; auth.New checks
+// again so the guarantee holds for any caller.
+var errEphemeralSecretInProduction = errors.New("auth: sis.auth.jwt_secret is required when common.production is true")
+
+// jwtSecret returns the configured signing secret. Outside production an unset
+// secret is replaced by a random ephemeral one (dev only — tokens do not
+// survive a restart and differ per replica) with a warning; in production it
+// is an error.
+func jwtSecret(cfg *model.Cfg, log *logger.Log) (string, error) {
 	if cfg.SIS.Auth.JWTSecret != "" {
-		return cfg.SIS.Auth.JWTSecret
+		return cfg.SIS.Auth.JWTSecret, nil
+	}
+	if cfg.Common.Production {
+		return "", errEphemeralSecretInProduction
 	}
 	b := make([]byte, 32)
-	_, _ = rand.Read(b)
-	log.Warn("auth.jwt_secret unset; using an ephemeral secret (tokens will not survive restart)")
-	return hex.EncodeToString(b)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	log.Warn("sis.auth.jwt_secret unset; using an ephemeral secret (tokens will not survive restart)")
+	return hex.EncodeToString(b), nil
 }
 
 // seedBootstrap upserts the optional admin account and machine client from

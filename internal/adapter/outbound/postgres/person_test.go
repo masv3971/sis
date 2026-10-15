@@ -25,7 +25,7 @@ func newStore(t *testing.T) *postgres.Service {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	t.Cleanup(cancel)
-	store, err := postgres.New(ctx, url, logger.NewWithWriter("test", false, os.Stderr))
+	store, err := postgres.New(ctx, url, logger.NewWithWriter("test", false, "debug", os.Stderr))
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}
@@ -141,7 +141,7 @@ func TestConcurrentStartupMigrates(t *testing.T) {
 		wg.Go(func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 			defer cancel()
-			svc, err := postgres.New(ctx, url, logger.NewWithWriter("test", false, io.Discard))
+			svc, err := postgres.New(ctx, url, logger.NewWithWriter("test", false, "info", io.Discard))
 			if err != nil {
 				errs <- err
 				return

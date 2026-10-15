@@ -21,8 +21,6 @@ import (
 	"github.com/SUNET/sis/pkg/model"
 )
 
-const defaultLimit = 100
-
 // Client bundles the Edu-API handlers with the read-model Client and a
 // logger. It is a "Client" rather than a "Service" because it owns no
 // runtime resources and has nothing to shut down.
@@ -30,14 +28,14 @@ const defaultLimit = 100
 // The receiver is named c to match the vc convention; the gin.Context
 // parameter is therefore named gc to avoid shadowing.
 type Client struct {
-	catalog  *readmodel.Client
-	maxLimit int
-	log      *logger.Log
+	cfg     *model.Cfg
+	catalog *readmodel.Client
+	log     *logger.Log
 }
 
 // New builds the eduapi Client.
 func New(_ context.Context, cfg *model.Cfg, catalog *readmodel.Client, log *logger.Log) (*Client, error) {
-	return &Client{catalog: catalog, maxLimit: cfg.SIS.APIServer.MaxLimit, log: log.New("eduapi")}, nil
+	return &Client{cfg: cfg, catalog: catalog, log: log.New("eduapi")}, nil
 }
 
 // ListPersons publishes persons in Edu-API shape with an X-Total-Count header.
@@ -109,9 +107,11 @@ func Get[T any, PT domain.EntityPtr[T], D any](_ *Client, svc *service.Resource[
 	}
 }
 
-// limitOffset parses OneRoster-style limit/offset query parameters. limit must
-// be positive and is clamped to the configured max_limit, so a caller can
-// never request an unbounded page.
+// limitOffset parses OneRoster-style limit/offset query parameters. An
+// omitted limit takes sis.adapter.inbound.eduapi.default_limit; a given one
+// must be positive and is clamped to .max_limit, so a caller can never
+// request an unbounded page.
 func (c *Client) limitOffset(gc *gin.Context) (port.ListParams, error) {
-	return helpers.ParseLimitOffset(gc, defaultLimit, c.maxLimit)
+	ec := c.cfg.SIS.Adapter.Inbound.EduAPI
+	return helpers.ParseLimitOffset(gc, ec.DefaultLimit, ec.MaxLimit)
 }

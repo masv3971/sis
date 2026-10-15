@@ -1,47 +1,95 @@
-# Sample SIS configuration. Point SIS_CONFIG_YAML at a copy of this file.
-# SIS_CONFIG_YAML is the only environment variable the service reads.
+# SIS configuration
+# =================
+#
+# Point the SIS_CONFIG_YAML environment variable at a copy of this file. It is
+# the only environment variable SIS reads.
+#
+# The sections follow the source tree, so a key's path tells you which code
+# folder uses it:
+#
+#   sis.httpserver                  -> internal/httpserver
+#   sis.auth.oidcrp                 -> internal/auth/oidcrp
+#   sis.adapter.inbound.oeapi       -> internal/adapter/inbound/oeapi
+#   sis.adapter.outbound.postgres   -> internal/adapter/outbound/postgres
+#
+# Every key is documented in pkg/model/config.go. Rules:
+#   - Keys you leave out take the default shown here.
+#   - Unknown or misspelled keys stop SIS at startup.
+#   - Durations use Go syntax: 500ms, 15s, 10m, 1h.
+
 common:
+  # true enforces production rules: sis.auth.jwt_secret must be set and
+  # sis.auth.oidcrp.issuer_url must be https. Set true on every shared
+  # deployment.
   production: false
   log:
-    level: info
-    json: true
+    level: info   # debug | info | warn | error
+    json: true    # true: one JSON object per line; false: readable text
 
 sis:
-  api_server:
-    addr: ":8080"
-    read_timeout: 15s
-    write_timeout: 15s
-    shutdown_timeout: 10s
-    # Largest page size any list endpoint returns (limit / pageSize); larger
-    # requests are clamped. Default 500.
-    max_limit: 500
+  # -- internal/httpserver -----------------------------------------------------
+  # One listener serves every API and the admin web UI.
+  httpserver:
+    addr: ":8080"           # host:port; startup fails if it is taken
+    read_timeout: 15s       # max time to receive a request
+    write_timeout: 15s      # max time to send a response
+    shutdown_timeout: 10s   # grace period for in-flight requests on SIGTERM
+    web:
+      # Directory with the built admin UI (index.html + assets/). The Docker
+      # image ships it at /web. Empty serves the APIs only.
+      root: ""
 
-  db:
-    # Empty selects the in-memory store. Example Postgres DSN:
-    connection_string: "postgres://sis:sis@localhost:5432/sis?sslmode=disable"
-
+  # -- internal/auth -----------------------------------------------------------
   auth:
-    jwt_secret: "change-me"
-    token_ttl: 1h
+    # Signs access tokens. Generate with `openssl rand -hex 32` and use the
+    # same value on every replica. Required when common.production is true.
+    jwt_secret: "change-me-to-a-long-random-value"
+    token_ttl: 1h           # lifetime of an issued access token
+
+    # Created or updated at every start. Leave admin_username / client_id
+    # empty to skip. Rotate or remove once real accounts exist.
     bootstrap:
       admin_username: "admin"
       admin_password: "change-me"
       client_id: "svc1"
       client_secret: "change-me"
-      client_scopes: ["sis.read", "sis.write"]
-    # OIDC Relying Party (delegated login) — scaffold, not yet wired.
-    oidc:
-      issuer_url: ""
+      client_scopes: ["sis.read", "sis.write"]   # empty grants both
+
+    # -- internal/auth/oidcrp --------------------------------------------------
+    # Single sign-on via an OpenID Connect provider. Empty issuer_url
+    # disables SSO and hides the "Sign in with SSO" button.
+    oidcrp:
+      issuer_url: ""        # e.g. https://idp.example.org/realms/sis
       client_id: ""
       client_secret: ""
-      redirect_url: ""
+      redirect_url: ""      # e.g. https://sis.example.org/auth/oidc/callback
 
-  bus:
-    enabled: false
-    url: "nats://localhost:4222"
-    subject: "sis.events"
+  # -- internal/adapter --------------------------------------------------------
+  adapter:
+    # APIs clients call. Each list endpoint has a default page size and a
+    # maximum; larger requests are lowered to the maximum, which must be at
+    # least the default.
+    inbound:
+      authapi:              # /auth, /oauth/token
+        post_login_redirect_url: "/"   # where the browser lands after SSO
+      restadmin:            # /api/v1 (read/write)   ?limit=&offset=
+        default_limit: 50
+        max_limit: 500
+      oeapi:                # /oeapi (Open Education API v6, read-only)   ?pageNumber=&pageSize=
+        default_page_size: 10
+        max_page_size: 500
+      eduapi:               # /eduapi (Edu-API v1, read-only)   ?limit=&offset=
+        default_limit: 100
+        max_limit: 500
 
-  # Built React SPA. Set to the directory containing index.html + assets/.
-  # Baked into the Docker image at /web; leave empty for API-only operation.
-  web:
-    root: ""
+    # Systems SIS calls out to.
+    outbound:
+      postgres:
+        # Empty keeps all data in memory and loses it on restart: try-out
+        # only. Migrations run automatically at startup.
+        connection_string: "postgres://sis:sis@localhost:5432/sis?sslmode=disable"
+      events:
+        # Events are logged today; NATS publishing is not implemented yet.
+        enabled: false
+        url: "nats://localhost:4222"
+        subject: "sis.events"

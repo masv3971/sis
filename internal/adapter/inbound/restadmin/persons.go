@@ -18,8 +18,6 @@ import (
 	"github.com/SUNET/sis/pkg/model"
 )
 
-const defaultLimit = 50
-
 // Client bundles the /api/v1 handlers with the read-model Client (through
 // which it reaches both the person service and the generic entity resources)
 // and a logger. It is a "Client" rather than a "Service" because it owns no
@@ -28,14 +26,14 @@ const defaultLimit = 50
 // The receiver is named c to match the vc convention; the gin.Context
 // parameter is therefore named gc to avoid shadowing.
 type Client struct {
-	catalog  *readmodel.Client
-	maxLimit int
-	log      *logger.Log
+	cfg     *model.Cfg
+	catalog *readmodel.Client
+	log     *logger.Log
 }
 
 // New builds the restadmin Client.
 func New(_ context.Context, cfg *model.Cfg, catalog *readmodel.Client, log *logger.Log) (*Client, error) {
-	return &Client{catalog: catalog, maxLimit: cfg.SIS.APIServer.MaxLimit, log: log.New("restadmin")}, nil
+	return &Client{cfg: cfg, catalog: catalog, log: log.New("restadmin")}, nil
 }
 
 // ListPersons lists persons with limit/offset paging.
@@ -108,9 +106,11 @@ func (c *Client) DeletePerson(gc *gin.Context) {
 	gc.Status(http.StatusNoContent)
 }
 
-// listParams parses limit/offset/sort/filter query parameters. limit must be
-// positive and is clamped to the configured max_limit, so a caller can never
-// request an unbounded page.
+// listParams parses limit/offset/sort/filter query parameters. An omitted
+// limit takes sis.adapter.inbound.restadmin.default_limit; a given one must
+// be positive and is clamped to .max_limit, so a caller can never request an
+// unbounded page.
 func (c *Client) listParams(gc *gin.Context) (port.ListParams, error) {
-	return helpers.ParseLimitOffset(gc, defaultLimit, c.maxLimit)
+	rc := c.cfg.SIS.Adapter.Inbound.RestAdmin
+	return helpers.ParseLimitOffset(gc, rc.DefaultLimit, rc.MaxLimit)
 }

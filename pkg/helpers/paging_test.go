@@ -80,6 +80,21 @@ func TestParsePageNumberSize(t *testing.T) {
 	}
 }
 
+// TestNonPositiveMaxFailsClosed guards against a hand-built config with
+// max_limit 0 turning into an unbounded repository query.
+func TestNonPositiveMaxFailsClosed(t *testing.T) {
+	if _, err := ParseLimitOffset(ctxWithQuery(""), 50, 0); err == nil {
+		t.Fatal("limit/offset: expected error for max 0")
+	}
+	if _, _, _, err := ParsePageNumberSize(ctxWithQuery(""), 10, 0); err == nil {
+		t.Fatal("pageNumber/pageSize: expected error for max 0")
+	}
+	// A zero default falls back to max rather than to "unbounded".
+	if p, err := ParseLimitOffset(ctxWithQuery(""), 0, 7); err != nil || p.Limit != 7 {
+		t.Fatalf("zero default: got %d, %v; want 7", p.Limit, err)
+	}
+}
+
 // TestDefaultsClampedToMax checks that an operator-set max_limit below the
 // handler's built-in default still bounds requests that omit limit/pageSize.
 func TestDefaultsClampedToMax(t *testing.T) {

@@ -20,7 +20,8 @@ type Client struct {
 }
 
 // New returns an event-publisher Client. cfg is accepted for signature
-// uniformity (and to let a future NATS implementation read cfg.SIS.Bus)
+// uniformity (and to let a future NATS implementation read
+// cfg.SIS.Adapter.Outbound.Events)
 // without changing call sites.
 func New(_ context.Context, _ *model.Cfg, log *logger.Log) (*Client, error) {
 	return &Client{log: log.New("events")}, nil

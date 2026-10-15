@@ -21,8 +21,6 @@ import (
 	"github.com/SUNET/sis/pkg/model"
 )
 
-const defaultPageSize = 10
-
 // Client bundles the OEAPI handlers with the read-model Client and a logger.
 // It is a "Client" rather than a "Service" because it owns no runtime
 // resources and has nothing to shut down.
@@ -30,14 +28,14 @@ const defaultPageSize = 10
 // The receiver is named c to match the vc convention; the gin.Context
 // parameter is therefore named gc to avoid shadowing.
 type Client struct {
-	catalog  *readmodel.Client
-	maxLimit int
-	log      *logger.Log
+	cfg     *model.Cfg
+	catalog *readmodel.Client
+	log     *logger.Log
 }
 
 // New builds the oeapi Client.
 func New(_ context.Context, cfg *model.Cfg, catalog *readmodel.Client, log *logger.Log) (*Client, error) {
-	return &Client{catalog: catalog, maxLimit: cfg.SIS.APIServer.MaxLimit, log: log.New("oeapi")}, nil
+	return &Client{cfg: cfg, catalog: catalog, log: log.New("oeapi")}, nil
 }
 
 // ListPersons publishes persons in the OEAPI page envelope.
@@ -108,9 +106,10 @@ func Get[T any, PT domain.EntityPtr[T], D any](_ *Client, svc *service.Resource[
 }
 
 // page parses OEAPI pageNumber/pageSize (1-based) query parameters. pageSize
-// is clamped to the configured max_limit and a pageNumber whose offset would
-// overflow is rejected, so neither input can produce an unbounded or negative
-// query.
+// is clamped to sis.adapter.inbound.oeapi.max_page_size and a pageNumber
+// whose offset would overflow is rejected, so neither input can produce an
+// unbounded or negative query. An omitted pageSize takes .default_page_size.
 func (c *Client) page(gc *gin.Context) (pageNumber, pageSize int, params port.ListParams, err error) {
-	return helpers.ParsePageNumberSize(gc, defaultPageSize, c.maxLimit)
+	oc := c.cfg.SIS.Adapter.Inbound.OEAPI
+	return helpers.ParsePageNumberSize(gc, oc.DefaultPageSize, oc.MaxPageSize)
 }

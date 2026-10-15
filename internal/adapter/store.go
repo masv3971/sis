@@ -22,15 +22,16 @@ import (
 // how we stop *postgres.Service leaking through the API surface while still
 // letting the generic entity services pick the matching backend.
 func selectStore(ctx context.Context, cfg *model.Cfg, log *logger.Log) (*port.Store, *postgres.Service, error) {
-	if cfg.SIS.DB.ConnectionString == "" {
-		log.Info("db.connection_string unset; using in-memory store")
+	pc := cfg.SIS.Adapter.Outbound.Postgres
+	if pc.ConnectionString == "" {
+		log.Info("sis.adapter.outbound.postgres.connection_string unset; using in-memory store")
 		return &port.Store{
 			Persons:  memory.NewPersonRepository(),
 			Accounts: memory.NewAccountRepository(),
 			Clients:  memory.NewClientRepository(),
 		}, nil, nil
 	}
-	pg, err := postgres.New(ctx, cfg.SIS.DB.ConnectionString, log.New("postgres"))
+	pg, err := postgres.New(ctx, pc.ConnectionString, log.New("postgres"))
 	if err != nil {
 		return nil, nil, fmt.Errorf("postgres init: %w", err)
 	}

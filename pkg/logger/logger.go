@@ -40,22 +40,34 @@ func build(handler slog.Handler, name string, attrs []any) *Log {
 	return &Log{Logger: lg, handler: handler, name: name, attrs: attrs}
 }
 
-// New creates a root logger named name, writing to stdout. production selects a
-// JSON handler (for log pipelines); otherwise a text handler (human-readable).
-func New(name string, production bool) *Log {
-	return NewWithWriter(name, production, os.Stdout)
+// New creates a root logger named name, writing to stdout. json selects a JSON
+// handler (for log pipelines); otherwise a text handler (human-readable).
+// level is one of debug, info, warn or error (case-insensitive); an empty or
+// unrecognised value falls back to info, since config validation has already
+// restricted it to the allowed set.
+func New(name string, json bool, level string) *Log {
+	return NewWithWriter(name, json, level, os.Stdout)
 }
 
 // NewWithWriter is New with an explicit destination, useful in tests.
-func NewWithWriter(name string, production bool, w io.Writer) *Log {
-	opts := &slog.HandlerOptions{Level: slog.LevelInfo}
+func NewWithWriter(name string, json bool, level string, w io.Writer) *Log {
+	opts := &slog.HandlerOptions{Level: parseLevel(level)}
 	var h slog.Handler
-	if production {
+	if json {
 		h = slog.NewJSONHandler(w, opts)
 	} else {
 		h = slog.NewTextHandler(w, opts)
 	}
 	return build(h, name, nil)
+}
+
+// parseLevel maps a config level string onto slog.Level, defaulting to info.
+func parseLevel(level string) slog.Level {
+	var l slog.Level
+	if err := l.UnmarshalText([]byte(level)); err != nil {
+		return slog.LevelInfo
+	}
+	return l
 }
 
 // NewSimple wraps the default slog logger under name, for quick or standalone use.

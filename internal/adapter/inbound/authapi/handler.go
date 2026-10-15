@@ -43,7 +43,7 @@ type Client struct {
 func New(_ context.Context, cfg *model.Cfg, authClient *auth.Client, log *logger.Log) (*Client, error) {
 	return &Client{
 		auth:         authClient,
-		postLoginURL: cfg.SIS.Auth.OIDC.PostLoginRedirectURL,
+		postLoginURL: cfg.SIS.Adapter.Inbound.AuthAPI.PostLoginRedirectURL,
 		log:          log.New("authapi"),
 	}, nil
 }
