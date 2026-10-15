@@ -9,7 +9,8 @@ type Cfg struct {
 }
 
 type Common struct {
-	// Production requires jwt_secret and an https OIDC issuer.
+	// Production requires a jwt_secret of at least
+	// MinProductionJWTSecretLen bytes and an https OIDC issuer.
 	Production bool `yaml:"production"`
 	Log        Log  `yaml:"log"`
 }
@@ -41,11 +42,24 @@ type Web struct {
 	Root string `yaml:"root"`
 }
 
+// MinProductionJWTSecretLen is the minimum jwt_secret length in bytes when
+// common.production is true: 256 bits, matching the HS256 output size.
+// Config validation enforces it through the jwt_secret_production_min tag on JWTSecret
+// (a tag cannot reference a constant, so a test keeps the two in sync);
+// auth.New uses the constant for its own defence-in-depth check.
+const MinProductionJWTSecretLen = 32
+
 type Auth struct {
 	// JWTSecret signs access tokens (HS256). Must be the same on all
 	// replicas. If empty outside production, a random secret is generated at
 	// startup and tokens do not survive a restart.
-	JWTSecret string        `yaml:"jwt_secret" validate:"omitempty,min=8"`
+	//
+	// In production it must be at least MinProductionJWTSecretLen bytes and
+	// randomly generated (e.g. `openssl rand -hex 32`). Anyone who recovers
+	// it can forge admin tokens, and a short or human-chosen secret can be
+	// brute-forced offline from a single captured token. Length is checked;
+	// randomness cannot be, so never use a passphrase.
+	JWTSecret string        `yaml:"jwt_secret" validate:"omitempty,min=8,jwt_secret_production_min=32"`
 	TokenTTL  time.Duration `yaml:"token_ttl" default:"1h" validate:"gt=0"`
 	Bootstrap Bootstrap     `yaml:"bootstrap"`
 	OIDCRP    OIDCRP        `yaml:"oidcrp"`

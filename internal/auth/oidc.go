@@ -64,14 +64,14 @@ func oidcUsername(issuer, subject string) string {
 func (s *Client) provisionOIDCAccount(ctx context.Context, issuer, subject string) (domain.Account, error) {
 	now := time.Now().UTC()
 	acc := domain.Account{
-		ID:           uuid.NewString(),
-		Username:     oidcUsername(issuer, subject),
-		Roles:        []domain.AuthRole{domain.AuthRoleReadOnly},
-		Status:       domain.StatusActive,
-		OIDCIssuer:   issuer,
-		OIDCSubject:  subject,
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		ID:          uuid.NewString(),
+		Username:    oidcUsername(issuer, subject),
+		Roles:       []domain.AuthRole{domain.AuthRoleReadOnly},
+		Status:      domain.StatusActive,
+		OIDCIssuer:  issuer,
+		OIDCSubject: subject,
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}
 	if err := s.accounts.Upsert(ctx, acc); err != nil {
 		return domain.Account{}, err

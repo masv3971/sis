@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/url"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"github.com/go-playground/validator/v10"
@@ -73,6 +74,27 @@ func NewValidator() (*validator.Validate, error) {
 		}
 		// Custom scheme: require content beyond the scheme.
 		return u.Host != "" || u.Path != "" || u.Opaque != ""
+	}); err != nil {
+		return nil, err
+	}
+
+	// jwt_secret_production_min=N - the minimum JWT signing-secret length in
+	// bytes when the root struct's Common.Production is true; a no-op
+	// otherwise. Built-in conditional rules (required_if etc.) only see
+	// sibling fields, so they cannot reach common.production from sis.auth;
+	// Top() reads it from the root at any depth. A root without
+	// Common.Production counts as non-production.
+	if err := validate.RegisterValidation("jwt_secret_production_min", func(fl validator.FieldLevel) bool {
+		prod, kind, _, ok := fl.GetStructFieldOKAdvanced2(fl.Top(), "Common.Production")
+		if !ok || kind != reflect.Bool || !prod.Bool() {
+			return true
+		}
+		n, err := strconv.Atoi(fl.Param())
+		if err != nil {
+			// A bad tag is a programming error, as for the built-in rules.
+			panic(fmt.Sprintf("jwt_secret_production_min: bad param %q on %s", fl.Param(), fl.FieldName()))
+		}
+		return len(fl.Field().String()) >= n
 	}); err != nil {
 		return nil, err
 	}

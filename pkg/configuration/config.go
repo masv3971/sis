@@ -79,7 +79,9 @@ func loadFile(path string, cfg *model.Cfg) error {
 // checkProduction enforces the settings that are only optional for local
 // development. With common.production set, an ephemeral JWT secret (random
 // per process, so tokens break across restarts and replicas) and a plain-HTTP
-// OIDC issuer are refused.
+// OIDC issuer are refused. The minimum secret length is a validator rule
+// (jwt_secret_production_min on model.Auth.JWTSecret), so it runs in
+// helpers.Check.
 func checkProduction(cfg *model.Cfg) error {
 	if !cfg.Common.Production {
 		return nil

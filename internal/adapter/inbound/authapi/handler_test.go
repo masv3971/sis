@@ -34,7 +34,7 @@ func TestWriteTokenForbidsCaching(t *testing.T) {
 func newTestClient(t *testing.T, production bool, slots int) *Client {
 	t.Helper()
 	cfg := &model.Cfg{Common: model.Common{Production: production}}
-	cfg.SIS.Auth.JWTSecret = "0123456789abcdef"
+	cfg.SIS.Auth.JWTSecret = "0123456789abcdef0123456789abcdef"
 	cfg.SIS.Auth.TokenTTL = time.Hour
 	cfg.SIS.Adapter.Inbound.AuthAPI.MaxConcurrentLogins = slots
 	log := logger.NewWithWriter("test", false, "error", io.Discard)

@@ -4,11 +4,15 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/SUNET/sis/pkg/configuration"
+	"github.com/SUNET/sis/pkg/model"
 )
 
 func writeConfig(t *testing.T, body string) string {
@@ -109,8 +113,12 @@ func TestNewProductionRules(t *testing.T) {
 		wantErr string
 	}{
 		{"missing jwt_secret", "common:\n  production: true\nsis: {}\n", "jwt_secret"},
-		{"http issuer", "common:\n  production: true\nsis:\n  auth:\n    jwt_secret: \"0123456789\"\n    oidcrp:\n      issuer_url: \"http://idp.example\"\n      client_id: c\n      client_secret: s\n      redirect_url: \"https://sis.example/cb\"\n", "https"},
-		{"ok", "common:\n  production: true\nsis:\n  auth:\n    jwt_secret: \"0123456789\"\n    oidcrp:\n      issuer_url: \"https://idp.example\"\n      client_id: c\n      client_secret: s\n      redirect_url: \"https://sis.example/cb\"\n", ""},
+		{"short jwt_secret", "common:\n  production: true\nsis:\n  auth:\n    jwt_secret: \"0123456789\"\n", "jwt_secret_production_min"},
+		{"31-byte jwt_secret", "common:\n  production: true\nsis:\n  auth:\n    jwt_secret: \"" + strings.Repeat("a", 31) + "\"\n", "jwt_secret_production_min"},
+		{"32-byte jwt_secret", "common:\n  production: true\nsis:\n  auth:\n    jwt_secret: \"" + strings.Repeat("a", 32) + "\"\n", ""},
+		{"dev allows short jwt_secret", "sis:\n  auth:\n    jwt_secret: \"0123456789\"\n", ""},
+		{"http issuer", "common:\n  production: true\nsis:\n  auth:\n    jwt_secret: \"0123456789abcdef0123456789abcdef\"\n    oidcrp:\n      issuer_url: \"http://idp.example\"\n      client_id: c\n      client_secret: s\n      redirect_url: \"https://sis.example/cb\"\n", "https"},
+		{"ok", "common:\n  production: true\nsis:\n  auth:\n    jwt_secret: \"0123456789abcdef0123456789abcdef\"\n    oidcrp:\n      issuer_url: \"https://idp.example\"\n      client_id: c\n      client_secret: s\n      redirect_url: \"https://sis.example/cb\"\n", ""},
 		{"dev allows http + no secret", "sis:\n  auth:\n    oidcrp:\n      issuer_url: \"http://localhost:9080/realms/x\"\n      client_id: c\n      client_secret: s\n      redirect_url: \"http://localhost:8080/cb\"\n", ""},
 	}
 	for _, c := range cases {
@@ -124,6 +132,20 @@ func TestNewProductionRules(t *testing.T) {
 				t.Fatalf("expected error containing %q, got %v", c.wantErr, err)
 			}
 		})
+	}
+}
+
+// TestJWTSecretTagMatchesConstant keeps the jwt_secret_production_min tag on
+// model.Auth.JWTSecret in step with model.MinProductionJWTSecretLen, which
+// auth.New uses for its own check. A struct tag cannot reference a constant.
+func TestJWTSecretTagMatchesConstant(t *testing.T) {
+	f, ok := reflect.TypeFor[model.Auth]().FieldByName("JWTSecret")
+	if !ok {
+		t.Fatal("model.Auth.JWTSecret not found")
+	}
+	want := "jwt_secret_production_min=" + strconv.Itoa(model.MinProductionJWTSecretLen)
+	if !slices.Contains(strings.Split(f.Tag.Get("validate"), ","), want) {
+		t.Fatalf("JWTSecret validate tag %q must contain %q", f.Tag.Get("validate"), want)
 	}
 }
 

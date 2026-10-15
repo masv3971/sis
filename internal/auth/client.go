@@ -103,13 +103,22 @@ func (s *Client) Issuer() *token.Issuer {
 // again so the guarantee holds for any caller.
 var errEphemeralSecretInProduction = errors.New("auth: sis.auth.jwt_secret is required when common.production is true")
 
+// errShortSecretInProduction is returned when production config has a
+// jwt_secret shorter than model.MinProductionJWTSecretLen. Configuration
+// validation already rejects this; auth.New checks again so the guarantee
+// holds for any caller.
+var errShortSecretInProduction = errors.New("auth: sis.auth.jwt_secret is too short for production")
+
 // jwtSecret returns the configured signing secret. Outside production an unset
 // secret is replaced by a random ephemeral one (dev only — tokens do not
 // survive a restart and differ per replica) with a warning; in production it
 // is an error.
 func jwtSecret(cfg *model.Cfg, log *logger.Log) (string, error) {
-	if cfg.SIS.Auth.JWTSecret != "" {
-		return cfg.SIS.Auth.JWTSecret, nil
+	if s := cfg.SIS.Auth.JWTSecret; s != "" {
+		if cfg.Common.Production && len(s) < model.MinProductionJWTSecretLen {
+			return "", errShortSecretInProduction
+		}
+		return s, nil
 	}
 	if cfg.Common.Production {
 		return "", errEphemeralSecretInProduction

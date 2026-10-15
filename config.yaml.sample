@@ -18,8 +18,8 @@
 #   - Durations use Go syntax: 500ms, 15s, 10m, 1h.
 
 common:
-  # true enforces production rules: sis.auth.jwt_secret must be set and
-  # sis.auth.oidcrp.issuer_url must be https. Set true on every shared
+  # true enforces production rules: sis.auth.jwt_secret must be set (>= 32
+  # bytes) and sis.auth.oidcrp.issuer_url must be https. Set true on every shared
   # deployment.
   production: false
   log:
@@ -42,7 +42,9 @@ sis:
   # -- internal/auth -----------------------------------------------------------
   auth:
     # Signs access tokens. Generate with `openssl rand -hex 32` and use the
-    # same value on every replica. Required when common.production is true.
+    # same value on every replica. Required when common.production is true,
+    # and must then be at least 32 bytes of random data: anyone who recovers
+    # it can forge admin tokens. Never use a passphrase.
     jwt_secret: "change-me-to-a-long-random-value"
     token_ttl: 1h           # lifetime of an issued access token
 
