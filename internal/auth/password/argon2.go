@@ -22,6 +22,18 @@ const (
 	keyLen      = 32
 )
 
+// Bounds on parameters read back from a stored hash. argon2.IDKey panics on
+// t=0 or p=0, and m sets how much memory one Verify allocates, so a corrupt
+// or hostile hash must not reach it unchecked. The upper bounds leave room to
+// raise the cost later without letting one hash allocate unbounded memory.
+const (
+	maxTime   = 16
+	maxMemory = 256 * 1024 // KiB
+	maxLanes  = 16
+)
+
+var errInvalidParams = errors.New("invalid hash parameters")
+
 // Hash returns an argon2id PHC-encoded hash of plain.
 func Hash(plain string) (string, error) {
 	salt := make([]byte, saltLen)
@@ -49,6 +61,9 @@ func Verify(plain, encoded string) (bool, error) {
 	var p uint8
 	if _, err := fmt.Sscanf(parts[3], "m=%d,t=%d,p=%d", &m, &t, &p); err != nil {
 		return false, err
+	}
+	if version != argon2.Version || t < 1 || t > maxTime || p < 1 || p > maxLanes || m < 8*uint32(p) || m > maxMemory {
+		return false, errInvalidParams
 	}
 	salt, err := base64.RawStdEncoding.DecodeString(parts[4])
 	if err != nil {

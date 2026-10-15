@@ -72,6 +72,9 @@ sis:
     inbound:
       authapi:              # /auth, /oauth/token
         post_login_redirect_url: "/"   # where the browser lands after SSO
+        # Password checks allowed at once (each uses ~64 MiB); extra login
+        # requests get 429.
+        max_concurrent_logins: 8
       restadmin:            # /api/v1 (read/write)   ?limit=&offset=
         default_limit: 50
         max_limit: 500

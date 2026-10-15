@@ -36,17 +36,43 @@ const oidcCookieTTL = 300 // seconds
 type Client struct {
 	auth         *auth.Client
 	postLoginURL string
-	log          *logger.Log
+	// secureCookies marks the OIDC state/nonce cookies Secure. On in
+	// production; off in development so login works over plain http.
+	secureCookies bool
+	// verifySlots bounds concurrent password checks (Argon2, ~64 MiB each)
+	// across Login and Token. A request that finds no free slot gets 429
+	// instead of queueing, so a flood cannot exhaust memory.
+	verifySlots chan struct{}
+	log         *logger.Log
 }
 
 // New builds the authapi Client.
 func New(_ context.Context, cfg *model.Cfg, authClient *auth.Client, log *logger.Log) (*Client, error) {
+	ac := cfg.SIS.Adapter.Inbound.AuthAPI
 	return &Client{
-		auth:         authClient,
-		postLoginURL: cfg.SIS.Adapter.Inbound.AuthAPI.PostLoginRedirectURL,
-		log:          log.New("authapi"),
+		auth:          authClient,
+		postLoginURL:  ac.PostLoginRedirectURL,
+		secureCookies: cfg.Common.Production,
+		verifySlots:   make(chan struct{}, max(ac.MaxConcurrentLogins, 1)),
+		log:           log.New("authapi"),
 	}, nil
 }
+
+// acquireVerify takes a password-check slot, or writes 429 and returns false
+// when all are busy. The caller must call release when acquireVerify
+// returns true.
+func (c *Client) acquireVerify(gc *gin.Context) bool {
+	select {
+	case c.verifySlots <- struct{}{}:
+		return true
+	default:
+		gc.Header("Retry-After", "1")
+		gc.JSON(http.StatusTooManyRequests, gin.H{"error": "too_many_requests"})
+		return false
+	}
+}
+
+func (c *Client) releaseVerify() { <-c.verifySlots }
 
 // Config reports which login methods are available, so the web UI only
 // offers SSO when the OIDC routes are actually mounted. Public: it reveals
@@ -67,6 +93,10 @@ func (c *Client) Login(gc *gin.Context) {
 		gc.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request"})
 		return
 	}
+	if !c.acquireVerify(gc) {
+		return
+	}
+	defer c.releaseVerify()
 	tok, err := c.auth.Authenticate(gc.Request.Context(), req.Username, req.Password)
 	if err != nil {
 		c.writeAuthError(gc, err)
@@ -88,6 +118,10 @@ func (c *Client) Token(gc *gin.Context) {
 			clientID, secret = id, sec
 		}
 	}
+	if !c.acquireVerify(gc) {
+		return
+	}
+	defer c.releaseVerify()
 	tok, err := c.auth.ClientCredentials(gc.Request.Context(), clientID, secret)
 	if err != nil {
 		if errors.Is(err, auth.ErrInvalidCredentials) {
@@ -104,9 +138,7 @@ func (c *Client) Token(gc *gin.Context) {
 // OIDCLogin starts the OIDC RP flow by redirecting to the provider.
 func (c *Client) OIDCLogin(gc *gin.Context) {
 	state, nonce := randToken(), randToken()
-	gc.SetSameSite(http.SameSiteLaxMode)
-	gc.SetCookie("oidc_state", state, oidcCookieTTL, "/", "", false, true)
-	gc.SetCookie("oidc_nonce", nonce, oidcCookieTTL, "/", "", false, true)
+	c.setOIDCCookies(gc, state, nonce, oidcCookieTTL)
 	gc.Redirect(http.StatusFound, c.auth.OIDCAuthCodeURL(state, nonce))
 }
 
@@ -137,9 +169,17 @@ func (c *Client) OIDCCallback(gc *gin.Context) {
 	// Clear the one-shot cookies and hand the token to the SPA via the URL
 	// fragment (kept out of server logs and the Referer header).
 	noStore(gc)
-	gc.SetCookie("oidc_state", "", -1, "/", "", false, true)
-	gc.SetCookie("oidc_nonce", "", -1, "/", "", false, true)
+	c.setOIDCCookies(gc, "", "", -1)
 	gc.Redirect(http.StatusFound, c.postLoginURL+"#access_token="+tok.AccessToken)
+}
+
+// setOIDCCookies sets (or, with maxAge -1, clears) the one-shot state and
+// nonce cookies. Setting and clearing use the same attributes so the browser
+// matches and removes the same cookies.
+func (c *Client) setOIDCCookies(gc *gin.Context, state, nonce string, maxAge int) {
+	gc.SetSameSite(http.SameSiteLaxMode)
+	gc.SetCookie("oidc_state", state, maxAge, "/", "", c.secureCookies, true)
+	gc.SetCookie("oidc_nonce", nonce, maxAge, "/", "", c.secureCookies, true)
 }
 
 func randToken() string {

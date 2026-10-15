@@ -47,7 +47,9 @@ func (r *AccountRepository) GetByOIDC(_ context.Context, issuer, subject string)
 }
 
 // Upsert inserts or updates by username, preserving id, created_at and the
-// OIDC binding on update.
+// OIDC binding on update. Like the Postgres primary key and unique identity
+// index, it rejects a new account whose id or OIDC issuer+subject already
+// belongs to another username with domain.ErrConflict.
 func (r *AccountRepository) Upsert(_ context.Context, a domain.Account) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -56,8 +58,19 @@ func (r *AccountRepository) Upsert(_ context.Context, a domain.Account) error {
 		a.CreatedAt = existing.CreatedAt
 		a.OIDCIssuer = existing.OIDCIssuer
 		a.OIDCSubject = existing.OIDCSubject
-	} else if a.ID == "" {
+		r.byUsername[a.Username] = a
+		return nil
+	}
+	if a.ID == "" {
 		a.ID = uuid.NewString()
+	}
+	for _, other := range r.byUsername {
+		if other.ID == a.ID {
+			return domain.ErrConflict
+		}
+		if a.OIDCSubject != "" && other.OIDCIssuer == a.OIDCIssuer && other.OIDCSubject == a.OIDCSubject {
+			return domain.ErrConflict
+		}
 	}
 	r.byUsername[a.Username] = a
 	return nil

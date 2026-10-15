@@ -89,3 +89,37 @@ func TestPageBounds(t *testing.T) {
 		}
 	}
 }
+
+func TestAccountUpsertRejectsDuplicateIdentity(t *testing.T) {
+	ctx := context.Background()
+	r := NewAccountRepository()
+	base := domain.Account{ID: "1", Username: "oidc:a", OIDCIssuer: "https://idp", OIDCSubject: "sub"}
+	if err := r.Upsert(ctx, base); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	sameIdentity := domain.Account{ID: "2", Username: "oidc:b", OIDCIssuer: "https://idp", OIDCSubject: "sub"}
+	if err := r.Upsert(ctx, sameIdentity); !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("duplicate OIDC identity: expected ErrConflict, got %v", err)
+	}
+	sameID := domain.Account{ID: "1", Username: "local"}
+	if err := r.Upsert(ctx, sameID); !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("duplicate id: expected ErrConflict, got %v", err)
+	}
+
+	// Updating the same username keeps its id and binding.
+	if err := r.Upsert(ctx, domain.Account{ID: "ignored", Username: "oidc:a", OIDCSubject: "other"}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	got, err := r.GetByOIDC(ctx, "https://idp", "sub")
+	if err != nil || got.ID != "1" {
+		t.Fatalf("binding not preserved: %+v %v", got, err)
+	}
+	// Local accounts (no OIDC subject) never conflict with each other.
+	if err := r.Upsert(ctx, domain.Account{ID: "3", Username: "l1"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Upsert(ctx, domain.Account{ID: "4", Username: "l2"}); err != nil {
+		t.Fatal(err)
+	}
+}

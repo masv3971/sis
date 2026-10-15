@@ -90,6 +90,10 @@ type AuthAPI struct {
 	// PostLoginRedirectURL is where the browser goes after OIDC login, with
 	// the token in the URL fragment.
 	PostLoginRedirectURL string `yaml:"post_login_redirect_url" default:"/" validate:"required"`
+	// MaxConcurrentLogins caps password checks running at once across
+	// /auth/login and /oauth/token. Each check uses about 64 MiB; requests
+	// over the cap get 429.
+	MaxConcurrentLogins int `yaml:"max_concurrent_logins" default:"8" validate:"gt=0"`
 }
 
 type RestAdmin struct {

@@ -39,3 +39,22 @@ func TestVerifyRejectsMalformed(t *testing.T) {
 		t.Fatal("expected error for malformed hash")
 	}
 }
+
+// TestVerifyRejectsBadParams covers parameters that would make argon2.IDKey
+// panic (t=0, p=0) or allocate unbounded memory (huge m).
+func TestVerifyRejectsBadParams(t *testing.T) {
+	const salt, key = "c2FsdHNhbHRzYWx0c2FsdA", "a2V5a2V5a2V5a2V5a2V5a2V5a2V5a2V5a2V5a2U"
+	for _, params := range []string{
+		"m=65536,t=0,p=4",
+		"m=65536,t=1,p=0",
+		"m=4194304,t=1,p=4",
+		"m=1,t=1,p=4",
+		"m=65536,t=99,p=4",
+	} {
+		h := "$argon2id$v=19$" + params + "$" + salt + "$" + key
+		ok, err := password.Verify("x", h)
+		if err == nil || ok {
+			t.Errorf("%s: expected rejection, got ok=%v err=%v", params, ok, err)
+		}
+	}
+}
