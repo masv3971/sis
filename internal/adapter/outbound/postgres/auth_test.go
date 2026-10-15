@@ -23,8 +23,10 @@ func TestAccountOIDCBinding(t *testing.T) {
 		t.Fatalf("empty subject must never match a local account, got %v", err)
 	}
 
-	fed := domain.Account{ID: "o-" + suffix, Username: "oidc-" + suffix, PasswordHash: "x", Status: domain.StatusActive,
-		OIDCIssuer: "https://idp.example", OIDCSubject: "sub-" + suffix, CreatedAt: now, UpdatedAt: now}
+	fed := domain.Account{
+		ID: "o-" + suffix, Username: "oidc-" + suffix, PasswordHash: "x", Status: domain.StatusActive,
+		OIDCIssuer: "https://idp.example", OIDCSubject: "sub-" + suffix, CreatedAt: now, UpdatedAt: now,
+	}
 	if err := repo.Upsert(ctx, fed); err != nil {
 		t.Fatalf("upsert oidc: %v", err)
 	}

@@ -95,12 +95,12 @@ func New(ctx context.Context, cfg *model.Cfg, log *logger.Log) (*Service, error)
 	// this package (see docrepo.go); readmodel is now a pure bundle type.
 	store, pg, events := s.outbound.store, s.outbound.pg, s.outbound.events
 	s.inbound.readmodel = &readmodel.Client{
-		Persons:          service.New(store.Persons, events, nil),
-		Organizations:    service.NewResource(docRepo[domain.Organization](pg), events, nil),
-		AcademicSessions: service.NewResource(docRepo[domain.AcademicSession](pg), events, nil),
-		Courses:          service.NewResource(docRepo[domain.Course](pg), events, nil),
-		Offerings:        service.NewResource(docRepo[domain.Offering](pg), events, nil),
-		Enrollments:      service.NewResource(docRepo[domain.Enrollment](pg), events, nil),
+		Persons:          service.New(store.Persons, events, nil, log),
+		Organizations:    service.NewResource(docRepo[domain.Organization](pg), events, nil, log),
+		AcademicSessions: service.NewResource(docRepo[domain.AcademicSession](pg), events, nil, log),
+		Courses:          service.NewResource(docRepo[domain.Course](pg), events, nil, log),
+		Offerings:        service.NewResource(docRepo[domain.Offering](pg), events, nil, log),
+		Enrollments:      service.NewResource(docRepo[domain.Enrollment](pg), events, nil, log),
 	}
 	s.log.Info("read-model catalog built")
 

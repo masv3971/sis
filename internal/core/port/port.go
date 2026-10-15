@@ -40,6 +40,12 @@ type PersonRepository interface {
 }
 
 // EventPublisher is the port for emitting domain events to the outside world.
+//
+// Publish is called after the write it describes has been committed, so the
+// service cannot undo the write when Publish fails; it logs the lost event
+// instead. A publisher that can fail (e.g. a message bus) is responsible for
+// durable delivery, for example by writing an outbox in the same transaction
+// and relaying from it.
 type EventPublisher interface {
 	Publish(ctx context.Context, e domain.Event) error
 }

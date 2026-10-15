@@ -12,7 +12,7 @@ import (
 
 func newOrgResource() *service.Resource[domain.Organization, *domain.Organization] {
 	repo := memory.NewDocRepo[domain.Organization]()
-	return service.NewResource(repo, nil, nil)
+	return service.NewResource(repo, nil, nil, nil)
 }
 
 func TestResource_CreateValidationAndID(t *testing.T) {

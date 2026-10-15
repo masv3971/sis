@@ -12,6 +12,17 @@ const (
 	StatusToBeDeleted Status = "tobedeleted"
 )
 
+// Valid reports whether s is one of the declared lifecycle states.
+func (s Status) Valid() bool {
+	switch s {
+	case StatusActive, StatusInactive, StatusToBeDeleted:
+		return true
+	}
+	return false
+}
+
+const statusMsg = "must be one of active, inactive, tobedeleted"
+
 // Role is a person's role within the institution.
 type Role string
 
@@ -64,6 +75,9 @@ func (p Person) Validate() error {
 	}
 	if p.Status == "" {
 		return &ValidationError{Field: "status", Msg: "required"}
+	}
+	if !p.Status.Valid() {
+		return &ValidationError{Field: "status", Msg: statusMsg}
 	}
 	return nil
 }

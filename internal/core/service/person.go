@@ -57,6 +57,11 @@ func (s *Service) UpdatePerson(ctx context.Context, p domain.Person) (domain.Per
 // UpsertPersonBySourcedID creates or updates by business key, so repeated
 // deliveries of the same record (bus redelivery, bulk re-import) converge to
 // one person — the idempotency the hub's non-HTTP ingress paths depend on.
+//
+// Two concurrent deliveries can both miss the lookup and both try to create.
+// The repository enforces sourcedId uniqueness, so one Create wins and the
+// other gets domain.ErrConflict; the loser then updates the winner's record,
+// and both calls succeed with the same id.
 func (s *Service) UpsertPersonBySourcedID(ctx context.Context, p domain.Person) (domain.Person, error) {
 	if p.SourcedID == "" {
 		return domain.Person{}, &domain.ValidationError{Field: "sourcedId", Msg: "required for upsert"}
@@ -66,11 +71,22 @@ func (s *Service) UpsertPersonBySourcedID(ctx context.Context, p domain.Person) 
 	case err == nil:
 		p.ID = existing.ID
 		return s.UpdatePerson(ctx, p)
-	case errors.Is(err, domain.ErrNotFound):
-		return s.CreatePerson(ctx, p)
-	default:
+	case !errors.Is(err, domain.ErrNotFound):
 		return domain.Person{}, err
 	}
+
+	created, err := s.CreatePerson(ctx, p)
+	if !errors.Is(err, domain.ErrConflict) {
+		return created, err
+	}
+	// Lost the race. If the conflict was not on sourcedId (e.g. a
+	// caller-supplied id already in use), there is no winner to update.
+	winner, getErr := s.persons.GetBySourcedID(ctx, p.SourcedID)
+	if getErr != nil {
+		return domain.Person{}, err
+	}
+	p.ID = winner.ID
+	return s.UpdatePerson(ctx, p)
 }
 
 // GetPerson returns a person by id.

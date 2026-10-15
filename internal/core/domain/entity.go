@@ -34,6 +34,15 @@ type Base struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
+// validateStatus rejects a status outside the declared states. Status is
+// optional on entities, so empty is allowed.
+func (b *Base) validateStatus() error {
+	if b.Status != "" && !b.Status.Valid() {
+		return &ValidationError{Field: "status", Msg: statusMsg}
+	}
+	return nil
+}
+
 func (b *Base) GetID() string            { return b.ID }
 func (b *Base) SetID(s string)           { b.ID = s }
 func (b *Base) GetSourcedID() string     { return b.SourcedID }

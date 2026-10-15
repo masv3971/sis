@@ -13,6 +13,9 @@ func (o *Organization) EntityType() string { return "organization" }
 
 // Validate checks required invariants.
 func (o *Organization) Validate() error {
+	if err := o.validateStatus(); err != nil {
+		return err
+	}
 	if o.Name == "" {
 		return &ValidationError{Field: "name", Msg: "required"}
 	}
@@ -33,6 +36,9 @@ func (a *AcademicSession) EntityType() string { return "academicSession" }
 
 // Validate checks required invariants.
 func (a *AcademicSession) Validate() error {
+	if err := a.validateStatus(); err != nil {
+		return err
+	}
 	if a.Title == "" {
 		return &ValidationError{Field: "title", Msg: "required"}
 	}
@@ -52,6 +58,9 @@ func (c *Course) EntityType() string { return "course" }
 
 // Validate checks required invariants.
 func (c *Course) Validate() error {
+	if err := c.validateStatus(); err != nil {
+		return err
+	}
 	if c.Title == "" {
 		return &ValidationError{Field: "title", Msg: "required"}
 	}
@@ -72,6 +81,9 @@ func (o *Offering) EntityType() string { return "offering" }
 
 // Validate checks required invariants.
 func (o *Offering) Validate() error {
+	if err := o.validateStatus(); err != nil {
+		return err
+	}
 	if o.CourseID == "" {
 		return &ValidationError{Field: "courseId", Msg: "required"}
 	}
@@ -91,6 +103,9 @@ func (e *Enrollment) EntityType() string { return "enrollment" }
 
 // Validate checks required invariants.
 func (e *Enrollment) Validate() error {
+	if err := e.validateStatus(); err != nil {
+		return err
+	}
 	if e.PersonID == "" {
 		return &ValidationError{Field: "personId", Msg: "required"}
 	}

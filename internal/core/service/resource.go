@@ -9,6 +9,7 @@ import (
 
 	"github.com/SUNET/sis/internal/core/domain"
 	"github.com/SUNET/sis/internal/core/port"
+	"github.com/SUNET/sis/pkg/logger"
 )
 
 // Resource is the generic application/use-case layer for any entity type. It
@@ -20,10 +21,12 @@ type Resource[T any, PT domain.EntityPtr[T]] struct {
 	now      Clock
 	newID    func() string
 	typeName string
+	log      *logger.Log
 }
 
-// NewResource builds a Resource. If clock is nil, time.Now is used.
-func NewResource[T any, PT domain.EntityPtr[T]](repo port.Repository[T, PT], events port.EventPublisher, clock Clock) *Resource[T, PT] {
+// NewResource builds a Resource. If clock is nil, time.Now is used; if log is
+// nil, log output is discarded.
+func NewResource[T any, PT domain.EntityPtr[T]](repo port.Repository[T, PT], events port.EventPublisher, clock Clock, log *logger.Log) *Resource[T, PT] {
 	if clock == nil {
 		clock = time.Now
 	}
@@ -33,6 +36,7 @@ func NewResource[T any, PT domain.EntityPtr[T]](repo port.Repository[T, PT], eve
 		now:      clock,
 		newID:    uuid.NewString,
 		typeName: PT(new(T)).EntityType(),
+		log:      serviceLog(log),
 	}
 }
 
@@ -82,6 +86,8 @@ func (s *Resource[T, PT]) Update(ctx context.Context, e PT) (PT, error) {
 }
 
 // UpsertBySourcedID creates or updates by business key (idempotent ingress).
+// Concurrent deliveries of the same sourcedId converge on one entity: see
+// Service.UpsertPersonBySourcedID.
 func (s *Resource[T, PT]) UpsertBySourcedID(ctx context.Context, e PT) (PT, error) {
 	if e.GetSourcedID() == "" {
 		return nil, &domain.ValidationError{Field: "sourcedId", Msg: "required for upsert"}
@@ -91,11 +97,20 @@ func (s *Resource[T, PT]) UpsertBySourcedID(ctx context.Context, e PT) (PT, erro
 	case err == nil:
 		e.SetID(existing.GetID())
 		return s.Update(ctx, e)
-	case errors.Is(err, domain.ErrNotFound):
-		return s.Create(ctx, e)
-	default:
+	case !errors.Is(err, domain.ErrNotFound):
 		return nil, err
 	}
+
+	created, err := s.Create(ctx, e)
+	if !errors.Is(err, domain.ErrConflict) {
+		return created, err
+	}
+	winner, getErr := s.repo.GetBySourcedID(ctx, e.GetSourcedID())
+	if getErr != nil {
+		return nil, err
+	}
+	e.SetID(winner.GetID())
+	return s.Update(ctx, e)
 }
 
 // Get returns an entity by id.
@@ -124,10 +139,7 @@ func (s *Resource[T, PT]) Delete(ctx context.Context, id string) error {
 }
 
 func (s *Resource[T, PT]) emit(ctx context.Context, eventType, aggID string, payload any) {
-	if s.events == nil {
-		return
-	}
-	_ = s.events.Publish(ctx, domain.Event{
+	publish(ctx, s.events, s.log, domain.Event{
 		ID:            s.newID(),
 		Type:          eventType,
 		AggregateType: s.typeName,
