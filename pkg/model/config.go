@@ -10,7 +10,7 @@ type Cfg struct {
 
 type Common struct {
 	// Production requires a jwt_secret of at least
-	// MinProductionJWTSecretLen bytes and an https OIDC issuer.
+	// MinProductionJWTSecretLen bytes and https OIDC issuer and redirect URLs.
 	Production bool `yaml:"production"`
 	Log        Log  `yaml:"log"`
 }
@@ -83,7 +83,9 @@ type OIDCRP struct {
 	IssuerURL    string `yaml:"issuer_url" validate:"omitempty,httpurl"`
 	ClientID     string `yaml:"client_id" validate:"required_with=IssuerURL"`
 	ClientSecret string `yaml:"client_secret" validate:"required_with=IssuerURL"`
-	RedirectURL  string `yaml:"redirect_url" validate:"required_with=IssuerURL,omitempty,redirect_uri"`
+	// RedirectURL is this service's /auth/oidc/callback as the browser sees
+	// it. Must be https in production (the state/nonce cookies are Secure).
+	RedirectURL string `yaml:"redirect_url" validate:"required_with=IssuerURL,omitempty,redirect_uri"`
 }
 
 type Adapter struct {

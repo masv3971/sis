@@ -43,7 +43,7 @@ func ResourceList[T any, PT domain.EntityPtr[T]](c *Client, svc *service.Resourc
 func ResourceCreate[T any, PT domain.EntityPtr[T]](_ *Client, svc *service.Resource[T, PT]) gin.HandlerFunc {
 	return func(gc *gin.Context) {
 		e := PT(new(T))
-		if err := gc.ShouldBindJSON(e); err != nil {
+		if err := helpers.BindJSON(gc, e); err != nil {
 			helpers.WriteError(gc, err)
 			return
 		}
@@ -72,7 +72,7 @@ func ResourceGet[T any, PT domain.EntityPtr[T]](_ *Client, svc *service.Resource
 func ResourceUpdate[T any, PT domain.EntityPtr[T]](_ *Client, svc *service.Resource[T, PT]) gin.HandlerFunc {
 	return func(gc *gin.Context) {
 		e := PT(new(T))
-		if err := gc.ShouldBindJSON(e); err != nil {
+		if err := helpers.BindJSON(gc, e); err != nil {
 			helpers.WriteError(gc, err)
 			return
 		}

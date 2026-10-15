@@ -26,6 +26,7 @@ const (
 	ErrUnauthorized = "unauthorized"
 	ErrNotFound     = "not_found"
 	ErrConflict     = "conflict"
+	ErrTooLarge     = "request_too_large"
 	ErrInternal     = "internal_server_error"
 )
 
@@ -98,6 +99,8 @@ func (e *Error) Status() int {
 		return http.StatusNotFound
 	case ErrConflict:
 		return http.StatusConflict
+	case ErrTooLarge:
+		return http.StatusRequestEntityTooLarge
 	default:
 		return http.StatusInternalServerError
 	}
@@ -156,6 +159,29 @@ func NewErrorFromError(err error) *Error {
 	}
 
 	return &Error{Title: ErrInternal, Err: err.Error(), HTTPStatus: http.StatusInternalServerError, unclassified: true}
+}
+
+// BindJSON decodes the request body into v and returns a classified *Error on
+// failure. Every decode failure is the client's fault, so anything
+// NewErrorFromError does not recognise (strict-mode unknown fields, a
+// time.Time that fails to parse, ...) becomes ErrBadRequest (400) with the
+// decoder message as detail instead of an unclassified 500. An oversized body
+// (http.MaxBytesReader) is 413. Call it only on the request body: service
+// errors must keep going through WriteError's own classification.
+func BindJSON(gc *gin.Context, v any) error {
+	err := gc.ShouldBindJSON(v)
+	if err == nil {
+		return nil
+	}
+	if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
+		return &Error{Title: ErrTooLarge, HTTPStatus: http.StatusRequestEntityTooLarge}
+	}
+	if e := NewErrorFromError(err); !e.IsUnclassified() {
+		return e
+	}
+	// The decoder's own messages name the offending field or value and carry
+	// no server internals, so they are safe to return.
+	return &Error{Title: ErrBadRequest, Err: err.Error(), HTTPStatus: http.StatusBadRequest}
 }
 
 // WriteError classifies err and writes it as the HTTP error response. The detail

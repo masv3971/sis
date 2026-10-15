@@ -16,10 +16,17 @@ export function clearToken(): void {
 }
 
 // consumeTokenFromHash picks up an access token delivered by the OIDC callback
-// as a URL fragment (#access_token=...), stores it, and cleans the URL.
+// as a URL fragment (#access_token=...), stores it, and cleans the URL. It
+// runs before the UI mounts, so it must never throw: a malformed fragment
+// (e.g. a stray "%") is discarded and the user simply sees the login page.
 export function consumeTokenFromHash(): void {
   if (!location.hash.startsWith("#access_token=")) return;
-  const token = decodeURIComponent(location.hash.slice("#access_token=".length));
+  let token = "";
+  try {
+    token = decodeURIComponent(location.hash.slice("#access_token=".length));
+  } catch {
+    // URIError on malformed percent escapes: ignore the fragment.
+  }
   if (token) setToken(token);
   history.replaceState(null, "", location.pathname + location.search);
 }

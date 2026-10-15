@@ -118,6 +118,7 @@ func TestNewProductionRules(t *testing.T) {
 		{"32-byte jwt_secret", "common:\n  production: true\nsis:\n  auth:\n    jwt_secret: \"" + strings.Repeat("a", 32) + "\"\n", ""},
 		{"dev allows short jwt_secret", "sis:\n  auth:\n    jwt_secret: \"0123456789\"\n", ""},
 		{"http issuer", "common:\n  production: true\nsis:\n  auth:\n    jwt_secret: \"0123456789abcdef0123456789abcdef\"\n    oidcrp:\n      issuer_url: \"http://idp.example\"\n      client_id: c\n      client_secret: s\n      redirect_url: \"https://sis.example/cb\"\n", "https"},
+		{"http redirect_url", "common:\n  production: true\nsis:\n  auth:\n    jwt_secret: \"0123456789abcdef0123456789abcdef\"\n    oidcrp:\n      issuer_url: \"https://idp.example\"\n      client_id: c\n      client_secret: s\n      redirect_url: \"http://sis.example/cb\"\n", "redirect_url must use https"},
 		{"ok", "common:\n  production: true\nsis:\n  auth:\n    jwt_secret: \"0123456789abcdef0123456789abcdef\"\n    oidcrp:\n      issuer_url: \"https://idp.example\"\n      client_id: c\n      client_secret: s\n      redirect_url: \"https://sis.example/cb\"\n", ""},
 		{"dev allows http + no secret", "sis:\n  auth:\n    oidcrp:\n      issuer_url: \"http://localhost:9080/realms/x\"\n      client_id: c\n      client_secret: s\n      redirect_url: \"http://localhost:8080/cb\"\n", ""},
 	}

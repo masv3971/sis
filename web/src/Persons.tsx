@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   type Person,
   listPersons,
@@ -22,26 +22,43 @@ export function Persons({ onUnauthorized }: { onUnauthorized: () => void }) {
   const [form, setForm] = useState<Person>(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  // loadGen numbers load() calls; only the latest may commit its result.
+  // A slow earlier GET (initial load, or Previous/Next clicked twice) would
+  // otherwise overwrite a newer page when it finally resolves.
+  const loadGen = useRef(0);
+  // submittingRef blocks a second submit synchronously; the state flag
+  // above only disables the button after the next render, which is too late
+  // for a fast double-click or a repeated Enter.
+  const submittingRef = useRef(false);
 
   function fail(e: unknown) {
     if (e instanceof UnauthorizedError) onUnauthorized();
     else setError((e as Error).message);
   }
 
-  async function load(at: number): Promise<void> {
+  function load(at: number): Promise<void> {
+    return loadPage(at, ++loadGen.current);
+  }
+
+  // loadPage fetches the page at offset `at` and commits it only if no newer
+  // load has started meanwhile. The step-back retry keeps the same
+  // generation, so it is superseded by a newer load just like the original.
+  async function loadPage(at: number, gen: number): Promise<void> {
     try {
       const page = await listPersons(PAGE_SIZE, at);
+      if (gen !== loadGen.current) return;
       const size = page.limit > 0 ? page.limit : PAGE_SIZE;
       // Deleting the last row of the last page leaves it empty; step back.
       if (page.persons.length === 0 && at > 0 && page.total > 0) {
-        return load(Math.max(0, at - size));
+        return loadPage(Math.max(0, at - size), gen);
       }
       setPersons(page.persons);
       setTotal(page.total);
       setOffset(at);
       setPageSize(size);
     } catch (e) {
-      fail(e);
+      if (gen === loadGen.current) fail(e);
     }
   }
 
@@ -52,6 +69,11 @@ export function Persons({ onUnauthorized }: { onUnauthorized: () => void }) {
 
   async function submit(e: FormEvent) {
     e.preventDefault();
+    // One write at a time: a second Create without a sourcedId would make
+    // the server generate a second, different person.
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    setSubmitting(true);
     setError("");
     try {
       if (editingId) await updatePerson(editingId, form);
@@ -61,6 +83,9 @@ export function Persons({ onUnauthorized }: { onUnauthorized: () => void }) {
       await load(offset);
     } catch (e) {
       fail(e);
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
     }
   }
 
@@ -121,9 +146,11 @@ export function Persons({ onUnauthorized }: { onUnauthorized: () => void }) {
           </label>
           {error && <p className="error">{error}</p>}
           <div className="row">
-            <button type="submit">{editingId ? "Save" : "Create"}</button>
+            <button type="submit" disabled={submitting}>
+              {editingId ? "Save" : "Create"}
+            </button>
             {editingId && (
-              <button type="button" className="ghost" onClick={cancel}>
+              <button type="button" className="ghost" onClick={cancel} disabled={submitting}>
                 Cancel
               </button>
             )}

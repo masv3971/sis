@@ -19,8 +19,8 @@
 
 common:
   # true enforces production rules: sis.auth.jwt_secret must be set (>= 32
-  # bytes) and sis.auth.oidcrp.issuer_url must be https. Set true on every shared
-  # deployment.
+  # bytes) and sis.auth.oidcrp.issuer_url and redirect_url must be https. Set
+  # true on every shared deployment.
   production: false
   log:
     level: info   # debug | info | warn | error
@@ -64,7 +64,7 @@ sis:
       issuer_url: ""        # e.g. https://idp.example.org/realms/sis
       client_id: ""
       client_secret: ""
-      redirect_url: ""      # e.g. https://sis.example.org/auth/oidc/callback
+      redirect_url: ""      # e.g. https://sis.example.org/auth/oidc/callback (https in production)
 
   # -- internal/adapter --------------------------------------------------------
   adapter:

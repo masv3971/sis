@@ -78,8 +78,11 @@ func loadFile(path string, cfg *model.Cfg) error {
 
 // checkProduction enforces the settings that are only optional for local
 // development. With common.production set, an ephemeral JWT secret (random
-// per process, so tokens break across restarts and replicas) and a plain-HTTP
-// OIDC issuer are refused. The minimum secret length is a validator rule
+// per process, so tokens break across restarts and replicas), a plain-HTTP
+// OIDC issuer, and a plain-HTTP OIDC redirect URL are refused. The redirect
+// must be https because production marks the OIDC state/nonce cookies
+// Secure: on an http callback the browser withholds them and every SSO
+// attempt fails with invalid_state. The minimum secret length is a validator rule
 // (jwt_secret_production_min on model.Auth.JWTSecret), so it runs in
 // helpers.Check.
 func checkProduction(cfg *model.Cfg) error {
@@ -93,6 +96,10 @@ func checkProduction(cfg *model.Cfg) error {
 		u, err := url.Parse(issuer)
 		if err != nil || !strings.EqualFold(u.Scheme, "https") {
 			return errors.New("sis.auth.oidcrp.issuer_url must use https when common.production is true")
+		}
+		u, err = url.Parse(cfg.SIS.Auth.OIDCRP.RedirectURL)
+		if err != nil || !strings.EqualFold(u.Scheme, "https") {
+			return errors.New("sis.auth.oidcrp.redirect_url must use https when common.production is true (the OIDC state/nonce cookies are Secure)")
 		}
 	}
 	return nil

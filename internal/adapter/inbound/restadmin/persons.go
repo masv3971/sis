@@ -59,7 +59,7 @@ func (c *Client) ListPersons(gc *gin.Context) {
 // CreatePerson creates a person from the JSON body.
 func (c *Client) CreatePerson(gc *gin.Context) {
 	var p domain.Person
-	if err := gc.ShouldBindJSON(&p); err != nil {
+	if err := helpers.BindJSON(gc, &p); err != nil {
 		helpers.WriteError(gc, err)
 		return
 	}
@@ -84,7 +84,7 @@ func (c *Client) GetPerson(gc *gin.Context) {
 // UpdatePerson replaces a person; the path id is authoritative over the body.
 func (c *Client) UpdatePerson(gc *gin.Context) {
 	var p domain.Person
-	if err := gc.ShouldBindJSON(&p); err != nil {
+	if err := helpers.BindJSON(gc, &p); err != nil {
 		helpers.WriteError(gc, err)
 		return
 	}
