@@ -5,6 +5,7 @@ import (
 	"errors"
 	"math"
 	"testing"
+	"time"
 
 	"github.com/SUNET/sis/internal/core/domain"
 	"github.com/SUNET/sis/internal/core/port"
@@ -70,6 +71,31 @@ func TestDocRepoUpdateRejectsForeignSourcedID(t *testing.T) {
 	got, err := r.GetBySourcedID(ctx, "a")
 	if err != nil || got.GetID() != "1" {
 		t.Fatalf("sourcedId index corrupted: id=%v err=%v", got, err)
+	}
+}
+
+// TestDocRepoUpdateMarshalFailurePreservesIndex checks that an Update which
+// changes sourcedId but fails to serialize leaves the stored record and its
+// sourcedId lookup untouched.
+func TestDocRepoUpdateMarshalFailurePreservesIndex(t *testing.T) {
+	ctx := context.Background()
+	r := NewDocRepo[domain.Course]()
+	if err := r.Create(ctx, &domain.Course{Base: domain.Base{ID: "1", SourcedID: "a"}, Title: "A"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Year 10000 is outside the RFC 3339 range, so json.Marshal fails.
+	bad := &domain.Course{Base: domain.Base{ID: "1", SourcedID: "b", UpdatedAt: time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC)}, Title: "B"}
+	if err := r.Update(ctx, bad); err == nil {
+		t.Fatal("expected marshal error")
+	}
+
+	got, err := r.GetBySourcedID(ctx, "a")
+	if err != nil || got.GetID() != "1" || got.Title != "A" {
+		t.Fatalf("failed update corrupted state: got=%+v err=%v", got, err)
+	}
+	if _, err := r.GetBySourcedID(ctx, "b"); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("new sourcedId must not be indexed after a failed update, got %v", err)
 	}
 }
 

@@ -49,6 +49,10 @@ func (r *DocRepo[T, PT]) Create(_ context.Context, e PT) error {
 // Update replaces an existing entity, maintaining the sourcedId index. A
 // sourcedId already owned by a different entity is rejected with
 // domain.ErrConflict, matching Create and the Postgres UNIQUE constraint.
+//
+// Every check that can fail (lookup, conflict, marshal) runs before either
+// map is touched, so a failed Update leaves the stored record and its
+// sourcedId index exactly as they were.
 func (r *DocRepo[T, PT]) Update(_ context.Context, e PT) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -61,14 +65,16 @@ func (r *DocRepo[T, PT]) Update(_ context.Context, e PT) error {
 			return domain.ErrConflict
 		}
 	}
+	data, err := json.Marshal(e)
+	if err != nil {
+		return err
+	}
+
+	// Point of no return: mutate the index and the record together.
 	if prev, err := unmarshalDoc[T, PT](old); err == nil {
 		if oldSID := prev.GetSourcedID(); oldSID != e.GetSourcedID() {
 			delete(r.sourcedToID, oldSID)
 		}
-	}
-	data, err := json.Marshal(e)
-	if err != nil {
-		return err
 	}
 	r.byID[e.GetID()] = data
 	if sid := e.GetSourcedID(); sid != "" {
