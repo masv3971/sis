@@ -16,7 +16,10 @@ CURRENT_BRANCH          := $(shell git rev-parse --abbrev-ref HEAD)
 .PHONY: update gosec staticcheck vulncheck \
 	start stop restart \
 	vscode gh-install gh-auth \
-	build test fmt docker-build docker-push \		swagger swagger-restadmin swagger-fmt swagger-check \	web-install web-dev web-build web \
+	build test fmt docker-build docker-push \
+	swagger swagger-restadmin swagger-fmt swagger-check \
+	web-install web-dev web-build web \
+	diagram \
 	release check_current_branch
 
 # ==============================================================================
@@ -137,6 +140,15 @@ swagger-restadmin: ## Generate /api/v1 Swagger docs into docs/restadmin
 swagger-check: swagger ## Fail if the committed Swagger docs are stale
 	@git diff --exit-code -- docs/ internal/adapter/inbound/restadmin/ \
 		|| { echo "Swagger docs are stale: run 'make swagger' and commit the result"; exit 1; }
+
+# ==============================================================================
+# Diagrams
+# ==============================================================================
+# PlantUML sources live in docs/diagrams/*.puml; each renders to a PNG next
+# to its source. plantuml is installed by 'make vscode'.
+
+diagram: ## Generate PlantUML diagrams
+	plantuml -charset UTF-8 -tpng docs/diagrams/*.puml
 
 # ==============================================================================
 # Build & Test
