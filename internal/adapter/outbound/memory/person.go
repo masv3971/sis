@@ -4,6 +4,7 @@ package memory
 
 import (
 	"context"
+	"slices"
 	"sort"
 	"sync"
 
@@ -22,6 +23,19 @@ func NewPersonRepository() *PersonRepository {
 	return &PersonRepository{byID: make(map[string]domain.Person)}
 }
 
+// clonePerson returns a copy of p that shares no slice backing arrays with
+// it. Every write stores a clone and every read returns one, so neither the
+// caller's argument nor a returned value can change stored data outside a
+// repository write (and its mutex) — the isolation the Postgres and JSON
+// document repositories get for free by serialising.
+func clonePerson(p domain.Person) domain.Person {
+	p.Roles = slices.Clone(p.Roles)
+	p.Identifiers = slices.Clone(p.Identifiers)
+	p.Emails = slices.Clone(p.Emails)
+	p.Phones = slices.Clone(p.Phones)
+	return p
+}
+
 // Create stores a new person, rejecting duplicate id or sourcedId.
 func (r *PersonRepository) Create(_ context.Context, p domain.Person) error {
 	r.mu.Lock()
@@ -34,7 +48,7 @@ func (r *PersonRepository) Create(_ context.Context, p domain.Person) error {
 			return domain.ErrConflict
 		}
 	}
-	r.byID[p.ID] = p
+	r.byID[p.ID] = clonePerson(p)
 	return nil
 }
 
@@ -53,7 +67,7 @@ func (r *PersonRepository) Update(_ context.Context, p domain.Person) error {
 			}
 		}
 	}
-	r.byID[p.ID] = p
+	r.byID[p.ID] = clonePerson(p)
 	return nil
 }
 
@@ -65,7 +79,7 @@ func (r *PersonRepository) Get(_ context.Context, id string) (domain.Person, err
 	if !ok {
 		return domain.Person{}, domain.ErrNotFound
 	}
-	return p, nil
+	return clonePerson(p), nil
 }
 
 // GetBySourcedID returns a person by business key.
@@ -74,7 +88,7 @@ func (r *PersonRepository) GetBySourcedID(_ context.Context, sourcedID string) (
 	defer r.mu.RUnlock()
 	for _, p := range r.byID {
 		if p.SourcedID == sourcedID {
-			return p, nil
+			return clonePerson(p), nil
 		}
 	}
 	return domain.Person{}, domain.ErrNotFound
@@ -88,7 +102,7 @@ func (r *PersonRepository) List(_ context.Context, params port.ListParams) (port
 	defer r.mu.RUnlock()
 	items := make([]domain.Person, 0, len(r.byID))
 	for _, p := range r.byID {
-		items = append(items, p)
+		items = append(items, clonePerson(p))
 	}
 	sort.Slice(items, func(i, j int) bool {
 		a, b := items[i], items[j]

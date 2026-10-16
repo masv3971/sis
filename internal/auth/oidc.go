@@ -29,15 +29,16 @@ func (s *Client) IssueForOIDC(ctx context.Context, claims *OIDCClaims) (Token, e
 	}
 
 	acc, err := s.accounts.GetByOIDC(ctx, claims.Issuer, claims.Subject)
-	switch {
-	case errors.Is(err, domain.ErrNotFound):
+	if errors.Is(err, domain.ErrNotFound) {
 		acc, err = s.provisionOIDCAccount(ctx, claims.Issuer, claims.Subject)
-		if err != nil {
-			return Token{}, err
-		}
-	case err != nil:
+	}
+	if err != nil {
 		return Token{}, err
-	case acc.Status != domain.StatusActive:
+	}
+	// Checked on every path, including provisioning: a concurrent callback
+	// may have created the account first and an admin may already have
+	// disabled it.
+	if acc.Status != domain.StatusActive {
 		return Token{}, ErrInvalidCredentials
 	}
 
@@ -61,6 +62,10 @@ func oidcUsername(issuer, subject string) string {
 // reason to pay for an Argon2 hash on every first login. Keeping provisioning
 // free of Argon2 also keeps OIDC callbacks outside the memory budget that
 // max_concurrent_logins protects.
+//
+// Provisioning is insert-if-absent: a delayed first-login callback that lost
+// the race to another one gets domain.ErrConflict and re-reads the stored
+// account, so it never resets roles or status set in the meantime.
 func (s *Client) provisionOIDCAccount(ctx context.Context, issuer, subject string) (domain.Account, error) {
 	now := time.Now().UTC()
 	acc := domain.Account{
@@ -73,9 +78,13 @@ func (s *Client) provisionOIDCAccount(ctx context.Context, issuer, subject strin
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
-	if err := s.accounts.Upsert(ctx, acc); err != nil {
+	err := s.accounts.Create(ctx, acc)
+	if err == nil {
+		return acc, nil
+	}
+	if !errors.Is(err, domain.ErrConflict) {
 		return domain.Account{}, err
 	}
-	// Re-read so concurrent first logins converge on the stored row.
+	// Another callback provisioned this identity first; use its stored row.
 	return s.accounts.GetByOIDC(ctx, issuer, subject)
 }

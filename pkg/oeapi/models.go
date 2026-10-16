@@ -102,6 +102,11 @@ func FromPerson(p domain.Person) Person {
 	}
 }
 
+// The relationship mappers below copy reference fields (ParentID, OrgID,
+// CourseID, AcademicSessionID, PersonID, OfferingID) verbatim. OEAPI
+// resources are addressed by sourcedId, so callers must first rewrite those
+// fields to the referenced records' sourcedIds (readmodel.Client.PublishRefs).
+
 // FromOrganization maps a canonical organization.
 func FromOrganization(o *domain.Organization) Organization {
 	return Organization{

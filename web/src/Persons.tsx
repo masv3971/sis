@@ -31,6 +31,15 @@ export function Persons({ onUnauthorized }: { onUnauthorized: () => void }) {
   // above only disables the button after the next render, which is too late
   // for a fast double-click or a repeated Enter.
   const submittingRef = useRef(false);
+  // editingRef mirrors editingId so an async handler (remove) can see the
+  // edit session current when it finishes, not the one it started with.
+  const editingRef = useRef<string | null>(null);
+
+  function setEditing(id: string | null, next: Person) {
+    editingRef.current = id;
+    setEditingId(id);
+    setForm(next);
+  }
 
   function fail(e: unknown) {
     if (e instanceof UnauthorizedError) onUnauthorized();
@@ -76,10 +85,11 @@ export function Persons({ onUnauthorized }: { onUnauthorized: () => void }) {
     setSubmitting(true);
     setError("");
     try {
+      // The form, its inputs and every Edit button are disabled while
+      // submitting, so the draft cannot change before this reset.
       if (editingId) await updatePerson(editingId, form);
       else await createPerson(form);
-      setForm(emptyForm);
-      setEditingId(null);
+      setEditing(null, emptyForm);
       await load(offset);
     } catch (e) {
       fail(e);
@@ -93,19 +103,22 @@ export function Persons({ onUnauthorized }: { onUnauthorized: () => void }) {
   // record, so any field the form does not show (identifiers, emails,
   // phones, dateOfBirth, ...) must be sent back unchanged.
   function edit(p: Person) {
-    setEditingId(p.id ?? null);
-    setForm(structuredClone(p));
+    if (submittingRef.current) return;
+    setEditing(p.id ?? null, structuredClone(p));
   }
 
   function cancel() {
-    setEditingId(null);
-    setForm(emptyForm);
+    setEditing(null, emptyForm);
     setError("");
   }
 
   async function remove(id: string) {
     try {
       await deletePerson(id);
+      // A later Save would PUT to the deleted id and 404. Clear the edit
+      // session only if it still refers to this person; an edit of someone
+      // else started while the delete was pending is kept.
+      if (editingRef.current === id) setEditing(null, emptyForm);
       await load(offset);
     } catch (e) {
       fail(e);
@@ -120,30 +133,34 @@ export function Persons({ onUnauthorized }: { onUnauthorized: () => void }) {
       <section className="card">
         <h2>{editingId ? "Edit person" : "New person"}</h2>
         <form onSubmit={submit}>
-          <label>
-            Given name
-            <input
-              value={form.givenName}
-              onChange={(e) => setForm({ ...form, givenName: e.target.value })}
-              required
-            />
-          </label>
-          <label>
-            Family name
-            <input
-              value={form.familyName}
-              onChange={(e) => setForm({ ...form, familyName: e.target.value })}
-              required
-            />
-          </label>
-          <label>
-            Status
-            <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
-              <option value="active">active</option>
-              <option value="inactive">inactive</option>
-              <option value="tobedeleted">tobedeleted</option>
-            </select>
-          </label>
+          {/* A disabled fieldset disables every control inside it, so the
+              draft cannot change while a write is pending. */}
+          <fieldset className="plain" disabled={submitting}>
+            <label>
+              Given name
+              <input
+                value={form.givenName}
+                onChange={(e) => setForm({ ...form, givenName: e.target.value })}
+                required
+              />
+            </label>
+            <label>
+              Family name
+              <input
+                value={form.familyName}
+                onChange={(e) => setForm({ ...form, familyName: e.target.value })}
+                required
+              />
+            </label>
+            <label>
+              Status
+              <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
+                <option value="active">active</option>
+                <option value="inactive">inactive</option>
+                <option value="tobedeleted">tobedeleted</option>
+              </select>
+            </label>
+          </fieldset>
           {error && <p className="error">{error}</p>}
           <div className="row">
             <button type="submit" disabled={submitting}>
@@ -178,7 +195,7 @@ export function Persons({ onUnauthorized }: { onUnauthorized: () => void }) {
                 <td>{p.status}</td>
                 <td className="mono">{p.sourcedId}</td>
                 <td className="row">
-                  <button className="ghost" onClick={() => edit(p)}>
+                  <button className="ghost" onClick={() => edit(p)} disabled={submitting}>
                     Edit
                   </button>
                   <button className="danger" onClick={() => remove(p.id!)}>

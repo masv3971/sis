@@ -113,6 +113,11 @@ func FromPerson(p domain.Person) Person {
 	}
 }
 
+// The relationship mappers below copy reference fields (ParentID, OrgID,
+// CourseID, AcademicSessionID, PersonID, OfferingID) verbatim into GUIDRefs,
+// which are sourcedIds. Callers must first rewrite those fields to the
+// referenced records' sourcedIds (readmodel.Client.PublishRefs).
+
 // FromOrg maps a canonical organization.
 func FromOrg(o *domain.Organization) Org {
 	return Org{

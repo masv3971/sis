@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -31,18 +32,45 @@ func migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	if err != nil {
 		return fmt.Errorf("acquire migration connection: %w", err)
 	}
-	defer conn.Release()
 
 	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1)`, migrationLockKey); err != nil {
+		// The lock state is unknown (the query may have been sent), so
+		// never hand this session back to the pool.
+		discardConn(conn)
 		return fmt.Errorf("acquire migration lock: %w", err)
 	}
-	defer func() {
-		// Use a fresh context so the unlock still runs if ctx was cancelled;
-		// if it fails anyway the lock is released when the session ends.
-		_, _ = conn.Exec(context.WithoutCancel(ctx), `SELECT pg_advisory_unlock($1)`, migrationLockKey)
-	}()
+	defer releaseMigrationLock(conn)
 
 	return migrateLocked(ctx, conn)
+}
+
+// migrationUnlockTimeout bounds the advisory-unlock round trip during
+// cleanup. It is independent of the caller's ctx: the unlock must still run
+// after ctx is cancelled, but must not hang startup if PostgreSQL stops
+// responding.
+const migrationUnlockTimeout = 5 * time.Second
+
+// releaseMigrationLock unlocks the migration advisory lock on its own bounded
+// context and returns conn to the pool only if the unlock was confirmed.
+// Otherwise the connection is closed, which ends the session and so releases
+// the lock server-side, instead of pooling a possibly lock-holding session.
+func releaseMigrationLock(conn *pgxpool.Conn) {
+	ctx, cancel := context.WithTimeout(context.Background(), migrationUnlockTimeout)
+	defer cancel()
+	var unlocked bool
+	if err := conn.QueryRow(ctx, `SELECT pg_advisory_unlock($1)`, migrationLockKey).Scan(&unlocked); err != nil || !unlocked {
+		discardConn(conn)
+		return
+	}
+	conn.Release()
+}
+
+// discardConn removes conn from the pool and closes it, bounded by
+// migrationUnlockTimeout.
+func discardConn(conn *pgxpool.Conn) {
+	ctx, cancel := context.WithTimeout(context.Background(), migrationUnlockTimeout)
+	defer cancel()
+	_ = conn.Hijack().Close(ctx)
 }
 
 // migrateLocked runs the migration sequence on conn; the caller must hold

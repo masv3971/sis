@@ -52,3 +52,33 @@ func TestAccountOIDCBinding(t *testing.T) {
 		t.Fatalf("expected ErrConflict for duplicate identity, got %v", err)
 	}
 }
+
+func TestAccountCreateNeverOverwrites(t *testing.T) {
+	ctx := context.Background()
+	repo := newStore(t).Accounts()
+	suffix := time.Now().Format("150405.000000")
+	now := time.Now().UTC()
+
+	a := domain.Account{
+		ID: "c-" + suffix, Username: "create-" + suffix, Status: domain.StatusInactive,
+		Roles:      []domain.AuthRole{domain.AuthRoleRegistrar},
+		OIDCIssuer: "https://idp.example", OIDCSubject: "csub-" + suffix, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := repo.Create(ctx, a); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	again := a
+	again.ID = "c2-" + suffix
+	again.Status = domain.StatusActive
+	again.Roles = []domain.AuthRole{domain.AuthRoleReadOnly}
+	if err := repo.Create(ctx, again); !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected ErrConflict, got %v", err)
+	}
+	got, err := repo.GetByOIDC(ctx, a.OIDCIssuer, a.OIDCSubject)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ID != a.ID || got.Status != domain.StatusInactive || got.Roles[0] != domain.AuthRoleRegistrar {
+		t.Fatalf("Create modified the existing account: %+v", got)
+	}
+}

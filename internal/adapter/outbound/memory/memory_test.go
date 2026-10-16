@@ -149,3 +149,93 @@ func TestAccountUpsertRejectsDuplicateIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// TestPersonRepositoryIsolatesSlices checks that neither the value passed to
+// a write nor a value returned by a read shares slice storage with the
+// repository, so mutating them cannot change stored data.
+func TestPersonRepositoryIsolatesSlices(t *testing.T) {
+	ctx := context.Background()
+	r := NewPersonRepository()
+	p := domain.Person{
+		ID: "1", SourcedID: "a",
+		Roles:       []domain.Role{domain.RoleStudent},
+		Identifiers: []domain.Identifier{{Type: "nin", Value: "x"}},
+		Emails:      []domain.Contact{{Type: "work", Value: "a@x"}},
+		Phones:      []domain.Contact{{Type: "work", Value: "1"}},
+	}
+	if err := r.Create(ctx, p); err != nil {
+		t.Fatal(err)
+	}
+	p.Roles[0], p.Identifiers[0].Value, p.Emails[0].Value, p.Phones[0].Value = domain.RoleStaff, "y", "b@x", "2"
+
+	check := func(stage string) {
+		t.Helper()
+		got, err := r.Get(ctx, "1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Roles[0] != domain.RoleStudent || got.Identifiers[0].Value != "x" ||
+			got.Emails[0].Value != "a@x" || got.Phones[0].Value != "1" {
+			t.Fatalf("%s: stored person changed: %+v", stage, got)
+		}
+	}
+	check("after mutating Create argument")
+
+	mutate := func(q domain.Person) {
+		q.Roles[0], q.Identifiers[0].Value, q.Emails[0].Value, q.Phones[0].Value = domain.RoleGuest, "z", "c@x", "3"
+	}
+	got, _ := r.Get(ctx, "1")
+	mutate(got)
+	check("after mutating Get result")
+	got, _ = r.GetBySourcedID(ctx, "a")
+	mutate(got)
+	check("after mutating GetBySourcedID result")
+	page, _ := r.List(ctx, port.ListParams{})
+	mutate(page.Items[0])
+	check("after mutating List result")
+
+	upd, _ := r.Get(ctx, "1")
+	if err := r.Update(ctx, upd); err != nil {
+		t.Fatal(err)
+	}
+	mutate(upd)
+	check("after mutating Update argument")
+}
+
+// TestAuthRepositoriesIsolateSlices checks Roles and Scopes are cloned on
+// Upsert and on every lookup, so callers cannot change stored authorization.
+func TestAuthRepositoriesIsolateSlices(t *testing.T) {
+	ctx := context.Background()
+	accounts := NewAccountRepository()
+	a := domain.Account{Username: "u", Roles: []domain.AuthRole{domain.AuthRoleReadOnly}, OIDCIssuer: "i", OIDCSubject: "s"}
+	if err := accounts.Upsert(ctx, a); err != nil {
+		t.Fatal(err)
+	}
+	a.Roles[0] = domain.AuthRoleAdmin
+	byName, _ := accounts.GetByUsername(ctx, "u")
+	byName.Roles[0] = domain.AuthRoleAdmin
+	byOIDC, _ := accounts.GetByOIDC(ctx, "i", "s")
+	if byOIDC.Roles[0] != domain.AuthRoleReadOnly {
+		t.Fatalf("stored roles changed: %v", byOIDC.Roles)
+	}
+	byOIDC.Roles[0] = domain.AuthRoleAdmin
+	if err := accounts.Upsert(ctx, byName); err != nil { // update path
+		t.Fatal(err)
+	}
+	byName.Roles[0] = domain.AuthRoleRegistrar
+	if got, _ := accounts.GetByUsername(ctx, "u"); got.Roles[0] != domain.AuthRoleAdmin {
+		t.Fatalf("roles after update path: %v", got.Roles)
+	}
+
+	clients := NewClientRepository()
+	c := domain.Client{ClientID: "c", Scopes: []string{domain.ScopeRead}}
+	if err := clients.Upsert(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+	c.Scopes[0] = domain.ScopeWrite
+	got, _ := clients.GetByClientID(ctx, "c")
+	got.Scopes[0] = domain.ScopeWrite
+	if got, _ := clients.GetByClientID(ctx, "c"); got.Scopes[0] != domain.ScopeRead {
+		t.Fatalf("stored scopes changed: %v", got.Scopes)
+	}
+}

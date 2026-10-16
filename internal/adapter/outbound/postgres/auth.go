@@ -71,6 +71,21 @@ func (r *AccountRepository) Upsert(ctx context.Context, a domain.Account) error 
 	return mapUniqueViolation(err)
 }
 
+// Create inserts a new account and never modifies an existing row; a taken
+// username, id or OIDC issuer+subject is reported as domain.ErrConflict.
+func (r *AccountRepository) Create(ctx context.Context, a domain.Account) error {
+	roles, err := json.Marshal(a.Roles)
+	if err != nil {
+		return err
+	}
+	_, err = r.pool.Exec(ctx,
+		`INSERT INTO accounts (`+accountColumns+`)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+		a.ID, a.Username, a.PasswordHash, roles, a.Status,
+		a.OIDCIssuer, a.OIDCSubject, a.CreatedAt, a.UpdatedAt)
+	return mapUniqueViolation(err)
+}
+
 // ClientRepository is the pgx-backed port.ClientRepository.
 type ClientRepository struct {
 	pool *pgxpool.Pool

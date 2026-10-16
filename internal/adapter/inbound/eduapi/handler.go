@@ -86,6 +86,10 @@ func List[T any, PT domain.EntityPtr[T], D any](c *Client, svc *service.Resource
 			helpers.WriteError(gc, err)
 			return
 		}
+		if err := publishRefs(c, gc, page.Items...); err != nil {
+			helpers.WriteError(gc, err)
+			return
+		}
 		out := make([]D, 0, len(page.Items))
 		for _, e := range page.Items {
 			out = append(out, mapFn(e))
@@ -96,15 +100,31 @@ func List[T any, PT domain.EntityPtr[T], D any](c *Client, svc *service.Resource
 }
 
 // Get builds a get-by-sourcedId handler for an entity type.
-func Get[T any, PT domain.EntityPtr[T], D any](_ *Client, svc *service.Resource[T, PT], key string, mapFn func(PT) D) gin.HandlerFunc {
+func Get[T any, PT domain.EntityPtr[T], D any](c *Client, svc *service.Resource[T, PT], key string, mapFn func(PT) D) gin.HandlerFunc {
 	return func(gc *gin.Context) {
 		e, err := svc.GetBySourcedID(gc.Request.Context(), gc.Param("id"))
 		if err != nil {
 			helpers.WriteError(gc, err)
 			return
 		}
+		if err := publishRefs(c, gc, e); err != nil {
+			helpers.WriteError(gc, err)
+			return
+		}
 		gc.JSON(http.StatusOK, gin.H{key: mapFn(e)})
 	}
+}
+
+// publishRefs rewrites the items' references to other records into those
+// records' sourcedIds (see readmodel.Client.PublishRefs), so every GUIDRef in
+// the response can be followed through this provider. A free function for
+// the same reason as List/Get: it is generic over PT.
+func publishRefs[PT domain.Entity](c *Client, gc *gin.Context, items ...PT) error {
+	ents := make([]domain.Entity, len(items))
+	for i, e := range items {
+		ents[i] = e
+	}
+	return c.catalog.PublishRefs(gc.Request.Context(), ents...)
 }
 
 // limitOffset parses OneRoster-style limit/offset query parameters. An

@@ -31,7 +31,8 @@ func TestParseLimitOffset(t *testing.T) {
 		{"limit=0", true, 0, 0},
 		{"limit=-1", true, 0, 0},
 		{"limit=abc", true, 0, 0},
-		{"limit=", true, 0, 0},
+		{"limit=", true, 0, 0}, // empty value is present (gin's GetQuery), not absent
+		{"offset=", true, 0, 0},
 		{"offset=-1", true, 0, 0},
 	}
 	for _, c := range cases {
@@ -61,6 +62,8 @@ func TestParsePageNumberSize(t *testing.T) {
 		{"pageSize=0", true, 0, 0, 0},
 		{"pageNumber=0", true, 0, 0, 0},
 		{"pageNumber=x", true, 0, 0, 0},
+		{"pageNumber=", true, 0, 0, 0}, // empty value is present, not absent
+		{"pageSize=", true, 0, 0, 0},
 	}
 	for _, c := range cases {
 		n, s, p, err := ParsePageNumberSize(ctxWithQuery(c.query), 10, testMax)

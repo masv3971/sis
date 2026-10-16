@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"slices"
 	"sync"
 
 	"github.com/google/uuid"
@@ -20,6 +21,14 @@ func NewAccountRepository() *AccountRepository {
 	return &AccountRepository{byUsername: make(map[string]domain.Account)}
 }
 
+// cloneAccount returns a copy of a that does not share the Roles backing
+// array. Roles carry authorization, so stored roles must only change through
+// Upsert: every write stores a clone and every read returns one.
+func cloneAccount(a domain.Account) domain.Account {
+	a.Roles = slices.Clone(a.Roles)
+	return a
+}
+
 // GetByUsername returns an account by username.
 func (r *AccountRepository) GetByUsername(_ context.Context, username string) (domain.Account, error) {
 	r.mu.RLock()
@@ -28,7 +37,7 @@ func (r *AccountRepository) GetByUsername(_ context.Context, username string) (d
 	if !ok {
 		return domain.Account{}, domain.ErrNotFound
 	}
-	return a, nil
+	return cloneAccount(a), nil
 }
 
 // GetByOIDC returns the account bound to an OIDC issuer+subject pair.
@@ -40,7 +49,7 @@ func (r *AccountRepository) GetByOIDC(_ context.Context, issuer, subject string)
 	}
 	for _, a := range r.byUsername {
 		if a.OIDCIssuer == issuer && a.OIDCSubject == subject {
-			return a, nil
+			return cloneAccount(a), nil
 		}
 	}
 	return domain.Account{}, domain.ErrNotFound
@@ -58,7 +67,7 @@ func (r *AccountRepository) Upsert(_ context.Context, a domain.Account) error {
 		a.CreatedAt = existing.CreatedAt
 		a.OIDCIssuer = existing.OIDCIssuer
 		a.OIDCSubject = existing.OIDCSubject
-		r.byUsername[a.Username] = a
+		r.byUsername[a.Username] = cloneAccount(a)
 		return nil
 	}
 	if a.ID == "" {
@@ -72,7 +81,31 @@ func (r *AccountRepository) Upsert(_ context.Context, a domain.Account) error {
 			return domain.ErrConflict
 		}
 	}
-	r.byUsername[a.Username] = a
+	r.byUsername[a.Username] = cloneAccount(a)
+	return nil
+}
+
+// Create inserts a new account, returning domain.ErrConflict if the
+// username, id or OIDC issuer+subject already exists. Unlike Upsert it never
+// touches an existing account.
+func (r *AccountRepository) Create(_ context.Context, a domain.Account) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.byUsername[a.Username]; ok {
+		return domain.ErrConflict
+	}
+	if a.ID == "" {
+		a.ID = uuid.NewString()
+	}
+	for _, other := range r.byUsername {
+		if other.ID == a.ID {
+			return domain.ErrConflict
+		}
+		if a.OIDCSubject != "" && other.OIDCIssuer == a.OIDCIssuer && other.OIDCSubject == a.OIDCSubject {
+			return domain.ErrConflict
+		}
+	}
+	r.byUsername[a.Username] = cloneAccount(a)
 	return nil
 }
 
@@ -87,6 +120,13 @@ func NewClientRepository() *ClientRepository {
 	return &ClientRepository{byClientID: make(map[string]domain.Client)}
 }
 
+// cloneClient returns a copy of c that does not share the Scopes backing
+// array, so the scopes later client tokens receive only change via Upsert.
+func cloneClient(c domain.Client) domain.Client {
+	c.Scopes = slices.Clone(c.Scopes)
+	return c
+}
+
 // GetByClientID returns a client by client_id.
 func (r *ClientRepository) GetByClientID(_ context.Context, clientID string) (domain.Client, error) {
 	r.mu.RLock()
@@ -95,7 +135,7 @@ func (r *ClientRepository) GetByClientID(_ context.Context, clientID string) (do
 	if !ok {
 		return domain.Client{}, domain.ErrNotFound
 	}
-	return c, nil
+	return cloneClient(c), nil
 }
 
 // Upsert inserts or updates by client_id, preserving created_at on update.
@@ -105,6 +145,6 @@ func (r *ClientRepository) Upsert(_ context.Context, c domain.Client) error {
 	if existing, ok := r.byClientID[c.ClientID]; ok {
 		c.CreatedAt = existing.CreatedAt
 	}
-	r.byClientID[c.ClientID] = c
+	r.byClientID[c.ClientID] = cloneClient(c)
 	return nil
 }

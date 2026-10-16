@@ -3,8 +3,12 @@
   --panel: #1e293b;
   --fg: #e2e8f0;
   --muted: #94a3b8;
-  --accent: #6366f1;
-  --danger: #ef4444;
+  /* WCAG AA (4.5:1) for normal text: white on --accent is 6.3:1 and
+     --danger on --panel is 5.3:1. --focus is the lighter indigo used for
+     the focus ring so it keeps 3:1 against the dark input background. */
+  --accent: #4f46e5;
+  --focus: #818cf8;
+  --danger: #f87171;
   --border: #334155;
 }
 
@@ -82,7 +86,7 @@ select {
 
 input:focus,
 select:focus {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 0;
 }
 
@@ -111,6 +115,13 @@ button.danger {
   background: transparent;
   border: 1px solid var(--danger);
   color: var(--danger);
+}
+
+fieldset.plain {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
 }
 
 .row {

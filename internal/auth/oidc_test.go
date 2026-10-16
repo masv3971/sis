@@ -139,6 +139,44 @@ func TestAuthenticate_RejectsOIDCAccountWithLegacyHash(t *testing.T) {
 	}
 }
 
+// TestProvisionOIDCAccount_DoesNotOverwriteConcurrentChanges simulates a
+// delayed first-login callback: it saw ErrNotFound, but another callback
+// provisioned the account and an admin then changed its roles and disabled
+// it. Provisioning must keep the stored account, and no token may be issued.
+func TestProvisionOIDCAccount_DoesNotOverwriteConcurrentChanges(t *testing.T) {
+	svc, accounts := newAuthService()
+	ctx := context.Background()
+	claims := &OIDCClaims{Issuer: testIssuer, Subject: "sub-1"}
+	if _, err := svc.IssueForOIDC(ctx, claims); err != nil {
+		t.Fatal(err)
+	}
+	acc, err := accounts.GetByOIDC(ctx, testIssuer, "sub-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	acc.Roles = []domain.AuthRole{domain.AuthRoleRegistrar}
+	acc.Status = domain.StatusInactive
+	if err := accounts.Upsert(ctx, acc); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := svc.provisionOIDCAccount(ctx, testIssuer, "sub-1")
+	if err != nil {
+		t.Fatalf("delayed provisioning: %v", err)
+	}
+	if got.ID != acc.ID || got.Status != domain.StatusInactive ||
+		len(got.Roles) != 1 || got.Roles[0] != domain.AuthRoleRegistrar {
+		t.Fatalf("provisioning overwrote the stored account: %+v", got)
+	}
+	stored, _ := accounts.GetByOIDC(ctx, testIssuer, "sub-1")
+	if stored.Status != domain.StatusInactive || stored.Roles[0] != domain.AuthRoleRegistrar {
+		t.Fatalf("stored account was reset: %+v", stored)
+	}
+	if _, err := svc.IssueForOIDC(ctx, claims); err != ErrInvalidCredentials {
+		t.Fatalf("expected disabled account to be rejected, got %v", err)
+	}
+}
+
 func TestIssueForOIDC_RejectsMissingIdentity(t *testing.T) {
 	svc, _ := newAuthService()
 	if _, err := svc.IssueForOIDC(context.Background(), &OIDCClaims{Issuer: testIssuer}); err != ErrInvalidCredentials {

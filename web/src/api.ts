@@ -78,6 +78,10 @@ async function authFetch(path: string, init: RequestInit = {}): Promise<Response
   if (init.body) headers.set("Content-Type", "application/json");
   const res = await fetch(path, { ...init, headers });
   if (res.status === 401) {
+    // Only end the session this request was sent with. A delayed 401 from
+    // an earlier session (logout + sign-in while it was pending) must not
+    // clear the newly issued token or log the user out again.
+    if (getToken() !== token) throw new Error("Your session changed while the request was pending. Try again.");
     clearToken();
     throw new UnauthorizedError("unauthorized");
   }
@@ -87,9 +91,16 @@ async function authFetch(path: string, init: RequestInit = {}): Promise<Response
 async function errorMessage(res: Response, fallback: string): Promise<string> {
   try {
     const body = (await res.json()) as {
-      error?: { title?: string; details?: unknown };
+      error?: string | { title?: string; details?: unknown };
+      message?: unknown;
     };
     const e = body.error;
+    // The auth middleware answers 401/403 with a flat string envelope:
+    // {"error": "forbidden", "message": "insufficient permissions"}.
+    if (typeof e === "string") {
+      if (typeof body.message === "string" && body.message) return body.message;
+      return e;
+    }
     if (e) {
       if (typeof e.details === "string") return e.details;
       if (typeof e.title === "string") return e.title;
