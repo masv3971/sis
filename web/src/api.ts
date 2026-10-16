@@ -78,10 +78,17 @@ async function authFetch(path: string, init: RequestInit = {}): Promise<Response
   if (init.body) headers.set("Content-Type", "application/json");
   const res = await fetch(path, { ...init, headers });
   if (res.status === 401) {
-    // Only end the session this request was sent with. A delayed 401 from
-    // an earlier session (logout + sign-in while it was pending) must not
-    // clear the newly issued token or log the user out again.
-    if (getToken() !== token) throw new Error("Your session changed while the request was pending. Try again.");
+    // Only protect a *different* session: a delayed 401 from an earlier
+    // session (logout + sign-in while it was pending) must not clear the
+    // newly issued token or log the user out again. If the token is
+    // already gone (a concurrent request with the same expired token got
+    // its 401 first), this request is unauthorized too, so every caller
+    // sees UnauthorizedError and none can leave the UI signed in without a
+    // token.
+    const current = getToken();
+    if (current !== null && current !== token) {
+      throw new Error("Your session changed while the request was pending. Try again.");
+    }
     clearToken();
     throw new UnauthorizedError("unauthorized");
   }

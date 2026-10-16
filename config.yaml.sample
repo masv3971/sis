@@ -77,7 +77,7 @@ sis:
     # least the default.
     inbound:
       authapi:              # /auth, /oauth/token
-        post_login_redirect_url: "/"   # where the browser lands after SSO
+        post_login_redirect_url: "/"   # where the browser lands after SSO (no #fragment)
         # Password checks allowed at once (each uses ~64 MiB); extra login
         # requests get 429.
         max_concurrent_logins: 8
@@ -96,6 +96,10 @@ sis:
       postgres:
         # Empty keeps all data in memory and loses it on restart: try-out
         # only. Migrations run automatically at startup.
+        # localhost is for running SIS on the host against the compose
+        # database. When SIS itself runs under docker compose (this file
+        # mounted as config.yaml), use the service name instead:
+        #   postgres://sis:sis@postgres:5432/sis?sslmode=disable
         connection_string: "postgres://sis:sis@localhost:5432/sis?sslmode=disable"
       events:
         # Events are logged today; NATS publishing is not implemented yet.

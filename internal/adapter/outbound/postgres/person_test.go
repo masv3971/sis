@@ -127,6 +127,50 @@ func TestUpdateSourcedIDCollisionIsConflict(t *testing.T) {
 	}
 }
 
+// TestGetByIDs checks the bulk lookups used for reference resolution return
+// exactly the matching rows, skip unknown ids, and match by id only (never
+// by sourcedId).
+func TestGetByIDs(t *testing.T) {
+	ctx := context.Background()
+	svc := newStore(t)
+	suffix := time.Now().Format("150405.000000")
+	now := time.Now().UTC()
+
+	persons := svc.Persons()
+	a := domain.Person{ID: "ga-" + suffix, SourcedID: "gsa-" + suffix, Status: domain.StatusActive, GivenName: "A", FamilyName: "A", CreatedAt: now, UpdatedAt: now}
+	b := domain.Person{ID: "gb-" + suffix, SourcedID: "gsb-" + suffix, Status: domain.StatusActive, GivenName: "B", FamilyName: "B", CreatedAt: now, UpdatedAt: now}
+	t.Cleanup(func() { _ = persons.Delete(ctx, a.ID); _ = persons.Delete(ctx, b.ID) })
+	for _, p := range []domain.Person{a, b} {
+		if err := persons.Create(ctx, p); err != nil {
+			t.Fatalf("create %s: %v", p.ID, err)
+		}
+	}
+	got, err := persons.GetByIDs(ctx, []string{a.ID, b.ID, "missing", b.SourcedID})
+	if err != nil {
+		t.Fatalf("persons GetByIDs: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("persons GetByIDs: got %d rows, want 2: %+v", len(got), got)
+	}
+	if empty, err := persons.GetByIDs(ctx, nil); err != nil || len(empty) != 0 {
+		t.Fatalf("persons GetByIDs(nil) = %v, %v", empty, err)
+	}
+
+	courses := postgres.NewDocRepo[domain.Course](svc)
+	ca := &domain.Course{Base: domain.Base{ID: "gca-" + suffix, SourcedID: "gcsa-" + suffix, CreatedAt: now, UpdatedAt: now}, Title: "A"}
+	t.Cleanup(func() { _ = courses.Delete(ctx, ca.ID) })
+	if err := courses.Create(ctx, ca); err != nil {
+		t.Fatalf("create course: %v", err)
+	}
+	cs, err := courses.GetByIDs(ctx, []string{ca.ID, ca.SourcedID, "missing"})
+	if err != nil {
+		t.Fatalf("courses GetByIDs: %v", err)
+	}
+	if len(cs) != 1 || cs[0].ID != ca.ID {
+		t.Fatalf("courses GetByIDs: got %+v, want only %s", cs, ca.ID)
+	}
+}
+
 // TestConcurrentStartupMigrates simulates several replicas booting at once;
 // the advisory lock must let every one of them succeed.
 func TestConcurrentStartupMigrates(t *testing.T) {

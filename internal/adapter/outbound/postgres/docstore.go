@@ -62,6 +62,32 @@ func (r *DocRepo[T, PT]) Get(ctx context.Context, id string) (PT, error) {
 	return r.scanOne(ctx, `SELECT data FROM entities WHERE type=$1 AND id=$2`, id)
 }
 
+// GetByIDs returns the entities whose id is in ids in one query.
+func (r *DocRepo[T, PT]) GetByIDs(ctx context.Context, ids []string) ([]PT, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	rows, err := r.pool.Query(ctx, `SELECT data FROM entities WHERE type=$1 AND id = ANY($2)`, r.typeName, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]PT, 0, preallocCap(len(ids)))
+	for rows.Next() {
+		var data []byte
+		if err := rows.Scan(&data); err != nil {
+			return nil, err
+		}
+		e, err := unmarshalDoc[T, PT](data)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, e)
+	}
+	return items, rows.Err()
+}
+
 // GetBySourcedID returns an entity by business key.
 func (r *DocRepo[T, PT]) GetBySourcedID(ctx context.Context, sourcedID string) (PT, error) {
 	return r.scanOne(ctx, `SELECT data FROM entities WHERE type=$1 AND sourced_id=$2`, sourcedID)

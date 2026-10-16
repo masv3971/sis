@@ -52,11 +52,16 @@ func ResourceList[T any, PT domain.EntityPtr[T]](c *Client, svc *service.Resourc
 	}
 }
 
-// ResourceCreate creates an entity of type T from the JSON body.
-func ResourceCreate[T any, PT domain.EntityPtr[T]](_ *Client, svc *service.Resource[T, PT]) gin.HandlerFunc {
+// ResourceCreate creates an entity of type T from the JSON body. References
+// to other records must be their canonical ids (see readmodel.CheckRefs).
+func ResourceCreate[T any, PT domain.EntityPtr[T]](c *Client, svc *service.Resource[T, PT]) gin.HandlerFunc {
 	return func(gc *gin.Context) {
 		e := PT(new(T))
 		if err := helpers.BindJSON(gc, e); err != nil {
+			helpers.WriteError(gc, err)
+			return
+		}
+		if err := c.catalog.CheckRefs(gc.Request.Context(), e); err != nil {
 			helpers.WriteError(gc, err)
 			return
 		}
@@ -81,8 +86,9 @@ func ResourceGet[T any, PT domain.EntityPtr[T]](_ *Client, svc *service.Resource
 	}
 }
 
-// ResourceUpdate replaces an entity; the path id is authoritative over the body.
-func ResourceUpdate[T any, PT domain.EntityPtr[T]](_ *Client, svc *service.Resource[T, PT]) gin.HandlerFunc {
+// ResourceUpdate replaces an entity; the path id is authoritative over the
+// body. References are checked as in ResourceCreate.
+func ResourceUpdate[T any, PT domain.EntityPtr[T]](c *Client, svc *service.Resource[T, PT]) gin.HandlerFunc {
 	return func(gc *gin.Context) {
 		e := PT(new(T))
 		if err := helpers.BindJSON(gc, e); err != nil {
@@ -90,6 +96,10 @@ func ResourceUpdate[T any, PT domain.EntityPtr[T]](_ *Client, svc *service.Resou
 			return
 		}
 		e.SetID(gc.Param("id"))
+		if err := c.catalog.CheckRefs(gc.Request.Context(), e); err != nil {
+			helpers.WriteError(gc, err)
+			return
+		}
 		updated, err := svc.Update(gc.Request.Context(), e)
 		if err != nil {
 			helpers.WriteError(gc, err)

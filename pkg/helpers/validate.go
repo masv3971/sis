@@ -78,6 +78,21 @@ func NewValidator() (*validator.Validate, error) {
 		return nil, err
 	}
 
+	// post_login_redirect_url - a parseable URL, absolute or relative, with no
+	// fragment. The OIDC callback appends "#access_token=...", so a
+	// destination that already has a fragment (or a bare trailing "#") would
+	// bury the token where the web UI never looks for it.
+	if err := validate.RegisterValidation("post_login_redirect_url", func(fl validator.FieldLevel) bool {
+		raw := fl.Field().String()
+		if strings.Contains(raw, "#") {
+			return false
+		}
+		_, ok := parseURL(raw)
+		return ok
+	}); err != nil {
+		return nil, err
+	}
+
 	// jwt_secret_production_min=N - the minimum JWT signing-secret length in
 	// bytes when the root struct's Common.Production is true; a no-op
 	// otherwise. Built-in conditional rules (required_if etc.) only see

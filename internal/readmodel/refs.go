@@ -2,27 +2,42 @@ package readmodel
 
 import (
 	"context"
-	"errors"
 
 	"github.com/SUNET/sis/internal/core/domain"
+	"github.com/SUNET/sis/internal/core/service"
 )
 
-// PublishRefs rewrites the references each entity holds to other records
-// (organization parent, course org, offering course/session/org, enrollment
-// person/offering) from canonical ids to the referenced records' sourcedIds.
-// The standards providers publish and look up every resource by sourcedId,
-// so a reference must carry the sourcedId to be followable.
-//
-// Call it in the provider layer, before mapping to a DTO. It mutates the
-// given values, which are fresh copies from the repository. A reference that
-// already holds a sourcedId is kept as-is; one that matches no record is
-// cleared so a broken link is never published. Lookups are memoised for the
-// call, so a list page costs one lookup per distinct referenced record.
-func (c *Client) PublishRefs(ctx context.Context, entities ...domain.Entity) error {
-	r := refResolver{c: c, seen: map[refKey]string{}}
-	for _, e := range entities {
-		if err := r.rewrite(ctx, e); err != nil {
-			return err
+// References between records (organization parent, course org, offering
+// course/session/org, enrollment person/offering) are stored as the
+// referenced record's canonical id, and only as that: ids and sourcedIds are
+// independently unique, so the same string can be one record's id and another
+// record's sourcedId, and a reference that may hold either is ambiguous.
+// CheckRefs enforces the single namespace on ingress; PublishRefs translates
+// it to sourcedIds on egress.
+
+// ref is one reference field of an entity.
+type ref struct {
+	typ   string  // referenced entity type
+	field string  // JSON field name, for validation errors
+	ptr   *string // the field itself
+}
+
+func refsOf(e domain.Entity) []ref {
+	switch v := e.(type) {
+	case *domain.Organization:
+		return []ref{{"organization", "parentId", &v.ParentID}}
+	case *domain.Course:
+		return []ref{{"organization", "orgId", &v.OrgID}}
+	case *domain.Offering:
+		return []ref{
+			{"course", "courseId", &v.CourseID},
+			{"academicSession", "academicSessionId", &v.AcademicSessionID},
+			{"organization", "orgId", &v.OrgID},
+		}
+	case *domain.Enrollment:
+		return []ref{
+			{"person", "personId", &v.PersonID},
+			{"offering", "offeringId", &v.OfferingID},
 		}
 	}
 	return nil
@@ -30,105 +45,117 @@ func (c *Client) PublishRefs(ctx context.Context, entities ...domain.Entity) err
 
 type refKey struct{ typ, id string }
 
-type refResolver struct {
-	c    *Client
-	seen map[refKey]string
-}
-
-func (r *refResolver) rewrite(ctx context.Context, e domain.Entity) error {
-	var refs []*string
-	var types []string
-	add := func(typ string, field *string) {
-		refs = append(refs, field)
-		types = append(types, typ)
+// CheckRefs rejects an entity whose references are not the canonical ids of
+// existing records, with a domain.ValidationError naming the first offending
+// field. Call it on ingress (create/update) so stored references are always
+// canonical ids: a sourcedId, or an id that matches nothing, is refused
+// rather than stored and guessed at later.
+func (c *Client) CheckRefs(ctx context.Context, e domain.Entity) error {
+	refs := refsOf(e)
+	found, err := c.resolve(ctx, refs)
+	if err != nil {
+		return err
 	}
-	switch v := e.(type) {
-	case *domain.Organization:
-		add("organization", &v.ParentID)
-	case *domain.Course:
-		add("organization", &v.OrgID)
-	case *domain.Offering:
-		add("course", &v.CourseID)
-		add("academicSession", &v.AcademicSessionID)
-		add("organization", &v.OrgID)
-	case *domain.Enrollment:
-		add("person", &v.PersonID)
-		add("offering", &v.OfferingID)
-	}
-	for i, field := range refs {
-		sid, err := r.sourcedID(ctx, types[i], *field)
-		if err != nil {
-			return err
+	for _, r := range refs {
+		if *r.ptr == "" {
+			continue
 		}
-		*field = sid
+		if _, ok := found[refKey{r.typ, *r.ptr}]; !ok {
+			return &domain.ValidationError{Field: r.field, Msg: "must be the id of an existing " + r.typ}
+		}
 	}
 	return nil
 }
 
-// sourcedID returns the sourcedId of the typ record whose canonical id is id.
-// If no record has that id but one has it as sourcedId, id is already public
-// and is returned unchanged. Otherwise it returns "".
-func (r *refResolver) sourcedID(ctx context.Context, typ, id string) (string, error) {
-	if id == "" {
-		return "", nil
+// PublishRefs rewrites the references each entity holds from canonical ids to
+// the referenced records' sourcedIds. The standards providers publish and
+// look up every resource by sourcedId, so a reference must carry the
+// sourcedId to be followable.
+//
+// Call it in the provider layer, before mapping to a DTO. It mutates the
+// given values, which are fresh copies from the repository. A reference that
+// matches no record (e.g. its target was deleted) is cleared so a broken
+// link is never published; it is never reinterpreted as a sourcedId.
+//
+// Lookups are batched: one repository call per referenced entity type, so a
+// page costs at most five lookups however many records it holds.
+func (c *Client) PublishRefs(ctx context.Context, entities ...domain.Entity) error {
+	var refs []ref
+	for _, e := range entities {
+		refs = append(refs, refsOf(e)...)
 	}
-	k := refKey{typ, id}
-	if sid, ok := r.seen[k]; ok {
-		return sid, nil
+	found, err := c.resolve(ctx, refs)
+	if err != nil {
+		return err
 	}
-	byID, bySourcedID := r.lookups(typ)
-	sid, err := byID(ctx, id)
-	if errors.Is(err, domain.ErrNotFound) {
-		if _, err = bySourcedID(ctx, id); err == nil {
-			sid = id
+	for _, r := range refs {
+		if *r.ptr != "" {
+			*r.ptr = found[refKey{r.typ, *r.ptr}]
 		}
 	}
-	if errors.Is(err, domain.ErrNotFound) {
-		sid, err = "", nil
-	}
-	if err != nil {
-		return "", err
-	}
-	r.seen[k] = sid
-	return sid, nil
+	return nil
 }
 
-type lookupFn func(ctx context.Context, key string) (string, error)
+// resolve looks up every distinct non-empty reference in refs, one batched
+// call per type, and maps each one that exists to its record's sourcedId.
+func (c *Client) resolve(ctx context.Context, refs []ref) (map[refKey]string, error) {
+	byType := map[string][]string{}
+	seen := map[refKey]bool{}
+	for _, r := range refs {
+		k := refKey{r.typ, *r.ptr}
+		if k.id == "" || seen[k] {
+			continue
+		}
+		seen[k] = true
+		byType[r.typ] = append(byType[r.typ], k.id)
+	}
+	found := make(map[refKey]string, len(seen))
+	for typ, ids := range byType {
+		sids, err := c.sourcedIDs(ctx, typ, ids)
+		if err != nil {
+			return nil, err
+		}
+		for id, sid := range sids {
+			found[refKey{typ, id}] = sid
+		}
+	}
+	return found, nil
+}
 
-// lookups returns the get-by-id and get-by-sourcedId functions for typ, each
-// yielding the record's sourcedId.
-func (r *refResolver) lookups(typ string) (byID, bySourcedID lookupFn) {
-	c := r.c
+// sourcedIDs maps each id in ids that names an existing typ record to that
+// record's sourcedId, in a single repository call.
+func (c *Client) sourcedIDs(ctx context.Context, typ string, ids []string) (map[string]string, error) {
 	switch typ {
 	case "person":
-		return func(ctx context.Context, k string) (string, error) {
-				p, err := c.Persons.GetPerson(ctx, k)
-				return p.SourcedID, err
-			}, func(ctx context.Context, k string) (string, error) {
-				p, err := c.Persons.GetPersonBySourcedID(ctx, k)
-				return p.SourcedID, err
-			}
+		ps, err := c.Persons.GetPersons(ctx, ids)
+		if err != nil {
+			return nil, err
+		}
+		out := make(map[string]string, len(ps))
+		for _, p := range ps {
+			out[p.ID] = p.SourcedID
+		}
+		return out, nil
 	case "organization":
-		return entityLookups(c.Organizations.Get, c.Organizations.GetBySourcedID)
+		return entitySourcedIDs(ctx, c.Organizations, ids)
 	case "academicSession":
-		return entityLookups(c.AcademicSessions.Get, c.AcademicSessions.GetBySourcedID)
+		return entitySourcedIDs(ctx, c.AcademicSessions, ids)
 	case "course":
-		return entityLookups(c.Courses.Get, c.Courses.GetBySourcedID)
+		return entitySourcedIDs(ctx, c.Courses, ids)
 	case "offering":
-		return entityLookups(c.Offerings.Get, c.Offerings.GetBySourcedID)
+		return entitySourcedIDs(ctx, c.Offerings, ids)
 	}
 	panic("readmodel: unknown reference type " + typ)
 }
 
-func entityLookups[PT domain.Entity](get, getBySourcedID func(context.Context, string) (PT, error)) (lookupFn, lookupFn) {
-	wrap := func(f func(context.Context, string) (PT, error)) lookupFn {
-		return func(ctx context.Context, k string) (string, error) {
-			e, err := f(ctx, k)
-			if err != nil {
-				return "", err
-			}
-			return e.GetSourcedID(), nil
-		}
+func entitySourcedIDs[T any, PT domain.EntityPtr[T]](ctx context.Context, svc *service.Resource[T, PT], ids []string) (map[string]string, error) {
+	es, err := svc.GetByIDs(ctx, ids)
+	if err != nil {
+		return nil, err
 	}
-	return wrap(get), wrap(getBySourcedID)
+	out := make(map[string]string, len(es))
+	for _, e := range es {
+		out[e.GetID()] = e.GetSourcedID()
+	}
+	return out, nil
 }

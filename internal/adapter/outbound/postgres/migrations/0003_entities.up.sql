@@ -10,7 +10,6 @@ CREATE TABLE IF NOT EXISTS entities (
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL,
     PRIMARY KEY (type, id),
+    -- Also serves as the (type, sourced_id) lookup index.
     UNIQUE (type, sourced_id)
 );
-
-CREATE INDEX IF NOT EXISTS entities_type_sourced_idx ON entities (type, sourced_id);

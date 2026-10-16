@@ -82,6 +82,19 @@ func (r *PersonRepository) Get(_ context.Context, id string) (domain.Person, err
 	return clonePerson(p), nil
 }
 
+// GetByIDs returns the persons whose id is in ids.
+func (r *PersonRepository) GetByIDs(_ context.Context, ids []string) ([]domain.Person, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	items := make([]domain.Person, 0, len(ids))
+	for _, id := range ids {
+		if p, ok := r.byID[id]; ok {
+			items = append(items, clonePerson(p))
+		}
+	}
+	return items, nil
+}
+
 // GetBySourcedID returns a person by business key.
 func (r *PersonRepository) GetBySourcedID(_ context.Context, sourcedID string) (domain.Person, error) {
 	r.mu.RLock()

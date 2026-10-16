@@ -91,6 +91,28 @@ func (r *PersonRepository) Get(ctx context.Context, id string) (domain.Person, e
 	return r.scanOne(ctx, `SELECT `+personColumns+` FROM persons WHERE id=$1`, id)
 }
 
+// GetByIDs returns the persons whose id is in ids in one query.
+func (r *PersonRepository) GetByIDs(ctx context.Context, ids []string) ([]domain.Person, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	rows, err := r.pool.Query(ctx, `SELECT `+personColumns+` FROM persons WHERE id = ANY($1)`, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]domain.Person, 0, preallocCap(len(ids)))
+	for rows.Next() {
+		p, err := scanPerson(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, p)
+	}
+	return items, rows.Err()
+}
+
 // GetBySourcedID returns a person by business key.
 func (r *PersonRepository) GetBySourcedID(ctx context.Context, sourcedID string) (domain.Person, error) {
 	return r.scanOne(ctx, `SELECT `+personColumns+` FROM persons WHERE sourced_id=$1`, sourcedID)

@@ -94,6 +94,12 @@ func (s *Service) GetPerson(ctx context.Context, id string) (domain.Person, erro
 	return s.persons.Get(ctx, id)
 }
 
+// GetPersons returns the persons whose id is in ids in one repository call;
+// ids that match nothing are skipped.
+func (s *Service) GetPersons(ctx context.Context, ids []string) ([]domain.Person, error) {
+	return s.persons.GetByIDs(ctx, ids)
+}
+
 // GetPersonBySourcedID returns a person by business key (used by standards providers).
 func (s *Service) GetPersonBySourcedID(ctx context.Context, sourcedID string) (domain.Person, error) {
 	return s.persons.GetBySourcedID(ctx, sourcedID)

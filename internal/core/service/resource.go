@@ -118,6 +118,12 @@ func (s *Resource[T, PT]) Get(ctx context.Context, id string) (PT, error) {
 	return s.repo.Get(ctx, id)
 }
 
+// GetByIDs returns the entities whose id is in ids in one repository call;
+// ids that match nothing are skipped.
+func (s *Resource[T, PT]) GetByIDs(ctx context.Context, ids []string) ([]PT, error) {
+	return s.repo.GetByIDs(ctx, ids)
+}
+
 // GetBySourcedID returns an entity by business key (used by standards providers,
 // which address resources by sourcedId).
 func (s *Resource[T, PT]) GetBySourcedID(ctx context.Context, sourcedID string) (PT, error) {

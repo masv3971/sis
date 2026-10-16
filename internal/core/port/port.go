@@ -34,6 +34,9 @@ type PersonRepository interface {
 	Create(ctx context.Context, p domain.Person) error
 	Update(ctx context.Context, p domain.Person) error
 	Get(ctx context.Context, id string) (domain.Person, error)
+	// GetByIDs returns the persons whose id is in ids, in no particular
+	// order. Ids that match nothing are skipped, not an error.
+	GetByIDs(ctx context.Context, ids []string) ([]domain.Person, error)
 	GetBySourcedID(ctx context.Context, sourcedID string) (domain.Person, error)
 	List(ctx context.Context, params ListParams) (Page[domain.Person], error)
 	Delete(ctx context.Context, id string) error

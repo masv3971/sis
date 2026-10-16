@@ -57,7 +57,7 @@ package restadmin
 
 //	@Summary		Create organization
 //	@ID				create-organization
-//	@Description	Creates an organization. name is required. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.
+//	@Description	Creates an organization. name is required; parentId, when set, must be the id (not sourcedId) of an existing organization. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.
 //	@Tags			organizations
 //	@Accept			json
 //	@Produce		json
@@ -88,7 +88,7 @@ package restadmin
 
 //	@Summary		Replace organization
 //	@ID				update-organization
-//	@Description	Replaces an organization. The path id wins over any id in the body; createdAt is preserved and an empty sourcedId keeps the stored one.
+//	@Description	Replaces an organization. parentId, when set, must be the id of an existing organization. The path id wins over any id in the body; createdAt is preserved and an empty sourcedId keeps the stored one.
 //	@Tags			organizations
 //	@Accept			json
 //	@Produce		json
@@ -219,7 +219,7 @@ package restadmin
 
 //	@Summary		Create course
 //	@ID				create-course
-//	@Description	Creates a course. title is required. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.
+//	@Description	Creates a course. title is required; orgId, when set, must be the id (not sourcedId) of an existing organization. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.
 //	@Tags			courses
 //	@Accept			json
 //	@Produce		json
@@ -250,7 +250,7 @@ package restadmin
 
 //	@Summary		Replace course
 //	@ID				update-course
-//	@Description	Replaces a course. The path id wins over any id in the body; createdAt is preserved and an empty sourcedId keeps the stored one.
+//	@Description	Replaces a course. orgId, when set, must be the id of an existing organization. The path id wins over any id in the body; createdAt is preserved and an empty sourcedId keeps the stored one.
 //	@Tags			courses
 //	@Accept			json
 //	@Produce		json
@@ -300,7 +300,7 @@ package restadmin
 
 //	@Summary		Create offering
 //	@ID				create-offering
-//	@Description	Creates an offering. courseId is required. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.
+//	@Description	Creates an offering. courseId is required; courseId, academicSessionId and orgId must be ids (not sourcedIds) of existing records. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.
 //	@Tags			offerings
 //	@Accept			json
 //	@Produce		json
@@ -331,7 +331,7 @@ package restadmin
 
 //	@Summary		Replace offering
 //	@ID				update-offering
-//	@Description	Replaces an offering. The path id wins over any id in the body; createdAt is preserved and an empty sourcedId keeps the stored one.
+//	@Description	Replaces an offering. courseId, academicSessionId and orgId must be ids of existing records. The path id wins over any id in the body; createdAt is preserved and an empty sourcedId keeps the stored one.
 //	@Tags			offerings
 //	@Accept			json
 //	@Produce		json
@@ -381,7 +381,7 @@ package restadmin
 
 //	@Summary		Create enrollment
 //	@ID				create-enrollment
-//	@Description	Creates an enrollment. personId and offeringId are required. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.
+//	@Description	Creates an enrollment. personId and offeringId are required and must be the ids (not sourcedIds) of an existing person and offering. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.
 //	@Tags			enrollments
 //	@Accept			json
 //	@Produce		json
@@ -412,7 +412,7 @@ package restadmin
 
 //	@Summary		Replace enrollment
 //	@ID				update-enrollment
-//	@Description	Replaces an enrollment. The path id wins over any id in the body; createdAt is preserved and an empty sourcedId keeps the stored one.
+//	@Description	Replaces an enrollment. personId and offeringId must be the ids of an existing person and offering. The path id wins over any id in the body; createdAt is preserved and an empty sourcedId keeps the stored one.
 //	@Tags			enrollments
 //	@Accept			json
 //	@Produce		json

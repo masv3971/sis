@@ -26,8 +26,12 @@ func newTestRouter(t *testing.T) *gin.Engine {
 	gin.EnableJsonDecoderDisallowUnknownFields()
 	log := logger.NewWithWriter("test", false, "error", io.Discard)
 	catalog := &readmodel.Client{
-		Persons: service.New(memory.NewPersonRepository(), nil, nil, log),
-		Courses: service.NewResource(memory.NewDocRepo[domain.Course](), nil, nil, log),
+		Persons:       service.New(memory.NewPersonRepository(), nil, nil, log),
+		Organizations: service.NewResource(memory.NewDocRepo[domain.Organization](), nil, nil, log),
+		Courses:       service.NewResource(memory.NewDocRepo[domain.Course](), nil, nil, log),
+	}
+	if _, err := catalog.Organizations.Create(context.Background(), &domain.Organization{Base: domain.Base{ID: "o-id", SourcedID: "uni"}, Name: "U"}); err != nil {
+		t.Fatal(err)
 	}
 	c, err := New(context.Background(), &model.Cfg{}, catalog, log)
 	if err != nil {
@@ -78,6 +82,35 @@ func TestWriteHandlersRejectBadBodiesWith400(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// TestResourceWritesRequireCanonicalRefs checks a reference must be the
+// canonical id of an existing record: a sourcedId or unknown id is a 400
+// naming the field, so stored references are never ambiguous.
+func TestResourceWritesRequireCanonicalRefs(t *testing.T) {
+	r := newTestRouter(t)
+	cases := []struct {
+		name, body string
+		want       int
+	}{
+		{"canonical id", `{"title":"T","orgId":"o-id"}`, http.StatusCreated},
+		{"sourcedId", `{"title":"T","orgId":"uni"}`, http.StatusBadRequest},
+		{"unknown id", `{"title":"T","orgId":"nope"}`, http.StatusBadRequest},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/courses", strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+			if w.Code != tc.want {
+				t.Fatalf("status = %d, want %d; body=%s", w.Code, tc.want, w.Body)
+			}
+			if tc.want == http.StatusBadRequest && !strings.Contains(w.Body.String(), `"orgId"`) {
+				t.Fatalf("expected error naming orgId, got %s", w.Body)
+			}
+		})
 	}
 }
 

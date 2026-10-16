@@ -25,8 +25,11 @@ services:
       POSTGRES_USER: sis
       POSTGRES_PASSWORD: sis
       POSTGRES_DB: sis
+    # Loopback only: the credentials above are public development defaults,
+    # so the database must not be reachable from other hosts. Containers
+    # reach it as postgres:5432 over sisnet regardless of this mapping.
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U sis -d sis"]
       interval: 5s

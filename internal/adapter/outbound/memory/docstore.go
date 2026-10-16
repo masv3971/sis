@@ -94,6 +94,25 @@ func (r *DocRepo[T, PT]) Get(_ context.Context, id string) (PT, error) {
 	return unmarshalDoc[T, PT](data)
 }
 
+// GetByIDs returns the entities whose id is in ids.
+func (r *DocRepo[T, PT]) GetByIDs(_ context.Context, ids []string) ([]PT, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	items := make([]PT, 0, len(ids))
+	for _, id := range ids {
+		data, ok := r.byID[id]
+		if !ok {
+			continue
+		}
+		e, err := unmarshalDoc[T, PT](data)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, e)
+	}
+	return items, nil
+}
+
 // GetBySourcedID returns an entity by business key.
 func (r *DocRepo[T, PT]) GetBySourcedID(_ context.Context, sourcedID string) (PT, error) {
 	r.mu.RLock()
