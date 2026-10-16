@@ -90,6 +90,10 @@ sis:
       eduapi:               # /eduapi (Edu-API v1, read-only)   ?limit=&offset=
         default_limit: 100
         max_limit: 500
+      convertapi:           # POST /api/v1/parse and /api/v1/populate (ELM documents)
+        # Request size cap for these two endpoints (bytes); every other
+        # endpoint is capped at 1 MiB. Larger requests get 413.
+        max_body_bytes: 5242880
 
     # Systems SIS calls out to.
     outbound:
@@ -106,3 +110,9 @@ sis:
         enabled: false
         url: "nats://localhost:4222"
         subject: "sis.events"
+
+    # -- internal/adapter/sweeper ----------------------------------------------
+    # Records loaded with a ttl (POST /api/v1/populate) stop being served the
+    # moment they expire; the sweeper then deletes them on this interval.
+    sweeper:
+      interval: 1m

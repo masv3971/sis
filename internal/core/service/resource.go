@@ -41,7 +41,14 @@ func NewResource[T any, PT domain.EntityPtr[T]](repo port.Repository[T, PT], eve
 }
 
 // Create validates, assigns identity/timestamps, persists, and emits an event.
+// ExpiresAt is server-managed: a value supplied by the caller is dropped, so
+// a record created this way never expires (see UpsertWithExpiry).
 func (s *Resource[T, PT]) Create(ctx context.Context, e PT) (PT, error) {
+	e.SetExpiresAt(nil)
+	return s.create(ctx, e)
+}
+
+func (s *Resource[T, PT]) create(ctx context.Context, e PT) (PT, error) {
 	if err := e.Validate(); err != nil {
 		return nil, err
 	}
@@ -61,8 +68,16 @@ func (s *Resource[T, PT]) Create(ctx context.Context, e PT) (PT, error) {
 	return e, nil
 }
 
-// Update validates and replaces an existing entity, preserving its creation time.
+// Update validates and replaces an existing entity, preserving its creation
+// time and its expiry (ExpiresAt is server-managed; the caller's value is
+// ignored).
 func (s *Resource[T, PT]) Update(ctx context.Context, e PT) (PT, error) {
+	return s.update(ctx, e, func(existing PT) *time.Time { return existing.GetExpiresAt() })
+}
+
+// update replaces an existing entity; expiry picks the stored ExpiresAt
+// from the record being replaced.
+func (s *Resource[T, PT]) update(ctx context.Context, e PT, expiry func(existing PT) *time.Time) (PT, error) {
 	if e.GetID() == "" {
 		return nil, &domain.ValidationError{Field: "id", Msg: "required"}
 	}
@@ -73,6 +88,7 @@ func (s *Resource[T, PT]) Update(ctx context.Context, e PT) (PT, error) {
 	if err != nil {
 		return nil, err
 	}
+	e.SetExpiresAt(expiry(existing))
 	e.SetCreatedAt(existing.GetCreatedAt())
 	e.SetUpdatedAt(s.now().UTC())
 	if e.GetSourcedID() == "" {
@@ -86,31 +102,45 @@ func (s *Resource[T, PT]) Update(ctx context.Context, e PT) (PT, error) {
 }
 
 // UpsertBySourcedID creates or updates by business key (idempotent ingress).
-// Concurrent deliveries of the same sourcedId converge on one entity: see
-// Service.UpsertPersonBySourcedID.
+// The result never expires. Concurrent deliveries of the same sourcedId
+// converge on one entity: see Service.UpsertPersonBySourcedID.
 func (s *Resource[T, PT]) UpsertBySourcedID(ctx context.Context, e PT) (PT, error) {
+	out, _, err := s.UpsertWithExpiry(ctx, e, nil)
+	return out, err
+}
+
+// UpsertWithExpiry is UpsertBySourcedID for time-limited data: the record
+// expires at expiresAt (nil: never). Re-upserting refreshes the expiry, but a
+// record that is already permanent stays permanent (see MergeExpiry), so
+// loading time-limited data never schedules deletion of a record someone
+// else maintains. created reports whether a new record was stored.
+func (s *Resource[T, PT]) UpsertWithExpiry(ctx context.Context, e PT, expiresAt *time.Time) (out PT, created bool, err error) {
 	if e.GetSourcedID() == "" {
-		return nil, &domain.ValidationError{Field: "sourcedId", Msg: "required for upsert"}
+		return nil, false, &domain.ValidationError{Field: "sourcedId", Msg: "required for upsert"}
 	}
+	merge := func(existing PT) *time.Time { return MergeExpiry(existing.GetExpiresAt(), expiresAt) }
 	existing, err := s.repo.GetBySourcedID(ctx, e.GetSourcedID())
 	switch {
 	case err == nil:
 		e.SetID(existing.GetID())
-		return s.Update(ctx, e)
+		out, err = s.update(ctx, e, merge)
+		return out, false, err
 	case !errors.Is(err, domain.ErrNotFound):
-		return nil, err
+		return nil, false, err
 	}
 
-	created, err := s.Create(ctx, e)
+	e.SetExpiresAt(expiresAt)
+	out, err = s.create(ctx, e)
 	if !errors.Is(err, domain.ErrConflict) {
-		return created, err
+		return out, err == nil, err
 	}
 	winner, getErr := s.repo.GetBySourcedID(ctx, e.GetSourcedID())
 	if getErr != nil {
-		return nil, err
+		return nil, false, err
 	}
 	e.SetID(winner.GetID())
-	return s.Update(ctx, e)
+	out, err = s.update(ctx, e, merge)
+	return out, false, err
 }
 
 // Get returns an entity by id.
@@ -143,6 +173,19 @@ func (s *Resource[T, PT]) Delete(ctx context.Context, id string) error {
 	s.emit(ctx, s.typeName+".deleted", id, nil)
 	return nil
 }
+
+// DeleteExpired removes every record expired now, emits <type>.expired for
+// each, and returns their ids.
+func (s *Resource[T, PT]) DeleteExpired(ctx context.Context) ([]string, error) {
+	ids, err := s.repo.DeleteExpired(ctx, s.now().UTC())
+	for _, id := range ids {
+		s.emit(ctx, s.typeName+".expired", id, nil)
+	}
+	return ids, err
+}
+
+// TypeName returns the entity type tag (domain.Entity.EntityType).
+func (s *Resource[T, PT]) TypeName() string { return s.typeName }
 
 func (s *Resource[T, PT]) emit(ctx context.Context, eventType, aggID string, payload any) {
 	publish(ctx, s.events, s.log, domain.Event{

@@ -37,6 +37,12 @@ package restadmin
 //	@tag.description			Courses scheduled in an academic session (classes)
 //	@tag.name					enrollments
 //	@tag.description			A person's participation in an offering, in a role
+//	@tag.name					programs
+//	@tag.description			Structured collections of courses leading to a qualification
+//	@tag.name					results
+//	@tag.description			A person's grade and credits for a course or program
+//	@tag.name					convert
+//	@tag.description			Convert external formats (ELM) to Edu-API/OEAPI, and load them
 
 // -- organizations ------------------------------------------------------------
 
@@ -442,3 +448,165 @@ package restadmin
 //	@Failure		404	{object}	helpers.ErrorResponse	"Not Found"
 //	@Failure		500	{object}	helpers.ErrorResponse	"Internal Server Error"
 //	@Router			/enrollments/{id} [delete]
+
+// -- programs -----------------------------------------------------------------
+
+//	@Summary		List programs
+//	@ID				list-programs
+//	@Description	Lists programs with limit/offset paging.
+//	@Tags			programs
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			limit	query		int									false	"Page size; defaults to default_limit and is clamped to max_limit"	minimum(1)
+//	@Param			offset	query		int									false	"Number of items to skip"											minimum(0)
+//	@Success		200		{object}	restadmin.ListReply[domain.Program]	"Success"
+//	@Failure		400		{object}	helpers.ErrorResponse				"Invalid paging parameters"
+//	@Failure		401		{object}	auth.ErrorResponse					"Missing or invalid token"
+//	@Failure		403		{object}	auth.ErrorResponse					"Insufficient scope or role"
+//	@Failure		500		{object}	helpers.ErrorResponse				"Internal Server Error"
+//	@Router			/programs [get]
+
+//	@Summary		Create program
+//	@ID				create-program
+//	@Description	Creates a program. title is required; orgId, when set, must be the id (not sourcedId) of an existing organization. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.
+//	@Tags			programs
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			program	body		domain.Program			true	"Program to create"
+//	@Success		201		{object}	domain.Program			"Created"
+//	@Failure		400		{object}	helpers.ErrorResponse	"Malformed body or validation error"
+//	@Failure		401		{object}	auth.ErrorResponse		"Missing or invalid token"
+//	@Failure		403		{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		409		{object}	helpers.ErrorResponse	"id or sourcedId already in use"
+//	@Failure		413		{object}	helpers.ErrorResponse	"Request body too large"
+//	@Failure		500		{object}	helpers.ErrorResponse	"Internal Server Error"
+//	@Router			/programs [post]
+
+//	@Summary		Get program
+//	@ID				get-program
+//	@Description	Returns one program by id.
+//	@Tags			programs
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			id	path		string					true	"Program id"
+//	@Success		200	{object}	domain.Program			"Success"
+//	@Failure		401	{object}	auth.ErrorResponse		"Missing or invalid token"
+//	@Failure		403	{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		404	{object}	helpers.ErrorResponse	"Not Found"
+//	@Failure		500	{object}	helpers.ErrorResponse	"Internal Server Error"
+//	@Router			/programs/{id} [get]
+
+//	@Summary		Replace program
+//	@ID				update-program
+//	@Description	Replaces a program. orgId, when set, must be the id of an existing organization. The path id wins over any id in the body; createdAt is preserved and an empty sourcedId keeps the stored one.
+//	@Tags			programs
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			id		path		string					true	"Program id"
+//	@Param			program	body		domain.Program			true	"Replacement program"
+//	@Success		200		{object}	domain.Program			"Success"
+//	@Failure		400		{object}	helpers.ErrorResponse	"Malformed body or validation error"
+//	@Failure		401		{object}	auth.ErrorResponse		"Missing or invalid token"
+//	@Failure		403		{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		404		{object}	helpers.ErrorResponse	"Not Found"
+//	@Failure		409		{object}	helpers.ErrorResponse	"sourcedId already in use"
+//	@Failure		413		{object}	helpers.ErrorResponse	"Request body too large"
+//	@Failure		500		{object}	helpers.ErrorResponse	"Internal Server Error"
+//	@Router			/programs/{id} [put]
+
+//	@Summary		Delete program
+//	@ID				delete-program
+//	@Description	Deletes one program by id.
+//	@Tags			programs
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			id	path	string	true	"Program id"
+//	@Success		204	"No Content"
+//	@Failure		401	{object}	auth.ErrorResponse		"Missing or invalid token"
+//	@Failure		403	{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		404	{object}	helpers.ErrorResponse	"Not Found"
+//	@Failure		500	{object}	helpers.ErrorResponse	"Internal Server Error"
+//	@Router			/programs/{id} [delete]
+
+// -- results ------------------------------------------------------------------
+
+//	@Summary		List results
+//	@ID				list-results
+//	@Description	Lists results with limit/offset paging.
+//	@Tags			results
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			limit	query		int									false	"Page size; defaults to default_limit and is clamped to max_limit"	minimum(1)
+//	@Param			offset	query		int									false	"Number of items to skip"											minimum(0)
+//	@Success		200		{object}	restadmin.ListReply[domain.Result]	"Success"
+//	@Failure		400		{object}	helpers.ErrorResponse				"Invalid paging parameters"
+//	@Failure		401		{object}	auth.ErrorResponse					"Missing or invalid token"
+//	@Failure		403		{object}	auth.ErrorResponse					"Insufficient scope or role"
+//	@Failure		500		{object}	helpers.ErrorResponse				"Internal Server Error"
+//	@Router			/results [get]
+
+//	@Summary		Create result
+//	@ID				create-result
+//	@Description	Creates a result. personId is required, and exactly one of courseId and programId; offeringId is optional. All must be the ids (not sourcedIds) of existing records. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.
+//	@Tags			results
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			result	body		domain.Result			true	"Result to create"
+//	@Success		201		{object}	domain.Result			"Created"
+//	@Failure		400		{object}	helpers.ErrorResponse	"Malformed body or validation error"
+//	@Failure		401		{object}	auth.ErrorResponse		"Missing or invalid token"
+//	@Failure		403		{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		409		{object}	helpers.ErrorResponse	"id or sourcedId already in use"
+//	@Failure		413		{object}	helpers.ErrorResponse	"Request body too large"
+//	@Failure		500		{object}	helpers.ErrorResponse	"Internal Server Error"
+//	@Router			/results [post]
+
+//	@Summary		Get result
+//	@ID				get-result
+//	@Description	Returns one result by id.
+//	@Tags			results
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			id	path		string					true	"Result id"
+//	@Success		200	{object}	domain.Result			"Success"
+//	@Failure		401	{object}	auth.ErrorResponse		"Missing or invalid token"
+//	@Failure		403	{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		404	{object}	helpers.ErrorResponse	"Not Found"
+//	@Failure		500	{object}	helpers.ErrorResponse	"Internal Server Error"
+//	@Router			/results/{id} [get]
+
+//	@Summary		Replace result
+//	@ID				update-result
+//	@Description	Replaces a result. References must be the ids of existing records. The path id wins over any id in the body; createdAt is preserved and an empty sourcedId keeps the stored one.
+//	@Tags			results
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			id		path		string					true	"Result id"
+//	@Param			result	body		domain.Result			true	"Replacement result"
+//	@Success		200		{object}	domain.Result			"Success"
+//	@Failure		400		{object}	helpers.ErrorResponse	"Malformed body or validation error"
+//	@Failure		401		{object}	auth.ErrorResponse		"Missing or invalid token"
+//	@Failure		403		{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		404		{object}	helpers.ErrorResponse	"Not Found"
+//	@Failure		409		{object}	helpers.ErrorResponse	"sourcedId already in use"
+//	@Failure		413		{object}	helpers.ErrorResponse	"Request body too large"
+//	@Failure		500		{object}	helpers.ErrorResponse	"Internal Server Error"
+//	@Router			/results/{id} [put]
+
+//	@Summary		Delete result
+//	@ID				delete-result
+//	@Description	Deletes one result by id.
+//	@Tags			results
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			id	path	string	true	"Result id"
+//	@Success		204	"No Content"
+//	@Failure		401	{object}	auth.ErrorResponse		"Missing or invalid token"
+//	@Failure		403	{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		404	{object}	helpers.ErrorResponse	"Not Found"
+//	@Failure		500	{object}	helpers.ErrorResponse	"Internal Server Error"
+//	@Router			/results/{id} [delete]

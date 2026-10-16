@@ -46,6 +46,17 @@ func refsOf(e domain.Entity) []ref {
 			{"person", "personId", &v.PersonID, true},
 			{"offering", "offeringId", &v.OfferingID, true},
 		}
+	case *domain.Program:
+		return []ref{{"organization", "orgId", &v.OrgID, false}}
+	case *domain.Result:
+		// Validate demands exactly one of courseId/programId, so whichever is
+		// set is what the result is about: losing it orphans the result.
+		return []ref{
+			{"person", "personId", &v.PersonID, true},
+			{"course", "courseId", &v.CourseID, v.CourseID != ""},
+			{"program", "programId", &v.ProgramID, v.ProgramID != ""},
+			{"offering", "offeringId", &v.OfferingID, false},
+		}
 	}
 	return nil
 }
@@ -172,6 +183,8 @@ func (c *Client) sourcedIDs(ctx context.Context, typ string, ids []string) (map[
 		return entitySourcedIDs(ctx, c.Courses, ids)
 	case "offering":
 		return c.offeringSourcedIDs(ctx, ids)
+	case "program":
+		return entitySourcedIDs(ctx, c.Programs, ids)
 	}
 	panic("readmodel: unknown reference type " + typ)
 }

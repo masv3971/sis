@@ -19,6 +19,7 @@ import (
 	_ "github.com/SUNET/sis/docs/restadmin"
 
 	"github.com/SUNET/sis/internal/adapter/inbound/authapi"
+	"github.com/SUNET/sis/internal/adapter/inbound/convertapi"
 	"github.com/SUNET/sis/internal/adapter/inbound/eduapi"
 	"github.com/SUNET/sis/internal/adapter/inbound/oeapi"
 	"github.com/SUNET/sis/internal/adapter/inbound/restadmin"
@@ -34,6 +35,12 @@ import (
 )
 
 const maxBodyBytes = 1 << 20 // 1 MiB
+
+// Routes with their own body cap (sis.adapter.inbound.convertapi.max_body_bytes).
+const (
+	parsePath    = "/api/v1/parse"
+	populatePath = "/api/v1/populate"
+)
 
 // Guards are the per-operation authorization middlewares applied to API routes.
 type Guards struct {
@@ -82,6 +89,10 @@ func New(ctx context.Context, cfg *model.Cfg, authSvc *auth.Client, catalog *rea
 	if err != nil {
 		return nil, err
 	}
+	convH, err := convertapi.New(ctx, cfg, catalog, log)
+	if err != nil {
+		return nil, err
+	}
 
 	gin.SetMode(gin.ReleaseMode)
 	gin.EnableJsonDecoderDisallowUnknownFields() // reject unknown fields on writes
@@ -93,7 +104,15 @@ func New(ctx context.Context, cfg *model.Cfg, authSvc *auth.Client, catalog *rea
 	// id="external/42" instead of 404ing on the decoded extra segment.
 	engine.UseRawPath = true
 	engine.UnescapePathValues = true
-	engine.Use(requestLogger(log.New("request")), gin.Recovery(), bodyLimit(maxBodyBytes))
+	// Document endpoints take whole documents, so they get their own cap.
+	docLimit := cfg.SIS.Adapter.Inbound.ConvertAPI.MaxBodyBytes
+	if docLimit <= 0 {
+		docLimit = maxBodyBytes
+	}
+	engine.Use(requestLogger(log.New("request")), gin.Recovery(), bodyLimit(maxBodyBytes, map[string]int64{
+		parsePath:    docLimit,
+		populatePath: docLimit,
+	}))
 
 	engine.GET("/healthz", func(gc *gin.Context) {
 		gc.JSON(http.StatusOK, gin.H{"status": "ok"})
@@ -127,6 +146,12 @@ func New(ctx context.Context, cfg *model.Cfg, authSvc *auth.Client, catalog *rea
 	registerResource(api, guards, "courses", adminH, catalog.Courses)
 	registerResource(api, guards, "offerings", adminH, catalog.Offerings)
 	registerResource(api, guards, "enrollments", adminH, catalog.Enrollments)
+	registerResource(api, guards, "programs", adminH, catalog.Programs)
+	registerResource(api, guards, "results", adminH, catalog.Results)
+
+	// Document conversion: parse is pure (read guard), populate stores.
+	api.POST("/parse", guards.Read, convH.Parse)
+	api.POST("/populate", guards.Write, convH.Populate)
 
 	// Open Education API v6.0 read provider, behind the read scope.
 	oe := engine.Group("/oeapi", auth.RequireAuth(issuer), guards.Read)
@@ -142,6 +167,10 @@ func New(ctx context.Context, cfg *model.Cfg, authSvc *auth.Client, catalog *rea
 	oe.GET("/offerings/:id", oeapi.Get(oeH, catalog.Offerings, oedto.FromOffering))
 	oe.GET("/associations", oeapi.List(oeH, catalog.Enrollments, oedto.FromAssociation))
 	oe.GET("/associations/:id", oeapi.Get(oeH, catalog.Enrollments, oedto.FromAssociation))
+	oe.GET("/programs", oeapi.List(oeH, catalog.Programs, oedto.FromProgram))
+	oe.GET("/programs/:id", oeapi.Get(oeH, catalog.Programs, oedto.FromProgram))
+	oe.GET("/results", oeapi.List(oeH, catalog.Results, oedto.FromResult))
+	oe.GET("/results/:id", oeapi.Get(oeH, catalog.Results, oedto.FromResult))
 
 	// Edu-API v1.0 read provider, behind the read scope.
 	edu := engine.Group("/eduapi", auth.RequireAuth(issuer), guards.Read)
@@ -157,6 +186,10 @@ func New(ctx context.Context, cfg *model.Cfg, authSvc *auth.Client, catalog *rea
 	edu.GET("/classes/:id", eduapi.Get(eduH, catalog.Offerings, "class", edudto.FromClass))
 	edu.GET("/enrollments", eduapi.List(eduH, catalog.Enrollments, "enrollments", edudto.FromEnrollment))
 	edu.GET("/enrollments/:id", eduapi.Get(eduH, catalog.Enrollments, "enrollment", edudto.FromEnrollment))
+	edu.GET("/programs", eduapi.List(eduH, catalog.Programs, "programs", edudto.FromProgram))
+	edu.GET("/programs/:id", eduapi.Get(eduH, catalog.Programs, "program", edudto.FromProgram))
+	edu.GET("/results", eduapi.List(eduH, catalog.Results, "results", edudto.FromResult))
+	edu.GET("/results/:id", eduapi.Get(eduH, catalog.Results, "result", edudto.FromResult))
 
 	hc := cfg.SIS.HTTPServer
 

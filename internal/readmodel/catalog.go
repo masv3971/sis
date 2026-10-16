@@ -19,4 +19,6 @@ type Client struct {
 	Courses          *service.Resource[domain.Course, *domain.Course]
 	Offerings        *service.Resource[domain.Offering, *domain.Offering]
 	Enrollments      *service.Resource[domain.Enrollment, *domain.Enrollment]
+	Programs         *service.Resource[domain.Program, *domain.Program]
+	Results          *service.Resource[domain.Result, *domain.Result]
 }

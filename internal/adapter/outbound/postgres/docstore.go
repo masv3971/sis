@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -11,6 +12,11 @@ import (
 	"github.com/SUNET/sis/internal/core/domain"
 	"github.com/SUNET/sis/internal/core/port"
 )
+
+// liveFilter restricts a query to records that have not expired (see
+// port.Repository). Kept as one constant so every read applies the same rule
+// as domain.Expired (expired at exactly expires_at).
+const liveFilter = `(expires_at IS NULL OR expires_at > now())`
 
 // DocRepo is a pgx-backed generic port.Repository storing each entity as JSONB
 // in the shared entities table, discriminated by its type tag.
@@ -24,50 +30,71 @@ func NewDocRepo[T any, PT domain.EntityPtr[T]](s *Service) *DocRepo[T, PT] {
 	return &DocRepo[T, PT]{pool: s.pool, typeName: PT(new(T)).EntityType()}
 }
 
-// Create inserts an entity, mapping a unique-key violation to domain.ErrConflict.
+// Create inserts an entity, mapping a unique-key violation with a live
+// record to domain.ErrConflict. An expired record holding the same id or
+// sourcedId is deleted first, in the same transaction.
 func (r *DocRepo[T, PT]) Create(ctx context.Context, e PT) error {
 	data, err := json.Marshal(e)
 	if err != nil {
 		return err
 	}
-	_, err = r.pool.Exec(ctx,
-		`INSERT INTO entities (type, id, sourced_id, data, created_at, updated_at)
-		 VALUES ($1,$2,$3,$4,$5,$6)`,
-		r.typeName, e.GetID(), e.GetSourcedID(), data, e.GetCreatedAt(), e.GetUpdatedAt())
+	err = pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx,
+			`DELETE FROM entities WHERE type=$1 AND (id=$2 OR sourced_id=$3) AND expires_at <= now()`,
+			r.typeName, e.GetID(), e.GetSourcedID()); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx,
+			`INSERT INTO entities (type, id, sourced_id, data, created_at, updated_at, expires_at)
+			 VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+			r.typeName, e.GetID(), e.GetSourcedID(), data, e.GetCreatedAt(), e.GetUpdatedAt(), e.GetExpiresAt())
+		return err
+	})
 	return mapUniqueViolation(err)
 }
 
-// Update replaces an entity, returning domain.ErrNotFound if absent and
-// domain.ErrConflict if the new sourcedId belongs to another entity.
+// Update replaces a live entity, returning domain.ErrNotFound if absent and
+// domain.ErrConflict if the new sourcedId belongs to another live entity. An
+// expired holder of that sourcedId is deleted first, in the same transaction.
 func (r *DocRepo[T, PT]) Update(ctx context.Context, e PT) error {
 	data, err := json.Marshal(e)
 	if err != nil {
 		return err
 	}
-	tag, err := r.pool.Exec(ctx,
-		`UPDATE entities SET sourced_id=$3, data=$4, updated_at=$5
-		 WHERE type=$1 AND id=$2`,
-		r.typeName, e.GetID(), e.GetSourcedID(), data, e.GetUpdatedAt())
+	var affected int64
+	err = pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx,
+			`DELETE FROM entities WHERE type=$1 AND sourced_id=$2 AND id<>$3 AND expires_at <= now()`,
+			r.typeName, e.GetSourcedID(), e.GetID()); err != nil {
+			return err
+		}
+		tag, err := tx.Exec(ctx,
+			`UPDATE entities SET sourced_id=$3, data=$4, updated_at=$5, expires_at=$6
+			 WHERE type=$1 AND id=$2 AND `+liveFilter,
+			r.typeName, e.GetID(), e.GetSourcedID(), data, e.GetUpdatedAt(), e.GetExpiresAt())
+		affected = tag.RowsAffected()
+		return err
+	})
 	if err != nil {
 		return mapUniqueViolation(err)
 	}
-	if tag.RowsAffected() == 0 {
+	if affected == 0 {
 		return domain.ErrNotFound
 	}
 	return nil
 }
 
-// Get returns an entity by id.
+// Get returns a live entity by id.
 func (r *DocRepo[T, PT]) Get(ctx context.Context, id string) (PT, error) {
-	return r.scanOne(ctx, `SELECT data FROM entities WHERE type=$1 AND id=$2`, id)
+	return r.scanOne(ctx, `SELECT data FROM entities WHERE type=$1 AND id=$2 AND `+liveFilter, id)
 }
 
-// GetByIDs returns the entities whose id is in ids in one query.
+// GetByIDs returns the live entities whose id is in ids in one query.
 func (r *DocRepo[T, PT]) GetByIDs(ctx context.Context, ids []string) ([]PT, error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
-	rows, err := r.pool.Query(ctx, `SELECT data FROM entities WHERE type=$1 AND id = ANY($2)`, r.typeName, ids)
+	rows, err := r.pool.Query(ctx, `SELECT data FROM entities WHERE type=$1 AND id = ANY($2) AND `+liveFilter, r.typeName, ids)
 	if err != nil {
 		return nil, err
 	}
@@ -88,19 +115,19 @@ func (r *DocRepo[T, PT]) GetByIDs(ctx context.Context, ids []string) ([]PT, erro
 	return items, rows.Err()
 }
 
-// GetBySourcedID returns an entity by business key.
+// GetBySourcedID returns a live entity by business key.
 func (r *DocRepo[T, PT]) GetBySourcedID(ctx context.Context, sourcedID string) (PT, error) {
-	return r.scanOne(ctx, `SELECT data FROM entities WHERE type=$1 AND sourced_id=$2`, sourcedID)
+	return r.scanOne(ctx, `SELECT data FROM entities WHERE type=$1 AND sourced_id=$2 AND `+liveFilter, sourcedID)
 }
 
-// List returns a page of entities ordered by sourcedId.
+// List returns a page of live entities ordered by sourcedId.
 func (r *DocRepo[T, PT]) List(ctx context.Context, params port.ListParams) (port.Page[PT], error) {
 	var total int
-	if err := r.pool.QueryRow(ctx, `SELECT count(*) FROM entities WHERE type=$1`, r.typeName).Scan(&total); err != nil {
+	if err := r.pool.QueryRow(ctx, `SELECT count(*) FROM entities WHERE type=$1 AND `+liveFilter, r.typeName).Scan(&total); err != nil {
 		return port.Page[PT]{}, err
 	}
 
-	query := `SELECT data FROM entities WHERE type=$1 ORDER BY sourced_id OFFSET $2`
+	query := `SELECT data FROM entities WHERE type=$1 AND ` + liveFilter + ` ORDER BY sourced_id OFFSET $2`
 	args := []any{r.typeName, params.Offset}
 	if params.Limit > 0 {
 		query += ` LIMIT $3`
@@ -131,9 +158,9 @@ func (r *DocRepo[T, PT]) List(ctx context.Context, params port.ListParams) (port
 	return port.Page[PT]{Items: items, Total: total}, nil
 }
 
-// Delete removes an entity by id.
+// Delete removes a live entity by id.
 func (r *DocRepo[T, PT]) Delete(ctx context.Context, id string) error {
-	tag, err := r.pool.Exec(ctx, `DELETE FROM entities WHERE type=$1 AND id=$2`, r.typeName, id)
+	tag, err := r.pool.Exec(ctx, `DELETE FROM entities WHERE type=$1 AND id=$2 AND `+liveFilter, r.typeName, id)
 	if err != nil {
 		return err
 	}
@@ -141,6 +168,21 @@ func (r *DocRepo[T, PT]) Delete(ctx context.Context, id string) error {
 		return domain.ErrNotFound
 	}
 	return nil
+}
+
+// DeleteExpired removes every entity of this type expired at now and returns
+// their ids.
+func (r *DocRepo[T, PT]) DeleteExpired(ctx context.Context, now time.Time) ([]string, error) {
+	return collectIDs(r.pool.Query(ctx,
+		`DELETE FROM entities WHERE type=$1 AND expires_at <= $2 RETURNING id`, r.typeName, now))
+}
+
+// collectIDs drains a single-text-column result (e.g. DELETE ... RETURNING id).
+func collectIDs(rows pgx.Rows, err error) ([]string, error) {
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
 
 func (r *DocRepo[T, PT]) scanOne(ctx context.Context, query, arg string) (PT, error) {
