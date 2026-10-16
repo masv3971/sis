@@ -1,0 +1,150 @@
+package memory
+
+import (
+	"context"
+	"slices"
+	"sync"
+
+	"github.com/google/uuid"
+
+	"github.com/SUNET/sis/internal/core/domain"
+)
+
+// AccountRepository is an in-memory port.AccountRepository.
+type AccountRepository struct {
+	mu         sync.RWMutex
+	byUsername map[string]domain.Account
+}
+
+// NewAccountRepository returns an empty in-memory account repository.
+func NewAccountRepository() *AccountRepository {
+	return &AccountRepository{byUsername: make(map[string]domain.Account)}
+}
+
+// cloneAccount returns a copy of a that does not share the Roles backing
+// array. Roles carry authorization, so stored roles must only change through
+// Upsert: every write stores a clone and every read returns one.
+func cloneAccount(a domain.Account) domain.Account {
+	a.Roles = slices.Clone(a.Roles)
+	return a
+}
+
+// GetByUsername returns an account by username.
+func (r *AccountRepository) GetByUsername(_ context.Context, username string) (domain.Account, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	a, ok := r.byUsername[username]
+	if !ok {
+		return domain.Account{}, domain.ErrNotFound
+	}
+	return cloneAccount(a), nil
+}
+
+// GetByOIDC returns the account bound to an OIDC issuer+subject pair.
+func (r *AccountRepository) GetByOIDC(_ context.Context, issuer, subject string) (domain.Account, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if subject == "" {
+		return domain.Account{}, domain.ErrNotFound
+	}
+	for _, a := range r.byUsername {
+		if a.OIDCIssuer == issuer && a.OIDCSubject == subject {
+			return cloneAccount(a), nil
+		}
+	}
+	return domain.Account{}, domain.ErrNotFound
+}
+
+// Upsert inserts or updates by username, preserving id, created_at and the
+// OIDC binding on update. Like the Postgres primary key and unique identity
+// index, it rejects a new account whose id or OIDC issuer+subject already
+// belongs to another username with domain.ErrConflict.
+func (r *AccountRepository) Upsert(_ context.Context, a domain.Account) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if existing, ok := r.byUsername[a.Username]; ok {
+		a.ID = existing.ID
+		a.CreatedAt = existing.CreatedAt
+		a.OIDCIssuer = existing.OIDCIssuer
+		a.OIDCSubject = existing.OIDCSubject
+		r.byUsername[a.Username] = cloneAccount(a)
+		return nil
+	}
+	if a.ID == "" {
+		a.ID = uuid.NewString()
+	}
+	for _, other := range r.byUsername {
+		if other.ID == a.ID {
+			return domain.ErrConflict
+		}
+		if a.OIDCSubject != "" && other.OIDCIssuer == a.OIDCIssuer && other.OIDCSubject == a.OIDCSubject {
+			return domain.ErrConflict
+		}
+	}
+	r.byUsername[a.Username] = cloneAccount(a)
+	return nil
+}
+
+// Create inserts a new account, returning domain.ErrConflict if the
+// username, id or OIDC issuer+subject already exists. Unlike Upsert it never
+// touches an existing account.
+func (r *AccountRepository) Create(_ context.Context, a domain.Account) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.byUsername[a.Username]; ok {
+		return domain.ErrConflict
+	}
+	if a.ID == "" {
+		a.ID = uuid.NewString()
+	}
+	for _, other := range r.byUsername {
+		if other.ID == a.ID {
+			return domain.ErrConflict
+		}
+		if a.OIDCSubject != "" && other.OIDCIssuer == a.OIDCIssuer && other.OIDCSubject == a.OIDCSubject {
+			return domain.ErrConflict
+		}
+	}
+	r.byUsername[a.Username] = cloneAccount(a)
+	return nil
+}
+
+// ClientRepository is an in-memory port.ClientRepository.
+type ClientRepository struct {
+	mu         sync.RWMutex
+	byClientID map[string]domain.Client
+}
+
+// NewClientRepository returns an empty in-memory client repository.
+func NewClientRepository() *ClientRepository {
+	return &ClientRepository{byClientID: make(map[string]domain.Client)}
+}
+
+// cloneClient returns a copy of c that does not share the Scopes backing
+// array, so the scopes later client tokens receive only change via Upsert.
+func cloneClient(c domain.Client) domain.Client {
+	c.Scopes = slices.Clone(c.Scopes)
+	return c
+}
+
+// GetByClientID returns a client by client_id.
+func (r *ClientRepository) GetByClientID(_ context.Context, clientID string) (domain.Client, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	c, ok := r.byClientID[clientID]
+	if !ok {
+		return domain.Client{}, domain.ErrNotFound
+	}
+	return cloneClient(c), nil
+}
+
+// Upsert inserts or updates by client_id, preserving created_at on update.
+func (r *ClientRepository) Upsert(_ context.Context, c domain.Client) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if existing, ok := r.byClientID[c.ClientID]; ok {
+		c.CreatedAt = existing.CreatedAt
+	}
+	r.byClientID[c.ClientID] = cloneClient(c)
+	return nil
+}

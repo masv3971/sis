@@ -1,0 +1,129 @@
+// Package oidcrp is the OIDC Relying Party: it wraps go-oidc discovery, the
+// OAuth2 code flow, and ID-token verification for delegated login.
+package oidcrp
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+	"time"
+
+	coreoidc "github.com/coreos/go-oidc/v3/oidc"
+	"golang.org/x/oauth2"
+
+	"github.com/SUNET/sis/pkg/logger"
+	"github.com/SUNET/sis/pkg/model"
+)
+
+// Claims is the subset of verified ID-token claims the service uses. Issuer
+// and Subject together are the stable identity of the user; Email and Name
+// are informational and must not be used to match local accounts.
+type Claims struct {
+	Issuer  string
+	Subject string
+	Email   string
+	Name    string
+}
+
+// discoveryTimeout bounds provider discovery at startup. Without it, an
+// identity provider that accepts the connection but never answers would hang
+// New (and so the whole service, including /healthz) indefinitely; with it the
+// outage surfaces as a startup error. A var so tests can shorten it.
+var discoveryTimeout = 10 * time.Second
+
+// exchangeTimeout bounds the provider round-trips made while handling the
+// login callback (the token request and any JWKS fetch during ID-token
+// verification). The request context has no deadline and the HTTP server's
+// Read/WriteTimeout do not cancel handler work, so without it a provider that
+// accepts the token request but never answers would block the callback
+// indefinitely. It is also the Timeout of the HTTP client used for every
+// provider request. A var so tests can shorten it; read once in New.
+var exchangeTimeout = 10 * time.Second
+
+// Client performs the OIDC authorization-code flow against a configured provider.
+type Client struct {
+	verifier *coreoidc.IDTokenVerifier
+	oauth    oauth2.Config
+	// httpClient carries a hard per-request Timeout. It is injected into
+	// every context handed to go-oidc/oauth2 (they look it up via
+	// oauth2.HTTPClient), including the long-lived one go-oidc keeps for
+	// background JWKS refreshes, which no request deadline can cancel.
+	httpClient *http.Client
+	timeout    time.Duration
+}
+
+// New builds the OIDC Relying Party from configuration, following the SUNET/vc
+// shape New(ctx, cfg, deps..., log). When cfg.SIS.Auth.OIDCRP.IssuerURL is empty
+// delegated login is disabled: (nil, nil) is returned so main can wire the
+// resulting (possibly nil) Client into the HTTP server unconditionally. When
+// set, provider discovery runs (bounded by discoveryTimeout) and a failure is
+// reported.
+func New(ctx context.Context, cfg *model.Cfg, log *logger.Log) (*Client, error) {
+	oc := cfg.SIS.Auth.OIDCRP
+	if oc.IssuerURL == "" {
+		return nil, nil
+	}
+	log = log.New("oidcrp")
+	httpClient := &http.Client{Timeout: exchangeTimeout}
+	ctx = coreoidc.ClientContext(ctx, httpClient)
+	// The timeout only covers the discovery request: go-oidc keeps the HTTP
+	// client from ctx, not ctx itself, so later JWKS fetches and code
+	// exchanges are unaffected by this cancel.
+	discoverCtx, cancel := context.WithTimeout(ctx, discoveryTimeout)
+	defer cancel()
+	provider, err := coreoidc.NewProvider(discoverCtx, oc.IssuerURL)
+	if err != nil {
+		return nil, fmt.Errorf("oidc discovery %s: %w", oc.IssuerURL, err)
+	}
+	log.Info("OIDC RP enabled", "issuer", oc.IssuerURL)
+	return &Client{
+		verifier: provider.Verifier(&coreoidc.Config{ClientID: oc.ClientID}),
+		oauth: oauth2.Config{
+			ClientID:     oc.ClientID,
+			ClientSecret: oc.ClientSecret,
+			Endpoint:     provider.Endpoint(),
+			RedirectURL:  oc.RedirectURL,
+			Scopes:       []string{coreoidc.ScopeOpenID, "profile", "email"},
+		},
+		httpClient: httpClient,
+		timeout:    exchangeTimeout,
+	}, nil
+}
+
+// AuthCodeURL builds the provider authorization URL for the given state and nonce.
+func (r *Client) AuthCodeURL(state, nonce string) string {
+	return r.oauth.AuthCodeURL(state, coreoidc.Nonce(nonce))
+}
+
+// Exchange trades the authorization code for tokens, verifies the ID token and
+// its nonce, and returns the identity claims. Both provider round-trips share
+// one deadline (exchangeTimeout) on top of the caller's ctx, so a stalled
+// provider fails the callback instead of hanging it.
+func (r *Client) Exchange(ctx context.Context, code, nonce string) (*Claims, error) {
+	ctx, cancel := context.WithTimeout(coreoidc.ClientContext(ctx, r.httpClient), r.timeout)
+	defer cancel()
+	tok, err := r.oauth.Exchange(ctx, code)
+	if err != nil {
+		return nil, err
+	}
+	rawID, ok := tok.Extra("id_token").(string)
+	if !ok {
+		return nil, errors.New("no id_token in token response")
+	}
+	idToken, err := r.verifier.Verify(ctx, rawID)
+	if err != nil {
+		return nil, err
+	}
+	if idToken.Nonce != nonce {
+		return nil, errors.New("nonce mismatch")
+	}
+	var c struct {
+		Email string `json:"email"`
+		Name  string `json:"name"`
+	}
+	if err := idToken.Claims(&c); err != nil {
+		return nil, err
+	}
+	return &Claims{Issuer: idToken.Issuer, Subject: idToken.Subject, Email: c.Email, Name: c.Name}, nil
+}

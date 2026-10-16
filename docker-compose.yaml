@@ -1,0 +1,75 @@
+services:
+  sis:
+    # Keep this image tag identical to Makefile's DOCKER_IMAGE:VERSION, so
+    # `make docker-build && make restart` runs the image you just built.
+    # Without this, compose silently falls back to its own project-named
+    # image (sis-sis) and `make docker-build` builds a different one.
+    image: docker.sunet.se/iam_vc/sis:local
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - SIS_CONFIG_YAML=/etc/sis/config.yaml
+    volumes:
+      - ./config.yaml:/etc/sis/config.yaml:ro
+    # Loopback by default: with the sample bootstrap credentials anyone who
+    # can reach this port can sign in as admin. To expose SIS to other hosts
+    # deliberately, set SIS_PUBLISH_ADDR (e.g. SIS_PUBLISH_ADDR=0.0.0.0) and
+    # replace the bootstrap credentials first.
+    ports:
+      - "${SIS_PUBLISH_ADDR:-127.0.0.1}:8080:8080"
+    networks:
+      sisnet:
+        ipv4_address: 172.28.0.10
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: sis
+      POSTGRES_PASSWORD: sis
+      POSTGRES_DB: sis
+    # Loopback only: the credentials above are public development defaults,
+    # so the database must not be reachable from other hosts. Containers
+    # reach it as postgres:5432 over sisnet regardless of this mapping.
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sis -d sis"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - sis_pgdata:/var/lib/postgresql/data
+    networks:
+      - sisnet
+
+  # Keycloak-compatible OIDC provider for local OIDC RP testing.
+  mellon:
+    image: docker.sunet.se/iam_vc/mellon:latest
+    # Loopback only: realm.json ships publicly known test identities
+    # (admin/password) and the sis-secret client credential, so this IdP
+    # must not be reachable from other hosts. SIS reaches it as mellon:8080
+    # over sisnet regardless of these mappings.
+    ports:
+      - "127.0.0.1:9080:8080"
+      - "127.0.0.1:9443:8443"
+    environment:
+      - KC_HTTP_PORT=8080
+      - KC_HTTP_ENABLED=true
+      - KC_HOSTNAME_URL=https://sunet-vc-oidc.fly.dev
+      - KC_PROXY_HEADERS=xforwarded
+    volumes:
+      - ./realm.json:/opt/keycloak/data/import/realm.json:ro
+    networks:
+      - sisnet
+
+networks:
+  sisnet:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+volumes:
+  sis_pgdata:

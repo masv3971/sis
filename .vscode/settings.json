@@ -1,0 +1,17 @@
+{
+    "cSpell.words": [
+        "coreoidc",
+        "coresvc",
+        "envconfig",
+        "gonic",
+        "healthcheck",
+        "isready",
+        "OEAPI",
+        "oidcrp",
+        "pgconn",
+        "pgdata",
+        "pgxpool",
+        "readmodel",
+        "upserts"
+    ]
+}

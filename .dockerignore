@@ -1,0 +1,12 @@
+# Keep the Docker build context small and reproducible.
+.git
+bin/
+web/node_modules
+web/dist
+*.md
+.devcontainer
+.vscode
+docker-compose.yaml
+config.yaml
+config.yaml.sample
+realm.json

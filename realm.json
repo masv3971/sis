@@ -1,0 +1,43 @@
+{
+  "realm": "sis",
+  "enabled": true,
+  "accessTokenLifespan": 300,
+  "accessCodeLifespan": 60,
+  "defaultSignatureAlgorithm": "RS256",
+  "clients": [
+    {
+      "clientId": "sis",
+      "name": "SIS Admin",
+      "secret": "sis-secret",
+      "redirectUris": ["http://localhost:8080/auth/oidc/callback"],
+      "webOrigins": ["http://localhost:8080"],
+      "publicClient": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": true,
+      "defaultClientScopes": ["openid", "profile", "email"],
+      "optionalClientScopes": ["offline_access"]
+    }
+  ],
+  "users": [
+    {
+      "username": "admin",
+      "email": "admin@sis.local",
+      "emailVerified": true,
+      "firstName": "Admin",
+      "lastName": "User",
+      "enabled": true,
+      "credentials": [
+        { "type": "password", "value": "password" }
+      ],
+      "realmRoles": ["admin"]
+    }
+  ],
+  "roles": {
+    "realm": [
+      { "name": "user", "description": "Default user role" },
+      { "name": "admin", "description": "Administrator role" }
+    ]
+  }
+}

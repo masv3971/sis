@@ -1,0 +1,108 @@
+# SIS configuration
+# =================
+#
+# Point the SIS_CONFIG_YAML environment variable at a copy of this file. It is
+# the only environment variable SIS reads.
+#
+# The sections follow the source tree, so a key's path tells you which code
+# folder uses it:
+#
+#   sis.httpserver                  -> internal/httpserver
+#   sis.auth.oidcrp                 -> internal/auth/oidcrp
+#   sis.adapter.inbound.oeapi       -> internal/adapter/inbound/oeapi
+#   sis.adapter.outbound.postgres   -> internal/adapter/outbound/postgres
+#
+# Every key is documented in pkg/model/config.go. Rules:
+#   - Keys you leave out take the default shown here.
+#   - Unknown or misspelled keys stop SIS at startup.
+#   - Durations use Go syntax: 500ms, 15s, 10m, 1h.
+
+common:
+  # true enforces production rules: sis.auth.jwt_secret must be set (>= 32
+  # bytes) and sis.auth.oidcrp.issuer_url and redirect_url must be https. Set
+  # true on every shared deployment.
+  production: false
+  log:
+    level: info   # debug | info | warn | error
+    json: true    # true: one JSON object per line; false: readable text
+
+sis:
+  # -- internal/httpserver -----------------------------------------------------
+  # One listener serves every API and the admin web UI.
+  httpserver:
+    addr: ":8080"           # host:port; startup fails if it is taken
+    read_timeout: 15s       # max time to receive a request
+    write_timeout: 15s      # max time to send a response
+    shutdown_timeout: 10s   # grace period for in-flight requests on SIGTERM
+    web:
+      # Directory with the built admin UI (index.html + assets/). The Docker
+      # image ships it at /web. Empty serves the APIs only.
+      root: ""
+    swagger:
+      # Serve the /api/v1 API docs (Swagger UI) at /swagger/index.html. The
+      # page is public; requests sent from it still need a Bearer token.
+      enabled: true
+
+  # -- internal/auth -----------------------------------------------------------
+  auth:
+    # Signs access tokens. Generate with `openssl rand -hex 32` and use the
+    # same value on every replica. Required when common.production is true,
+    # and must then be at least 32 bytes of random data: anyone who recovers
+    # it can forge admin tokens. Never use a passphrase.
+    jwt_secret: "change-me-to-a-long-random-value"
+    token_ttl: 1h           # lifetime of an issued access token
+
+    # Created or updated at every start. Leave admin_username / client_id
+    # empty to skip. Rotate or remove once real accounts exist.
+    bootstrap:
+      admin_username: "admin"
+      admin_password: "change-me"
+      client_id: "svc1"
+      client_secret: "change-me"
+      client_scopes: ["sis.read", "sis.write"]   # empty grants both
+
+    # -- internal/auth/oidcrp --------------------------------------------------
+    # Single sign-on via an OpenID Connect provider. Empty issuer_url
+    # disables SSO and hides the "Sign in with SSO" button.
+    oidcrp:
+      issuer_url: ""        # e.g. https://idp.example.org/realms/sis
+      client_id: ""
+      client_secret: ""
+      redirect_url: ""      # e.g. https://sis.example.org/auth/oidc/callback (https in production)
+
+  # -- internal/adapter --------------------------------------------------------
+  adapter:
+    # APIs clients call. Each list endpoint has a default page size and a
+    # maximum; larger requests are lowered to the maximum, which must be at
+    # least the default.
+    inbound:
+      authapi:              # /auth, /oauth/token
+        post_login_redirect_url: "/"   # where the browser lands after SSO (no #fragment)
+        # Password checks allowed at once (each uses ~64 MiB); extra login
+        # requests get 429.
+        max_concurrent_logins: 8
+      restadmin:            # /api/v1 (read/write)   ?limit=&offset=
+        default_limit: 50
+        max_limit: 500
+      oeapi:                # /oeapi (Open Education API v6, read-only)   ?pageNumber=&pageSize=
+        default_page_size: 10
+        max_page_size: 500
+      eduapi:               # /eduapi (Edu-API v1, read-only)   ?limit=&offset=
+        default_limit: 100
+        max_limit: 500
+
+    # Systems SIS calls out to.
+    outbound:
+      postgres:
+        # Empty keeps all data in memory and loses it on restart: try-out
+        # only. Migrations run automatically at startup.
+        # localhost is for running SIS on the host against the compose
+        # database. When SIS itself runs under docker compose (this file
+        # mounted as config.yaml), use the service name instead:
+        #   postgres://sis:sis@postgres:5432/sis?sslmode=disable
+        connection_string: "postgres://sis:sis@localhost:5432/sis?sslmode=disable"
+      events:
+        # Events are logged today; NATS publishing is not implemented yet.
+        enabled: false
+        url: "nats://localhost:4222"
+        subject: "sis.events"
