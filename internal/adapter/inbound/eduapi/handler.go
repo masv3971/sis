@@ -86,12 +86,13 @@ func List[T any, PT domain.EntityPtr[T], D any](c *Client, svc *service.Resource
 			helpers.WriteError(gc, err)
 			return
 		}
-		if err := publishRefs(c, gc, page.Items...); err != nil {
+		items, err := publishRefs(c, gc, page.Items...)
+		if err != nil {
 			helpers.WriteError(gc, err)
 			return
 		}
-		out := make([]D, 0, len(page.Items))
-		for _, e := range page.Items {
+		out := make([]D, 0, len(items))
+		for _, e := range items {
 			out = append(out, mapFn(e))
 		}
 		gc.Header("X-Total-Count", strconv.Itoa(page.Total))
@@ -107,8 +108,13 @@ func Get[T any, PT domain.EntityPtr[T], D any](c *Client, svc *service.Resource[
 			helpers.WriteError(gc, err)
 			return
 		}
-		if err := publishRefs(c, gc, e); err != nil {
+		items, err := publishRefs(c, gc, e)
+		if err != nil {
 			helpers.WriteError(gc, err)
+			return
+		}
+		if len(items) == 0 {
+			helpers.WriteError(gc, domain.ErrNotFound)
 			return
 		}
 		gc.JSON(http.StatusOK, gin.H{key: mapFn(e)})
@@ -117,14 +123,27 @@ func Get[T any, PT domain.EntityPtr[T], D any](c *Client, svc *service.Resource[
 
 // publishRefs rewrites the items' references to other records into those
 // records' sourcedIds (see readmodel.Client.PublishRefs), so every GUIDRef in
-// the response can be followed through this provider. A free function for
-// the same reason as List/Get: it is generic over PT.
-func publishRefs[PT domain.Entity](c *Client, gc *gin.Context, items ...PT) error {
+// the response can be followed through this provider, and returns the items
+// that are publishable: orphans (a required reference no longer resolves)
+// are dropped, so a page may hold fewer than limit items while
+// X-Total-Count still counts stored records. A free function for the same
+// reason as List/Get: it is generic over PT.
+func publishRefs[PT domain.Entity](c *Client, gc *gin.Context, items ...PT) ([]PT, error) {
 	ents := make([]domain.Entity, len(items))
 	for i, e := range items {
 		ents[i] = e
 	}
-	return c.catalog.PublishRefs(gc.Request.Context(), ents...)
+	ok, err := c.catalog.PublishRefs(gc.Request.Context(), ents...)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]PT, 0, len(items))
+	for i, e := range items {
+		if ok[i] {
+			out = append(out, e)
+		}
+	}
+	return out, nil
 }
 
 // limitOffset parses OneRoster-style limit/offset query parameters. An

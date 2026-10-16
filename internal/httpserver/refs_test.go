@@ -168,4 +168,60 @@ func TestProvidersPublishReferencesAsSourcedIDs(t *testing.T) {
 		get(t, "/eduapi/classes/"+enr.Enrollment.Class.SourcedID, nil)
 		get(t, "/eduapi/academicSessions/"+term, nil)
 	})
+
+	// Runs last: it deletes records. Enrollments whose person or offering is
+	// deleted after they were stored must not be published with an empty
+	// required relationship: Get answers 404 and List omits them.
+	t.Run("orphaned enrollments", func(t *testing.T) {
+		must(catalog.Persons.CreatePerson(ctx, domain.Person{ID: "p-gone", SourcedID: "p-gone", GivenName: "A", FamilyName: "B", Status: domain.StatusActive}))
+		must(catalog.Offerings.Create(ctx, &domain.Offering{Base: domain.Base{ID: "f-gone", SourcedID: "f-gone"}, CourseID: "c-internal"}))
+		must(catalog.Enrollments.Create(ctx, &domain.Enrollment{Base: domain.Base{ID: "e-person", SourcedID: "enr-person-gone"}, PersonID: "p-gone", OfferingID: "f-internal"}))
+		must(catalog.Enrollments.Create(ctx, &domain.Enrollment{Base: domain.Base{ID: "e-offering", SourcedID: "enr-offering-gone"}, PersonID: "p-internal", OfferingID: "f-gone"}))
+		if err := catalog.Persons.DeletePerson(ctx, "p-gone"); err != nil {
+			t.Fatal(err)
+		}
+		if err := catalog.Offerings.Delete(ctx, "f-gone"); err != nil {
+			t.Fatal(err)
+		}
+
+		status := func(t *testing.T, path string) int {
+			t.Helper()
+			req, _ := http.NewRequest(http.MethodGet, base+path, nil)
+			req.Header.Set("Authorization", "Bearer "+tok)
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatalf("GET %s: %v", path, err)
+			}
+			_ = resp.Body.Close()
+			return resp.StatusCode
+		}
+		for _, path := range []string{
+			"/oeapi/associations/enr-person-gone",
+			"/oeapi/associations/enr-offering-gone",
+			"/eduapi/enrollments/enr-person-gone",
+			"/eduapi/enrollments/enr-offering-gone",
+		} {
+			if got := status(t, path); got != http.StatusNotFound {
+				t.Errorf("GET %s: status %d, want 404", path, got)
+			}
+		}
+
+		var oe struct {
+			Items []struct{ AssociationID, PersonID, OfferingID string }
+		}
+		get(t, "/oeapi/associations", &oe)
+		var edu struct {
+			Enrollments []struct {
+				SourcedID   string
+				User, Class struct{ SourcedID string }
+			}
+		}
+		get(t, "/eduapi/enrollments", &edu)
+		if len(oe.Items) != 1 || oe.Items[0].AssociationID != "enr-1" {
+			t.Errorf("oeapi associations = %+v, want only enr-1", oe.Items)
+		}
+		if len(edu.Enrollments) != 1 || edu.Enrollments[0].SourcedID != "enr-1" {
+			t.Errorf("eduapi enrollments = %+v, want only enr-1", edu.Enrollments)
+		}
+	})
 }

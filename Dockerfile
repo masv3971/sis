@@ -22,11 +22,22 @@ RUN npm run build
 FROM golang:1.27-alpine AS build
 WORKDIR /src
 
+# make drives Swagger generation below, so the image uses the same recipe as
+# local builds.
+RUN apk add --no-cache make
+
 COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags "-w -s" -o /out/sis ./cmd/sis
+
+# Generate the /api/v1 OpenAPI package (docs/restadmin) before building.
+# internal/httpserver imports it unconditionally, so the build fails without
+# it even when Swagger is disabled in config. Regenerating here (rather than
+# relying on a committed copy) keeps the image in step with the annotations.
+# swag is the Go tool pinned in go.mod, so no extra install is needed.
+RUN make swagger && \
+    CGO_ENABLED=0 GOOS=linux go build -ldflags "-w -s" -o /out/sis ./cmd/sis
 
 # ------------------------------------------------------------------------------
 # Runtime stage: distroless + non-root. Ships the Go binary and the built SPA

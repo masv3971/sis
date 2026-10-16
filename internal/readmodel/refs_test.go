@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"slices"
 	"strconv"
 	"testing"
 
@@ -110,7 +111,11 @@ func TestPublishRefsUsesSourcedIDs(t *testing.T) {
 	offering := &domain.Offering{CourseID: "c-id", AcademicSessionID: "s-id", OrgID: "o-id"}
 	enrollment := &domain.Enrollment{PersonID: "p-id", OfferingID: "f-id"}
 	dangling := &domain.Enrollment{PersonID: "gone", OfferingID: "f-id"}
-	must(t, c.PublishRefs(ctx, child, course, offering, enrollment, dangling))
+	ok, err := c.PublishRefs(ctx, child, course, offering, enrollment, dangling)
+	must(t, err)
+	if want := []bool{true, true, true, true, false}; !slices.Equal(ok, want) {
+		t.Errorf("publishable = %v, want %v", ok, want)
+	}
 
 	checks := []struct{ name, got, want string }{
 		{"organization.parent", child.ParentID, "uni"},
@@ -143,7 +148,8 @@ func TestPublishRefsNeverFallsBackToSourcedID(t *testing.T) {
 	must(t, c.Persons.DeletePerson(ctx, "p1"))
 
 	e := &domain.Enrollment{PersonID: "p1"}
-	must(t, c.PublishRefs(ctx, e))
+	_, err = c.PublishRefs(ctx, e)
+	must(t, err)
 	if e.PersonID != "" {
 		t.Fatalf("dangling reference published as %q; want it cleared", e.PersonID)
 	}
@@ -170,7 +176,8 @@ func TestPublishRefsBatchesLookups(t *testing.T) {
 	}
 	f.persons.bulk, f.persons.single, f.offering.bulk, f.offering.single = 0, 0, 0, 0
 
-	must(t, c.PublishRefs(ctx, page...))
+	_, err = c.PublishRefs(ctx, page...)
+	must(t, err)
 	if f.persons.bulk != 1 || f.persons.single != 0 {
 		t.Errorf("persons: %d bulk / %d single lookups, want 1 / 0", f.persons.bulk, f.persons.single)
 	}
@@ -181,6 +188,66 @@ func TestPublishRefsBatchesLookups(t *testing.T) {
 		if en := e.(*domain.Enrollment); en.PersonID == "" || en.OfferingID == "" {
 			t.Fatalf("enrollment %d not resolved: %+v", i, en)
 		}
+	}
+}
+
+// TestPublishRefsFlagsOrphans deletes the targets of required references
+// after the referencing records were stored and checks PublishRefs reports
+// those records as unpublishable, while a dangling optional reference is
+// only cleared. An enrollment whose offering lost its course is an orphan
+// too: its offering is not published, so the link could not be followed.
+func TestPublishRefsFlagsOrphans(t *testing.T) {
+	ctx := context.Background()
+	c := newFixture(t).c
+	_, err := c.Persons.CreatePerson(ctx, domain.Person{ID: "p", GivenName: "A", FamilyName: "B", Status: domain.StatusActive})
+	must(t, err)
+	_, err = c.Persons.CreatePerson(ctx, domain.Person{ID: "p-gone", GivenName: "A", FamilyName: "B", Status: domain.StatusActive})
+	must(t, err)
+	for _, id := range []string{"c", "c-gone"} {
+		_, err = c.Courses.Create(ctx, &domain.Course{Base: domain.Base{ID: id}, Title: "C"})
+		must(t, err)
+	}
+	_, err = c.AcademicSessions.Create(ctx, &domain.AcademicSession{Base: domain.Base{ID: "s-gone"}, Title: "S"})
+	must(t, err)
+	for _, o := range []*domain.Offering{
+		{Base: domain.Base{ID: "f"}, CourseID: "c", AcademicSessionID: "s-gone"},
+		{Base: domain.Base{ID: "f-gone"}, CourseID: "c"},
+		{Base: domain.Base{ID: "f-orphan"}, CourseID: "c-gone"},
+	} {
+		_, err = c.Offerings.Create(ctx, o)
+		must(t, err)
+	}
+	must(t, c.Persons.DeletePerson(ctx, "p-gone"))
+	must(t, c.Offerings.Delete(ctx, "f-gone"))
+	must(t, c.Courses.Delete(ctx, "c-gone"))
+	must(t, c.AcademicSessions.Delete(ctx, "s-gone"))
+
+	cases := []struct {
+		name string
+		e    domain.Entity
+		want bool
+	}{
+		{"intact enrollment", &domain.Enrollment{PersonID: "p", OfferingID: "f"}, true},
+		{"person deleted", &domain.Enrollment{PersonID: "p-gone", OfferingID: "f"}, false},
+		{"offering deleted", &domain.Enrollment{PersonID: "p", OfferingID: "f-gone"}, false},
+		{"offering orphaned", &domain.Enrollment{PersonID: "p", OfferingID: "f-orphan"}, false},
+		{"offering course deleted", &domain.Offering{CourseID: "c-gone"}, false},
+		{"optional session deleted", &domain.Offering{CourseID: "c", AcademicSessionID: "s-gone"}, true},
+		{"optional parent deleted", &domain.Organization{ParentID: "o-gone"}, true},
+	}
+	ents := make([]domain.Entity, len(cases))
+	for i, tc := range cases {
+		ents[i] = tc.e
+	}
+	ok, err := c.PublishRefs(ctx, ents...)
+	must(t, err)
+	for i, tc := range cases {
+		if ok[i] != tc.want {
+			t.Errorf("%s: publishable = %v, want %v", tc.name, ok[i], tc.want)
+		}
+	}
+	if o := cases[5].e.(*domain.Offering); o.AcademicSessionID != "" {
+		t.Errorf("dangling optional session published as %q; want it cleared", o.AcademicSessionID)
 	}
 }
 

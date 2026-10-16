@@ -7,7 +7,9 @@ VERSION                 ?= local
 NEWTAG                  ?= $(VERSION)
 DOCKER_REGISTRY         ?= docker.sunet.se/iam_vc
 DOCKER_IMAGE            ?= $(DOCKER_REGISTRY)/$(NAME)
-CURRENT_BRANCH          := $(shell git rev-parse --abbrev-ref HEAD)
+# Lazy (=) so targets that don't need it, e.g. `make swagger` in the Docker
+# build stage where there is no git or .git, never run git.
+CURRENT_BRANCH          = $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
 
 # ==============================================================================
 # Phony Targets Declaration
@@ -125,6 +127,7 @@ gh-auth: gh-install ## Authenticate GitHub CLI
 # restadmin/swagger.go (the generic handlers are mounted once per entity).
 
 SWAG         := go tool swag
+# The Dockerfile build stage runs `make swagger` before `go build`.
 SWAGGER_OPTS := --packageName restadmin --parseInternal --parseFuncBody --quiet
 
 swagger: swagger-fmt swagger-restadmin ## Generate all Swagger docs
