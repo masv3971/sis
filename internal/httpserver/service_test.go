@@ -6,11 +6,16 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/SUNET/sis/internal/adapter/outbound/memory"
 	"github.com/SUNET/sis/internal/auth"
+	"github.com/SUNET/sis/internal/auth/token"
+	"github.com/SUNET/sis/internal/core/domain"
+	"github.com/SUNET/sis/internal/core/service"
 	"github.com/SUNET/sis/internal/readmodel"
 	"github.com/SUNET/sis/pkg/logger"
 	"github.com/SUNET/sis/pkg/model"
@@ -121,6 +126,98 @@ func TestSwaggerServesSpecOnlyWhenEnabled(t *testing.T) {
 			}
 		}
 	}
+}
+
+// TestIDsWithSlashesRoundTrip checks a record whose id and sourcedId contain
+// "/" can be read, updated and deleted through /api/v1 and read through both
+// standards providers when the slash is sent escaped (%2F), for persons and
+// for the generic resources.
+func TestIDsWithSlashesRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	log := logger.NewWithWriter("test", false, "error", io.Discard)
+	catalog := &readmodel.Client{
+		Persons:       service.New(memory.NewPersonRepository(), nil, nil, log),
+		Organizations: service.NewResource(memory.NewDocRepo[domain.Organization](), nil, nil, log),
+	}
+	cfg := testCfg("127.0.0.1:0")
+	cfg.SIS.Auth.TokenTTL = time.Hour
+	cfg.SIS.Adapter.Inbound.OEAPI.DefaultPageSize, cfg.SIS.Adapter.Inbound.OEAPI.MaxPageSize = 10, 10
+	cfg.SIS.Adapter.Inbound.EduAPI.DefaultLimit, cfg.SIS.Adapter.Inbound.EduAPI.MaxLimit = 10, 10
+	a, err := auth.New(ctx, cfg, memory.NewAccountRepository(), memory.NewClientRepository(), log)
+	if err != nil {
+		t.Fatalf("auth.New: %v", err)
+	}
+	s, err := New(ctx, cfg, a, catalog, log)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close(context.Background()) })
+	tok, _, err := a.Issuer().Issue("writer", token.KindClient, nil, []string{domain.ScopeRead, domain.ScopeWrite})
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := "http://" + s.Addr().String()
+
+	do := func(t *testing.T, method, path, body string, want int) map[string]any {
+		t.Helper()
+		var rd io.Reader
+		if body != "" {
+			rd = strings.NewReader(body)
+		}
+		req, _ := http.NewRequest(method, base+path, rd)
+		req.Header.Set("Authorization", "Bearer "+tok)
+		if body != "" {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("%s %s: %v", method, path, err)
+		}
+		defer resp.Body.Close()
+		raw, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode != want {
+			t.Fatalf("%s %s: status %d, want %d; body=%s", method, path, resp.StatusCode, want, raw)
+		}
+		var out map[string]any
+		_ = json.Unmarshal(raw, &out)
+		return out
+	}
+	esc := url.PathEscape
+
+	t.Run("persons", func(t *testing.T) {
+		const id, sid = "external/42", "src/42"
+		do(t, http.MethodPost, "/api/v1/persons",
+			`{"id":"`+id+`","sourcedId":"`+sid+`","givenName":"A","familyName":"B","status":"active"}`, http.StatusCreated)
+		if got := do(t, http.MethodGet, "/api/v1/persons/"+esc(id), "", http.StatusOK)["id"]; got != id {
+			t.Fatalf("GET id = %v, want %q", got, id)
+		}
+		got := do(t, http.MethodPut, "/api/v1/persons/"+esc(id),
+			`{"givenName":"C","familyName":"B","status":"active"}`, http.StatusOK)
+		if got["id"] != id || got["givenName"] != "C" {
+			t.Fatalf("PUT = %v", got)
+		}
+		do(t, http.MethodGet, "/oeapi/persons/"+esc(sid), "", http.StatusOK)
+		do(t, http.MethodGet, "/eduapi/persons/"+esc(sid), "", http.StatusOK)
+		do(t, http.MethodDelete, "/api/v1/persons/"+esc(id), "", http.StatusNoContent)
+		do(t, http.MethodGet, "/api/v1/persons/"+esc(id), "", http.StatusNotFound)
+	})
+
+	t.Run("generic resource", func(t *testing.T) {
+		const id, sid = "org/1", "uni/1"
+		do(t, http.MethodPost, "/api/v1/organizations",
+			`{"id":"`+id+`","sourcedId":"`+sid+`","name":"U"}`, http.StatusCreated)
+		if got := do(t, http.MethodGet, "/api/v1/organizations/"+esc(id), "", http.StatusOK)["id"]; got != id {
+			t.Fatalf("GET id = %v, want %q", got, id)
+		}
+		got := do(t, http.MethodPut, "/api/v1/organizations/"+esc(id), `{"name":"V"}`, http.StatusOK)
+		if got["id"] != id || got["name"] != "V" {
+			t.Fatalf("PUT = %v", got)
+		}
+		do(t, http.MethodGet, "/oeapi/organizations/"+esc(sid), "", http.StatusOK)
+		do(t, http.MethodGet, "/eduapi/orgs/"+esc(sid), "", http.StatusOK)
+		do(t, http.MethodDelete, "/api/v1/organizations/"+esc(id), "", http.StatusNoContent)
+		do(t, http.MethodGet, "/api/v1/organizations/"+esc(id), "", http.StatusNotFound)
+	})
 }
 
 func TestNewFailsWhenAddressInUse(t *testing.T) {

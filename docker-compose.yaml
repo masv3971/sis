@@ -13,8 +13,12 @@ services:
       - SIS_CONFIG_YAML=/etc/sis/config.yaml
     volumes:
       - ./config.yaml:/etc/sis/config.yaml:ro
+    # Loopback by default: with the sample bootstrap credentials anyone who
+    # can reach this port can sign in as admin. To expose SIS to other hosts
+    # deliberately, set SIS_PUBLISH_ADDR (e.g. SIS_PUBLISH_ADDR=0.0.0.0) and
+    # replace the bootstrap credentials first.
     ports:
-      - "8080:8080"
+      - "${SIS_PUBLISH_ADDR:-127.0.0.1}:8080:8080"
     networks:
       sisnet:
         ipv4_address: 172.28.0.10
@@ -43,9 +47,13 @@ services:
   # Keycloak-compatible OIDC provider for local OIDC RP testing.
   mellon:
     image: docker.sunet.se/iam_vc/mellon:latest
+    # Loopback only: realm.json ships publicly known test identities
+    # (admin/password) and the sis-secret client credential, so this IdP
+    # must not be reachable from other hosts. SIS reaches it as mellon:8080
+    # over sisnet regardless of these mappings.
     ports:
-      - "9080:8080"
-      - "9443:8443"
+      - "127.0.0.1:9080:8080"
+      - "127.0.0.1:9443:8443"
     environment:
       - KC_HTTP_PORT=8080
       - KC_HTTP_ENABLED=true

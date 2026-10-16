@@ -42,3 +42,35 @@ func TestAbortCodeFollowsStatus(t *testing.T) {
 		}
 	}
 }
+
+// TestRequireAuthSchemeIsCaseInsensitive checks the Bearer scheme name is
+// matched case-insensitively (RFC 9110 §11.1), while a different scheme or a
+// missing token is still rejected.
+func TestRequireAuthSchemeIsCaseInsensitive(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	issuer := token.NewIssuer("secret", "sis", time.Hour)
+	tok, _, _ := issuer.Issue("u", token.KindUser, []string{"admin"}, nil)
+
+	r := gin.New()
+	r.GET("/x", RequireAuth(issuer), func(c *gin.Context) { c.Status(http.StatusOK) })
+
+	cases := map[string]int{
+		"Bearer " + tok:     http.StatusOK,
+		"bearer " + tok:     http.StatusOK,
+		"BEARER " + tok:     http.StatusOK,
+		"Bearer   " + tok:   http.StatusOK,
+		"Basic " + tok:      http.StatusUnauthorized,
+		"Bearer":            http.StatusUnauthorized,
+		"Bearer ":           http.StatusUnauthorized,
+		"Bearertoken" + tok: http.StatusUnauthorized,
+	}
+	for header, want := range cases {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/x", nil)
+		req.Header.Set("Authorization", header)
+		r.ServeHTTP(w, req)
+		if w.Code != want {
+			t.Errorf("Authorization %.20q: got %d, want %d", header, w.Code, want)
+		}
+	}
+}

@@ -186,13 +186,16 @@ func BindJSON(gc *gin.Context, v any) error {
 
 // WriteError classifies err and writes it as the HTTP error response. The detail
 // of an unclassified error is dropped so internal failures leak nothing beyond a
-// generic title.
+// generic title. Before redacting, the original error is attached to the gin
+// context (gc.Errors) so the request logger records it server-side; otherwise
+// a database failure would surface only as an unexplained 500.
 func WriteError(c *gin.Context, err error) {
 	e := NewErrorFromError(err)
 	if e == nil {
 		e = NewErrorWithStatus(ErrInternal, http.StatusInternalServerError)
 	}
 	if e.IsUnclassified() {
+		_ = c.Error(err)
 		e = NewErrorWithStatus(e.Title, e.Status())
 	}
 	c.JSON(e.Status(), ErrorResponse{Error: e})

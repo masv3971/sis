@@ -24,7 +24,15 @@ export function App() {
       </header>
       <main>
         {authed ? (
-          <Persons onUnauthorized={() => setAuthed(false)} />
+          <Persons
+            onUnauthorized={() => {
+              // A delayed 401 from an earlier session can reach here after a
+              // new sign-in stored its token (possibly from a Persons
+              // instance that has since unmounted). Only drop to the login
+              // page when there really is no token any more.
+              if (getToken() === null) setAuthed(false);
+            }}
+          />
         ) : (
           <Login onLogin={() => setAuthed(true)} />
         )}

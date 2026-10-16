@@ -14,6 +14,12 @@ export function Login({ onLogin }: { onLogin: () => void }) {
 
   async function submit(e: FormEvent) {
     e.preventDefault();
+    // The server requires both fields; say so up front rather than round-trip
+    // to a 400. login() still maps a 400 to the same message as a backstop.
+    if (!username || !password) {
+      setError("Enter both a username and a password.");
+      return;
+    }
     setError("");
     setBusy(true);
     try {

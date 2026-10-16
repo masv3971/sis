@@ -87,6 +87,12 @@ func New(ctx context.Context, cfg *model.Cfg, authSvc *auth.Client, catalog *rea
 	gin.EnableJsonDecoderDisallowUnknownFields() // reject unknown fields on writes
 
 	engine := gin.New()
+	// Route on the escaped path and unescape parameters afterwards, so an id
+	// or sourcedId containing "/" (sent as %2F) still matches a single :id
+	// segment: /api/v1/persons/external%2F42 reaches GetPerson with
+	// id="external/42" instead of 404ing on the decoded extra segment.
+	engine.UseRawPath = true
+	engine.UnescapePathValues = true
 	engine.Use(requestLogger(log.New("request")), gin.Recovery(), bodyLimit(maxBodyBytes))
 
 	engine.GET("/healthz", func(gc *gin.Context) {

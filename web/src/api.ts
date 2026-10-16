@@ -38,6 +38,11 @@ export class UnauthorizedError extends Error {}
 // tell the user to retry instead of blaming their password.
 export class InvalidCredentialsError extends Error {}
 
+// LoginValidationError is a 400 from /auth/login: the request itself is
+// incomplete (an empty username or password). Retrying cannot fix it, so the
+// UI asks the user to fill in the fields instead of reporting a server error.
+export class LoginValidationError extends Error {}
+
 export async function login(username: string, password: string): Promise<void> {
   let res: Response;
   try {
@@ -50,6 +55,7 @@ export async function login(username: string, password: string): Promise<void> {
     throw new Error("Cannot reach the server. Check your connection and try again.");
   }
   if (res.status === 401) throw new InvalidCredentialsError("Invalid username or password");
+  if (res.status === 400) throw new LoginValidationError("Enter both a username and a password.");
   if (!res.ok) throw new Error(`Sign-in failed (server error ${res.status}). Try again later.`);
   const data = (await res.json()) as { access_token: string };
   setToken(data.access_token);

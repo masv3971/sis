@@ -5,6 +5,8 @@ package oidcrp
 import (
 	"context"
 	"errors"
+	"fmt"
+	"time"
 
 	coreoidc "github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
@@ -23,6 +25,12 @@ type Claims struct {
 	Name    string
 }
 
+// discoveryTimeout bounds provider discovery at startup. Without it, an
+// identity provider that accepts the connection but never answers would hang
+// New (and so the whole service, including /healthz) indefinitely; with it the
+// outage surfaces as a startup error. A var so tests can shorten it.
+var discoveryTimeout = 10 * time.Second
+
 // Client performs the OIDC authorization-code flow against a configured provider.
 type Client struct {
 	verifier *coreoidc.IDTokenVerifier
@@ -33,16 +41,22 @@ type Client struct {
 // shape New(ctx, cfg, deps..., log). When cfg.SIS.Auth.OIDCRP.IssuerURL is empty
 // delegated login is disabled: (nil, nil) is returned so main can wire the
 // resulting (possibly nil) Client into the HTTP server unconditionally. When
-// set, provider discovery runs and a failure is reported.
+// set, provider discovery runs (bounded by discoveryTimeout) and a failure is
+// reported.
 func New(ctx context.Context, cfg *model.Cfg, log *logger.Log) (*Client, error) {
 	oc := cfg.SIS.Auth.OIDCRP
 	if oc.IssuerURL == "" {
 		return nil, nil
 	}
 	log = log.New("oidcrp")
-	provider, err := coreoidc.NewProvider(ctx, oc.IssuerURL)
+	// The timeout only covers the discovery request: go-oidc keeps the HTTP
+	// client from ctx, not ctx itself, so later JWKS fetches and code
+	// exchanges are unaffected by this cancel.
+	discoverCtx, cancel := context.WithTimeout(ctx, discoveryTimeout)
+	defer cancel()
+	provider, err := coreoidc.NewProvider(discoverCtx, oc.IssuerURL)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("oidc discovery %s: %w", oc.IssuerURL, err)
 	}
 	log.Info("OIDC RP enabled", "issuer", oc.IssuerURL)
 	return &Client{
