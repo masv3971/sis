@@ -21,6 +21,22 @@ import (
 
 const oidcCookieTTL = 300 // seconds
 
+// The OIDC callback hands the access token to the SPA through a short-lived
+// HttpOnly cookie instead of the URL. Only the callback sets it, and only after
+// the state and nonce checks pass against cookies set by /auth/oidc/login in
+// the same browser, so the handoff is bound to the browser that started the
+// login. The SPA collects it once with POST /auth/oidc/session, which clears
+// it. The cookie is scoped to that path so no other request carries it.
+const (
+	oidcLoginCookie     = "oidc_login"
+	oidcLoginCookiePath = "/auth/oidc/session"
+	oidcLoginCookieTTL  = 60 // seconds
+	// oidcLoginMarker is appended to the post-login URL so the SPA knows a
+	// handoff is waiting. It carries no secret: a forged link only makes
+	// the SPA ask for a cookie the browser does not have.
+	oidcLoginMarker = "#oidc_login"
+)
+
 // Client bundles the auth handlers with the dependencies they need (the auth
 // Client, the post-login redirect URL, and a logger for operational-error
 // paths). It is a "Client" rather than a "Service" because it owns no runtime
@@ -142,8 +158,8 @@ func (c *Client) OIDCLogin(gc *gin.Context) {
 	gc.Redirect(http.StatusFound, c.auth.OIDCAuthCodeURL(state, nonce))
 }
 
-// OIDCCallback completes the OIDC RP flow and hands a token to the SPA via the
-// URL fragment.
+// OIDCCallback completes the OIDC RP flow and hands a token to the SPA via a
+// browser-bound HttpOnly cookie (see oidcLoginCookie).
 func (c *Client) OIDCCallback(gc *gin.Context) {
 	state, err := gc.Cookie("oidc_state")
 	if err != nil || state == "" || gc.Query("state") != state {
@@ -166,11 +182,47 @@ func (c *Client) OIDCCallback(gc *gin.Context) {
 		return
 	}
 
-	// Clear the one-shot cookies and hand the token to the SPA via the URL
-	// fragment (kept out of server logs and the Referer header).
+	c.handOff(gc, tok)
+}
+
+// handOff clears the one-shot state/nonce cookies, parks the token in the
+// login cookie, and sends the browser to the post-login URL with only the
+// marker. The token never appears in a URL, so a crafted link cannot plant
+// another user's token in this browser (login CSRF).
+func (c *Client) handOff(gc *gin.Context, tok auth.Token) {
 	noStore(gc)
 	c.setOIDCCookies(gc, "", "", -1)
-	gc.Redirect(http.StatusFound, c.postLoginURL+"#access_token="+tok.AccessToken)
+	c.setLoginCookie(gc, tok.AccessToken, oidcLoginCookieTTL)
+	gc.Redirect(http.StatusFound, c.postLoginURL+oidcLoginMarker)
+}
+
+// OIDCSession returns the token parked by OIDCCallback and clears the cookie,
+// so each handoff is collected once. POST only: SameSite=Lax withholds the
+// cookie from cross-site POSTs, and CORS keeps other origins from reading
+// the response. Without a valid pending handoff it answers 401 and the SPA
+// keeps whatever session it already had.
+func (c *Client) OIDCSession(gc *gin.Context) {
+	noStore(gc)
+	raw, err := gc.Cookie(oidcLoginCookie)
+	c.setLoginCookie(gc, "", -1)
+	if err != nil || raw == "" {
+		gc.JSON(http.StatusUnauthorized, gin.H{"error": "no_pending_login"})
+		return
+	}
+	claims, err := c.auth.Issuer().Parse(raw)
+	if err != nil || claims.ExpiresAt == nil {
+		gc.JSON(http.StatusUnauthorized, gin.H{"error": "no_pending_login"})
+		return
+	}
+	writeToken(gc, auth.Token{AccessToken: raw, TokenType: "Bearer", ExpiresAt: claims.ExpiresAt.Time})
+}
+
+// setLoginCookie sets (or, with maxAge -1, clears) the token handoff cookie.
+// Setting and clearing use the same attributes so the browser matches and
+// removes the same cookie.
+func (c *Client) setLoginCookie(gc *gin.Context, value string, maxAge int) {
+	gc.SetSameSite(http.SameSiteLaxMode)
+	gc.SetCookie(oidcLoginCookie, value, maxAge, oidcLoginCookiePath, "", c.secureCookies, true)
 }
 
 // setOIDCCookies sets (or, with maxAge -1, clears) the one-shot state and

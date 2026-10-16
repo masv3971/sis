@@ -79,9 +79,9 @@ func NewValidator() (*validator.Validate, error) {
 	}
 
 	// post_login_redirect_url - a parseable URL, absolute or relative, with no
-	// fragment. The OIDC callback appends "#access_token=...", so a
+	// fragment. The OIDC callback appends the "#oidc_login" marker, so a
 	// destination that already has a fragment (or a bare trailing "#") would
-	// bury the token where the web UI never looks for it.
+	// bury the marker where the web UI never looks for it.
 	if err := validate.RegisterValidation("post_login_redirect_url", func(fl validator.FieldLevel) bool {
 		raw := fl.Field().String()
 		if strings.Contains(raw, "#") {

@@ -70,10 +70,25 @@ func loadFile(path string, cfg *model.Cfg) error {
 	// startup instead of silently falling back to a default.
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
-	if err := dec.Decode(cfg); err != nil && !errors.Is(err, io.EOF) {
+	if err := dec.Decode(cfg); err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil // empty file: defaults only
+		}
 		return fmt.Errorf("parse config %q: %w", path, err)
 	}
-	return nil
+	// Decode reads one document only. Anything after a "---" separator (even
+	// an empty document) would otherwise be ignored without a word, so
+	// production settings placed there would silently not apply, and unknown
+	// keys or malformed YAML there would go unchecked. Require EOF.
+	var extra yaml.Node
+	switch err := dec.Decode(&extra); {
+	case errors.Is(err, io.EOF):
+		return nil
+	case err != nil:
+		return fmt.Errorf("parse config %q: %w", path, err)
+	default:
+		return fmt.Errorf("parse config %q: multiple YAML documents; put all settings in a single document", path)
+	}
 }
 
 // checkProduction enforces the settings that are only optional for local
@@ -102,9 +117,9 @@ func checkProduction(cfg *model.Cfg) error {
 		if err != nil || !strings.EqualFold(u.Scheme, "https") {
 			return errors.New("sis.auth.oidcrp.redirect_url must use https when common.production is true (the OIDC state/nonce cookies are Secure)")
 		}
-		// The OIDC callback redirects here with the access token in the
-		// fragment, so an absolute destination must be https too. Relative
-		// destinations (e.g. "/") resolve against the https callback.
+		// The OIDC callback redirects here and the page then collects the
+		// access token, so an absolute destination must be https too.
+		// Relative destinations (e.g. "/") resolve against the https callback.
 		u, err = url.Parse(cfg.SIS.Adapter.Inbound.AuthAPI.PostLoginRedirectURL)
 		if err != nil || (u.Scheme != "" && !strings.EqualFold(u.Scheme, "https")) {
 			return errors.New("sis.adapter.inbound.authapi.post_login_redirect_url must be relative or use https when common.production is true (it receives the access token)")

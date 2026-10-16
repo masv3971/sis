@@ -107,6 +107,7 @@ func New(ctx context.Context, cfg *model.Cfg, authSvc *auth.Client, catalog *rea
 	if authSvc.OIDCEnabled() {
 		engine.GET("/auth/oidc/login", authH.OIDCLogin)
 		engine.GET("/auth/oidc/callback", authH.OIDCCallback)
+		engine.POST("/auth/oidc/session", authH.OIDCSession)
 	}
 
 	// Native /api/v1 requires a valid token; reads and writes gate on scope

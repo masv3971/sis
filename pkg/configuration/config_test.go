@@ -106,6 +106,36 @@ func TestNewAcceptsEmptyFile(t *testing.T) {
 	}
 }
 
+// TestNewRejectsMultipleDocuments checks that only a single YAML document is
+// accepted: settings after "---" must fail startup rather than be ignored.
+func TestNewRejectsMultipleDocuments(t *testing.T) {
+	cases := map[string]string{
+		"second document with settings": "common:\n  production: false\n---\ncommon:\n  production: true\n",
+		"empty second document":         "common:\n  production: false\n---\n",
+		"malformed second document":     "common:\n  production: false\n---\n: bad: [\n",
+	}
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("SIS_CONFIG_YAML", writeConfig(t, body))
+			if _, err := configuration.New(context.Background(), "sis"); err == nil {
+				t.Fatal("expected an error for a config file with more than one document")
+			}
+		})
+	}
+	// A leading "---" or trailing "..." still marks a single document.
+	for name, body := range map[string]string{
+		"leading separator": "---\ncommon:\n  production: false\n",
+		"document end":      "common:\n  production: false\n...\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("SIS_CONFIG_YAML", writeConfig(t, body))
+			if _, err := configuration.New(context.Background(), "sis"); err != nil {
+				t.Fatalf("single document should load: %v", err)
+			}
+		})
+	}
+}
+
 func TestNewProductionRules(t *testing.T) {
 	cases := []struct {
 		name    string

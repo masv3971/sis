@@ -111,10 +111,12 @@ type Inbound struct {
 }
 
 type AuthAPI struct {
-	// PostLoginRedirectURL is where the browser goes after OIDC login, with
-	// the token in the URL fragment. It must not have a fragment of its own
-	// (e.g. "/#people"): the token fragment is appended, and the web UI only
-	// reads a fragment that starts with #access_token=.
+	// PostLoginRedirectURL is where the browser goes after OIDC login. The
+	// token itself travels in an HttpOnly cookie that the web UI collects
+	// from /auth/oidc/session; only a "#oidc_login" marker is appended here.
+	// It must not have a fragment of its own (e.g. "/#people"): the web UI
+	// only acts on a fragment that is exactly #oidc_login. The web UI must be
+	// served from this service's origin for the cookie to reach it.
 	PostLoginRedirectURL string `yaml:"post_login_redirect_url" default:"/" validate:"required,post_login_redirect_url"`
 	// MaxConcurrentLogins caps password checks running at once across
 	// /auth/login and /oauth/token. Each check uses about 64 MiB; requests

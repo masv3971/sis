@@ -105,6 +105,85 @@ func TestLoginReleasesSlot(t *testing.T) {
 	}
 }
 
+// TestHandOffKeepsTokenOutOfURL checks the OIDC callback redirect carries only
+// the marker, and the token travels in an HttpOnly cookie scoped to the
+// session endpoint.
+func TestHandOffKeepsTokenOutOfURL(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, production := range []bool{true, false} {
+		c := newTestClient(t, production, 1)
+		c.postLoginURL = "/app"
+		w := httptest.NewRecorder()
+		gc, _ := gin.CreateTestContext(w)
+		gc.Request = httptest.NewRequest(http.MethodGet, "/auth/oidc/callback", nil)
+		c.handOff(gc, auth.Token{AccessToken: "secret-token", TokenType: "Bearer", ExpiresAt: time.Now().Add(time.Hour)})
+
+		if w.Code != http.StatusFound {
+			t.Fatalf("status = %d, want 302", w.Code)
+		}
+		loc := w.Header().Get("Location")
+		if loc != "/app"+oidcLoginMarker || strings.Contains(loc, "secret-token") {
+			t.Fatalf("Location = %q, want /app%s without the token", loc, oidcLoginMarker)
+		}
+		var found bool
+		for _, ck := range w.Result().Cookies() {
+			if ck.Name != oidcLoginCookie {
+				continue
+			}
+			found = true
+			if ck.Value != "secret-token" || !ck.HttpOnly || ck.Secure != production ||
+				ck.SameSite != http.SameSiteLaxMode || ck.Path != oidcLoginCookiePath || ck.MaxAge != oidcLoginCookieTTL {
+				t.Errorf("production=%v: bad login cookie %+v", production, ck)
+			}
+		}
+		if !found {
+			t.Fatalf("production=%v: no %s cookie set", production, oidcLoginCookie)
+		}
+	}
+}
+
+// TestOIDCSessionCollectsOnce checks the SPA can collect a parked token once:
+// the response clears the cookie, and a request without one gets 401.
+func TestOIDCSessionCollectsOnce(t *testing.T) {
+	c := newTestClient(t, false, 1)
+	signed, _, err := c.auth.Issuer().Issue("oidc:x", "user", []string{"read-only"}, nil)
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, oidcLoginCookiePath, nil)
+	req.AddCookie(&http.Cookie{Name: oidcLoginCookie, Value: signed})
+	w := serve(c.OIDCSession, req)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), signed) {
+		t.Fatalf("got %d %s, want 200 with the token", w.Code, w.Body.String())
+	}
+	if w.Header().Get("Cache-Control") != "no-store" {
+		t.Fatal("token response must not be cached")
+	}
+	var cleared bool
+	for _, ck := range w.Result().Cookies() {
+		if ck.Name == oidcLoginCookie && ck.MaxAge < 0 && ck.Path == oidcLoginCookiePath {
+			cleared = true
+		}
+	}
+	if !cleared {
+		t.Fatal("login cookie not cleared after collection")
+	}
+
+	for name, req := range map[string]*http.Request{
+		"no cookie": httptest.NewRequest(http.MethodPost, oidcLoginCookiePath, nil),
+		"invalid token": func() *http.Request {
+			r := httptest.NewRequest(http.MethodPost, oidcLoginCookiePath, nil)
+			r.AddCookie(&http.Cookie{Name: oidcLoginCookie, Value: "forged"})
+			return r
+		}(),
+	} {
+		if w := serve(c.OIDCSession, req); w.Code != http.StatusUnauthorized || strings.Contains(w.Body.String(), "access_token") {
+			t.Errorf("%s: got %d %s, want 401 without a token", name, w.Code, w.Body.String())
+		}
+	}
+}
+
 func TestOIDCCookiesSecureInProduction(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	for _, production := range []bool{true, false} {

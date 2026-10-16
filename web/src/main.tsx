@@ -1,13 +1,15 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { App } from "./App";
-import { consumeTokenFromHash } from "./api";
+import { completeOIDCLogin } from "./api";
 import "./styles.css";
 
-consumeTokenFromHash(); // pick up an OIDC callback token before first render
-
-ReactDOM.createRoot(document.getElementById("root")!).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
-);
+// Pick up a pending OIDC login before first render, so App starts signed in.
+// completeOIDCLogin never rejects.
+void completeOIDCLogin().then(() => {
+  ReactDOM.createRoot(document.getElementById("root")!).render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>,
+  );
+});

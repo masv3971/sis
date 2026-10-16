@@ -15,20 +15,27 @@ export function clearToken(): void {
   localStorage.removeItem(TOKEN_KEY);
 }
 
-// consumeTokenFromHash picks up an access token delivered by the OIDC callback
-// as a URL fragment (#access_token=...), stores it, and cleans the URL. It
-// runs before the UI mounts, so it must never throw: a malformed fragment
-// (e.g. a stray "%") is discarded and the user simply sees the login page.
-export function consumeTokenFromHash(): void {
-  if (!location.hash.startsWith("#access_token=")) return;
-  let token = "";
-  try {
-    token = decodeURIComponent(location.hash.slice("#access_token=".length));
-  } catch {
-    // URIError on malformed percent escapes: ignore the fragment.
-  }
-  if (token) setToken(token);
+// OIDC_LOGIN_MARKER is the fragment the OIDC callback appends to the
+// post-login URL. It carries no token: it only says a handoff may be waiting.
+const OIDC_LOGIN_MARKER = "#oidc_login";
+
+// completeOIDCLogin collects the token the OIDC callback parked in an
+// HttpOnly cookie bound to this browser, then cleans the URL. The token is
+// never read from the URL, so a crafted link cannot replace the current
+// session with someone else's (login CSRF). It runs before the UI mounts, so
+// it must never throw: on any failure the existing session (if any) is kept
+// and the user sees whatever page they would have seen anyway.
+export async function completeOIDCLogin(): Promise<void> {
+  if (location.hash !== OIDC_LOGIN_MARKER) return;
   history.replaceState(null, "", location.pathname + location.search);
+  try {
+    const res = await fetch("/auth/oidc/session", { method: "POST", credentials: "same-origin" });
+    if (!res.ok) return;
+    const data = (await res.json()) as { access_token?: unknown };
+    if (typeof data.access_token === "string" && data.access_token) setToken(data.access_token);
+  } catch {
+    // Network error or malformed body: keep the current state.
+  }
 }
 
 export class UnauthorizedError extends Error {}
