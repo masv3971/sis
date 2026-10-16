@@ -34,11 +34,21 @@ func TestParseLimitOffset(t *testing.T) {
 		{"limit=", true, 0, 0}, // empty value is present (gin's GetQuery), not absent
 		{"offset=", true, 0, 0},
 		{"offset=-1", true, 0, 0},
+		// sort/filter are not implemented, so they must not be silently ignored.
+		{"sort=familyName", true, 0, 0},
+		{"filter=status%3D%27active%27", true, 0, 0},
+		{"sort=&filter=", false, 50, 0}, // empty means "not requested"
 	}
 	for _, c := range cases {
 		p, err := ParseLimitOffset(ctxWithQuery(c.query), 50, testMax)
 		if (err != nil) != c.wantErr {
 			t.Errorf("%q: err=%v, wantErr=%v", c.query, err, c.wantErr)
+			continue
+		}
+		if c.wantErr {
+			if e := NewErrorFromError(err); e.Status() != 400 {
+				t.Errorf("%q: expected 400, got %d", c.query, e.Status())
+			}
 			continue
 		}
 		if !c.wantErr && (p.Limit != c.limit || p.Offset != c.offset) {

@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	coreoidc "github.com/coreos/go-oidc/v3/oidc"
@@ -31,10 +32,25 @@ type Claims struct {
 // outage surfaces as a startup error. A var so tests can shorten it.
 var discoveryTimeout = 10 * time.Second
 
+// exchangeTimeout bounds the provider round-trips made while handling the
+// login callback (the token request and any JWKS fetch during ID-token
+// verification). The request context has no deadline and the HTTP server's
+// Read/WriteTimeout do not cancel handler work, so without it a provider that
+// accepts the token request but never answers would block the callback
+// indefinitely. It is also the Timeout of the HTTP client used for every
+// provider request. A var so tests can shorten it; read once in New.
+var exchangeTimeout = 10 * time.Second
+
 // Client performs the OIDC authorization-code flow against a configured provider.
 type Client struct {
 	verifier *coreoidc.IDTokenVerifier
 	oauth    oauth2.Config
+	// httpClient carries a hard per-request Timeout. It is injected into
+	// every context handed to go-oidc/oauth2 (they look it up via
+	// oauth2.HTTPClient), including the long-lived one go-oidc keeps for
+	// background JWKS refreshes, which no request deadline can cancel.
+	httpClient *http.Client
+	timeout    time.Duration
 }
 
 // New builds the OIDC Relying Party from configuration, following the SUNET/vc
@@ -49,6 +65,8 @@ func New(ctx context.Context, cfg *model.Cfg, log *logger.Log) (*Client, error) 
 		return nil, nil
 	}
 	log = log.New("oidcrp")
+	httpClient := &http.Client{Timeout: exchangeTimeout}
+	ctx = coreoidc.ClientContext(ctx, httpClient)
 	// The timeout only covers the discovery request: go-oidc keeps the HTTP
 	// client from ctx, not ctx itself, so later JWKS fetches and code
 	// exchanges are unaffected by this cancel.
@@ -68,6 +86,8 @@ func New(ctx context.Context, cfg *model.Cfg, log *logger.Log) (*Client, error) 
 			RedirectURL:  oc.RedirectURL,
 			Scopes:       []string{coreoidc.ScopeOpenID, "profile", "email"},
 		},
+		httpClient: httpClient,
+		timeout:    exchangeTimeout,
 	}, nil
 }
 
@@ -77,8 +97,12 @@ func (r *Client) AuthCodeURL(state, nonce string) string {
 }
 
 // Exchange trades the authorization code for tokens, verifies the ID token and
-// its nonce, and returns the identity claims.
+// its nonce, and returns the identity claims. Both provider round-trips share
+// one deadline (exchangeTimeout) on top of the caller's ctx, so a stalled
+// provider fails the callback instead of hanging it.
 func (r *Client) Exchange(ctx context.Context, code, nonce string) (*Claims, error) {
+	ctx, cancel := context.WithTimeout(coreoidc.ClientContext(ctx, r.httpClient), r.timeout)
+	defer cancel()
 	tok, err := r.oauth.Exchange(ctx, code)
 	if err != nil {
 		return nil, err

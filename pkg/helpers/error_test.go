@@ -45,3 +45,54 @@ func TestWriteErrorRecordsRedactedCause(t *testing.T) {
 		})
 	}
 }
+
+// TestBindJSONRequiresSingleValue checks the body must be exactly one JSON
+// value: trailing garbage or a second object is a 400, and bytes past the
+// body limit are a 413 even when the leading object is complete.
+func TestBindJSONRequiresSingleValue(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	type payload struct {
+		Name string `json:"name" binding:"required"`
+	}
+	const limit = 64
+	cases := []struct {
+		name       string
+		body       string
+		wantStatus int // 0 means success
+	}{
+		{"single object", `{"name":"a"}`, 0},
+		{"surrounding whitespace", " \n{\"name\":\"a\"}\n\t ", 0},
+		{"trailing garbage", `{"name":"a"}garbage`, http.StatusBadRequest},
+		{"second object", `{"name":"a"}{"name":"b"}`, http.StatusBadRequest},
+		{"trailing scalar", `{"name":"a"} 1`, http.StatusBadRequest},
+		{"validation still runs", `{}`, http.StatusBadRequest},
+		{"empty", ``, http.StatusBadRequest},
+		{"whitespace past limit", `{"name":"a"}` + strings.Repeat(" ", limit), http.StatusRequestEntityTooLarge},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			gc, _ := gin.CreateTestContext(w)
+			gc.Request = httptest.NewRequest(http.MethodPost, "/", strings.NewReader(tc.body))
+			gc.Request.Body = http.MaxBytesReader(w, gc.Request.Body, limit)
+
+			var p payload
+			err := BindJSON(gc, &p)
+			if tc.wantStatus == 0 {
+				if err != nil {
+					t.Fatalf("BindJSON: %v", err)
+				}
+				if p.Name != "a" {
+					t.Fatalf("name = %q, want a", p.Name)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("expected an error")
+			}
+			if got := NewErrorFromError(err).Status(); got != tc.wantStatus {
+				t.Fatalf("status = %d, want %d (err=%v)", got, tc.wantStatus, err)
+			}
+		})
+	}
+}

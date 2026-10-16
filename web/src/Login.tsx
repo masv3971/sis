@@ -43,7 +43,13 @@ export function Login({ onLogin }: { onLogin: () => void }) {
         Password
         <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
       </label>
-      {error && <p className="error">{error}</p>}
+      {/* role="alert" is an assertive live region: screen readers announce
+          the message when it appears, since focus stays on the button. */}
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
       <button type="submit" disabled={busy}>
         {busy ? "Signing in…" : "Sign in"}
       </button>

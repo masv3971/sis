@@ -161,7 +161,11 @@ export function Persons({ onUnauthorized }: { onUnauthorized: () => void }) {
               </select>
             </label>
           </fieldset>
-          {error && <p className="error">{error}</p>}
+          {error && (
+            <p className="error" role="alert">
+              {error}
+            </p>
+          )}
           <div className="row">
             <button type="submit" disabled={submitting}>
               {editingId ? "Save" : "Create"}
@@ -177,42 +181,44 @@ export function Persons({ onUnauthorized }: { onUnauthorized: () => void }) {
 
       <section className="card">
         <h2>People ({total})</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Status</th>
-              <th>sourcedId</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {persons.map((p) => (
-              <tr key={p.id}>
-                <td>
-                  {p.givenName} {p.familyName}
-                </td>
-                <td>{p.status}</td>
-                <td className="mono">{p.sourcedId}</td>
-                <td className="row">
-                  <button className="ghost" onClick={() => edit(p)} disabled={submitting}>
-                    Edit
-                  </button>
-                  <button className="danger" onClick={() => remove(p.id!)}>
-                    Delete
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {persons.length === 0 && (
+        <div className="table-wrap">
+          <table>
+            <thead>
               <tr>
-                <td colSpan={4} className="muted">
-                  No people yet.
-                </td>
+                <th>Name</th>
+                <th>Status</th>
+                <th>sourcedId</th>
+                <th />
               </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {persons.map((p) => (
+                <tr key={p.id}>
+                  <td>
+                    {p.givenName} {p.familyName}
+                  </td>
+                  <td>{p.status}</td>
+                  <td className="mono">{p.sourcedId}</td>
+                  <td className="row">
+                    <button className="ghost" onClick={() => edit(p)} disabled={submitting}>
+                      Edit
+                    </button>
+                    <button className="danger" onClick={() => remove(p.id!)}>
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {persons.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="muted">
+                    No people yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
         {total > pageSize && (
           <div className="row pager">
             <button className="ghost" disabled={offset === 0} onClick={() => load(Math.max(0, offset - pageSize))}>

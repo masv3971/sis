@@ -195,10 +195,10 @@ func (c *Client) DeletePerson(gc *gin.Context) {
 	gc.Status(http.StatusNoContent)
 }
 
-// listParams parses limit/offset/sort/filter query parameters. An omitted
-// limit takes sis.adapter.inbound.restadmin.default_limit; a given one must
-// be positive and is clamped to .max_limit, so a caller can never request an
-// unbounded page.
+// listParams parses limit/offset query parameters. An omitted limit takes
+// sis.adapter.inbound.restadmin.default_limit; a given one must be positive
+// and is clamped to .max_limit, so a caller can never request an unbounded
+// page. A non-empty sort or filter is rejected (400): neither is implemented.
 func (c *Client) listParams(gc *gin.Context) (port.ListParams, error) {
 	rc := c.cfg.SIS.Adapter.Inbound.RestAdmin
 	return helpers.ParseLimitOffset(gc, rc.DefaultLimit, rc.MaxLimit)

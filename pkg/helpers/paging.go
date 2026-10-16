@@ -17,12 +17,21 @@ import (
 // "unbounded", so this is where the bound is enforced. offset must be a
 // non-negative integer. Malformed values are a 400 rather than silently
 // ignored.
+//
+// OneRoster's sort and filter are not implemented by any repository yet, so a
+// non-empty value is a 400 too: answering with unfiltered rows in the default
+// order would look like success while ignoring what the client asked for.
 func ParseLimitOffset(gc *gin.Context, defaultLimit, maxLimit int) (port.ListParams, error) {
 	defaultLimit, maxLimit, err := checkBounds(defaultLimit, maxLimit)
 	if err != nil {
 		return port.ListParams{}, err
 	}
-	params := port.ListParams{Limit: defaultLimit, Sort: gc.Query("sort"), Filter: gc.Query("filter")}
+	for _, name := range unsupportedListParams {
+		if gc.Query(name) != "" {
+			return port.ListParams{}, pagingError(name, "not supported")
+		}
+	}
+	params := port.ListParams{Limit: defaultLimit}
 	if v, ok := gc.GetQuery("limit"); ok {
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 1 {
@@ -39,6 +48,10 @@ func ParseLimitOffset(gc *gin.Context, defaultLimit, maxLimit int) (port.ListPar
 	}
 	return params, nil
 }
+
+// unsupportedListParams are OneRoster list query parameters that are rejected
+// until both backends implement them consistently.
+var unsupportedListParams = []string{"sort", "filter"}
 
 // ParsePageNumberSize parses OEAPI-style 1-based pageNumber/pageSize query
 // parameters. pageSize is clamped to maxPageSize

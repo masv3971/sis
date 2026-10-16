@@ -9,9 +9,11 @@ import (
 	"github.com/SUNET/sis/internal/core/domain"
 )
 
-// ListParams carries pagination/sort/filter options common to list queries.
-// Each inbound adapter maps its own conventions (OEAPI pageNumber/pageSize,
-// OneRoster limit/offset) onto this shared shape.
+// ListParams carries the pagination options common to list queries. Each
+// inbound adapter maps its own conventions (OEAPI pageNumber/pageSize,
+// OneRoster limit/offset) onto this shared shape. Sorting and filtering are
+// not supported yet; inbound adapters reject them rather than ignore them.
+// Add fields here only together with an implementation in every repository.
 //
 // Repositories treat Limit <= 0 as "unbounded", so inbound adapters must
 // reject non-positive limits and clamp larger ones to their configured
@@ -19,8 +21,6 @@ import (
 type ListParams struct {
 	Limit  int
 	Offset int
-	Sort   string
-	Filter string
 }
 
 // Page is a paginated query result.

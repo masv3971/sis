@@ -2,6 +2,7 @@ package oidcrp
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -54,5 +55,59 @@ func TestNewBoundsDiscovery(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("New did not return: discovery is unbounded")
+	}
+}
+
+// TestExchangeBoundsStalledTokenEndpoint checks the login callback cannot
+// hang on a provider that serves discovery but accepts the token request and
+// never answers: Exchange must fail after exchangeTimeout even though the
+// caller's context has no deadline.
+func TestExchangeBoundsStalledTokenEndpoint(t *testing.T) {
+	release := make(chan struct{})
+	mux := http.NewServeMux()
+	srv := httptest.NewServer(mux)
+	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"issuer":                                srv.URL,
+			"authorization_endpoint":                srv.URL + "/authorize",
+			"token_endpoint":                        srv.URL + "/token",
+			"jwks_uri":                              srv.URL + "/jwks",
+			"id_token_signing_alg_values_supported": []string{"RS256"},
+		})
+	})
+	mux.HandleFunc("/token", func(_ http.ResponseWriter, r *http.Request) {
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	})
+	t.Cleanup(func() { close(release); srv.Close() })
+
+	old := exchangeTimeout
+	exchangeTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { exchangeTimeout = old })
+
+	cfg := &model.Cfg{}
+	cfg.SIS.Auth.OIDCRP.IssuerURL = srv.URL
+	cfg.SIS.Auth.OIDCRP.ClientID = "sis"
+	log := logger.NewWithWriter("test", false, "error", io.Discard)
+	c, err := New(context.Background(), cfg, log)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := c.Exchange(context.Background(), "code", "nonce")
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("expected Exchange to fail on a stalled token endpoint")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Exchange did not return: token request is unbounded")
 	}
 }

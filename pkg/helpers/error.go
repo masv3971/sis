@@ -6,6 +6,7 @@
 package helpers
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 	"github.com/go-playground/validator/v10"
 
 	"github.com/SUNET/sis/internal/core/domain"
@@ -168,8 +170,14 @@ func NewErrorFromError(err error) *Error {
 // decoder message as detail instead of an unclassified 500. An oversized body
 // (http.MaxBytesReader) is 413. Call it only on the request body: service
 // errors must keep going through WriteError's own classification.
+//
+// The whole body is read before decoding, and it must hold exactly one JSON
+// value (surrounding whitespace allowed). gin's own binding decodes only the
+// first value and never reads the rest, so without this a valid object
+// followed by garbage or a second object would be accepted, and trailing
+// bytes past the body limit would never trip the 413.
 func BindJSON(gc *gin.Context, v any) error {
-	err := gc.ShouldBindJSON(v)
+	err := bindSingleJSON(gc.Request, v)
 	if err == nil {
 		return nil
 	}
@@ -182,6 +190,36 @@ func BindJSON(gc *gin.Context, v any) error {
 	// The decoder's own messages name the offending field or value and carry
 	// no server internals, so they are safe to return.
 	return &Error{Title: ErrBadRequest, Err: err.Error(), HTTPStatus: http.StatusBadRequest}
+}
+
+// errTrailingJSON is returned when a request body holds more than one JSON
+// value. It is an *Error so BindJSON passes it through as a 400 unchanged.
+var errTrailingJSON = &Error{
+	Title:      ErrBadRequest,
+	Err:        "request body must contain a single JSON value",
+	HTTPStatus: http.StatusBadRequest,
+}
+
+// bindSingleJSON reads the entire (size-capped) body, rejects anything but a
+// single JSON value, then decodes and validates it with gin's JSON binding so
+// decoder settings and `binding` tags behave exactly as with ShouldBindJSON.
+func bindSingleJSON(req *http.Request, v any) error {
+	if req == nil || req.Body == nil {
+		return io.EOF
+	}
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		return err
+	}
+	dec := json.NewDecoder(bytes.NewReader(body))
+	var first json.RawMessage
+	if err := dec.Decode(&first); err != nil {
+		return err
+	}
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return errTrailingJSON
+	}
+	return binding.JSON.BindBody(body, v)
 }
 
 // WriteError classifies err and writes it as the HTTP error response. The detail
