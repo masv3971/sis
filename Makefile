@@ -16,8 +16,7 @@ CURRENT_BRANCH          := $(shell git rev-parse --abbrev-ref HEAD)
 .PHONY: update gosec staticcheck vulncheck \
 	start stop restart \
 	vscode gh-install gh-auth \
-	build test fmt docker-build docker-push \
-	web-install web-dev web-build web \
+	build test fmt docker-build docker-push \		swagger swagger-restadmin swagger-fmt swagger-check \	web-install web-dev web-build web \
 	release check_current_branch
 
 # ==============================================================================
@@ -113,6 +112,31 @@ gh-auth: gh-install ## Authenticate GitHub CLI
 	else \
 		gh auth login; \
 	fi
+
+# ==============================================================================
+# Swagger Documentation
+# ==============================================================================
+# swag is pinned as a Go tool in go.mod (`go tool swag`), so the generator
+# always matches the github.com/swaggo/swag library the docs package imports.
+# --parseFuncBody picks up the free-standing per-entity blocks in
+# restadmin/swagger.go (the generic handlers are mounted once per entity).
+
+SWAG         := go tool swag
+SWAGGER_OPTS := --packageName restadmin --parseInternal --parseFuncBody --quiet
+
+swagger: swagger-fmt swagger-restadmin ## Generate all Swagger docs
+
+swagger-fmt: ## Format Swagger annotations
+	$(SWAG) fmt -d internal/adapter/inbound/restadmin -g swagger.go
+
+swagger-restadmin: ## Generate /api/v1 Swagger docs into docs/restadmin
+	$(info Generating /api/v1 Swagger docs)
+	$(SWAG) init -d internal/adapter/inbound/restadmin,internal/core/domain,internal/auth,pkg/helpers \
+		-g swagger.go --output docs/restadmin $(SWAGGER_OPTS)
+
+swagger-check: swagger ## Fail if the committed Swagger docs are stale
+	@git diff --exit-code -- docs/ internal/adapter/inbound/restadmin/ \
+		|| { echo "Swagger docs are stale: run 'make swagger' and commit the result"; exit 1; }
 
 # ==============================================================================
 # Build & Test

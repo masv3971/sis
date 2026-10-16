@@ -38,6 +38,10 @@ sis:
       # Directory with the built admin UI (index.html + assets/). The Docker
       # image ships it at /web. Empty serves the APIs only.
       root: ""
+    swagger:
+      # Serve the /api/v1 API docs (Swagger UI) at /swagger/index.html. The
+      # page is public; requests sent from it still need a Bearer token.
+      enabled: true
 
   # -- internal/auth -----------------------------------------------------------
   auth:

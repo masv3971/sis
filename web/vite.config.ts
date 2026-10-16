@@ -12,6 +12,7 @@ export default defineConfig({
       "/oauth": "http://localhost:8080",
       "/oeapi": "http://localhost:8080",
       "/eduapi": "http://localhost:8080",
+      "/swagger": "http://localhost:8080",
     },
   },
 });

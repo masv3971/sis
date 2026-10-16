@@ -63,6 +63,15 @@ func ClaimsFrom(c *gin.Context) *token.Claims {
 	return claims
 }
 
+// ErrorResponse is the JSON body the auth middleware writes when it rejects a
+// request.
+type ErrorResponse struct {
+	// Error is "unauthorized" (401: missing or invalid token) or "forbidden"
+	// (403: the token lacks the required scope or role).
+	Error   string `json:"error" example:"unauthorized"`
+	Message string `json:"message" example:"missing bearer token"`
+}
+
 // abort ends the request with a JSON error whose code follows the status, so
 // clients can tell a failed authentication (401 unauthorized) from missing
 // permissions (403 forbidden).
@@ -71,5 +80,5 @@ func abort(c *gin.Context, status int, msg string) {
 	if status == http.StatusForbidden {
 		code = "forbidden"
 	}
-	c.AbortWithStatusJSON(status, gin.H{"error": code, "message": msg})
+	c.AbortWithStatusJSON(status, ErrorResponse{Error: code, Message: msg})
 }

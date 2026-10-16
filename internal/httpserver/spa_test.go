@@ -12,6 +12,8 @@ func TestIsAPIPath(t *testing.T) {
 		"/auth":           true,
 		"/oauth":          true,
 		"/healthz":        true,
+		"/swagger":        true,
+		"/swagger/x":      true,
 		"/apix":           false,
 		"/authors":        false,
 		"/":               false,

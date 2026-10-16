@@ -23,6 +23,7 @@ var apiRoots = []string{
 	"/oeapi",
 	"/eduapi",
 	"/healthz",
+	"/swagger",
 }
 
 // isAPIPath reports whether path is an API root or lies below one. "/apix"

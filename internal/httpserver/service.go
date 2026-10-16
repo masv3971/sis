@@ -12,6 +12,11 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
+
+	// Registers the generated /api/v1 OpenAPI document (make swagger).
+	_ "github.com/SUNET/sis/docs/restadmin"
 
 	"github.com/SUNET/sis/internal/adapter/inbound/authapi"
 	"github.com/SUNET/sis/internal/adapter/inbound/eduapi"
@@ -146,9 +151,17 @@ func New(ctx context.Context, cfg *model.Cfg, authSvc *auth.Client, catalog *rea
 	edu.GET("/enrollments", eduapi.List(eduH, catalog.Enrollments, "enrollments", edudto.FromEnrollment))
 	edu.GET("/enrollments/:id", eduapi.Get(eduH, catalog.Enrollments, "enrollment", edudto.FromEnrollment))
 
+	hc := cfg.SIS.HTTPServer
+
+	// Swagger UI and the generated /api/v1 OpenAPI document (served at
+	// /swagger/doc.json). Public: the spec reveals nothing a client could not
+	// learn by probing, and every call made from the UI still needs a token.
+	if hc.Swagger.Enabled {
+		engine.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler, ginSwagger.PersistAuthorization(true)))
+	}
+
 	// Built React SPA, when configured. Empty root means API-only (the dev
 	// workflow runs `vite dev` on :5173 and proxies to this service).
-	hc := cfg.SIS.HTTPServer
 	if hc.Web.Root != "" {
 		if err := mountSPA(engine, hc.Web.Root, log.New("spa")); err != nil {
 			return nil, err

@@ -25,9 +25,13 @@ func testCfg(addr string) *model.Cfg {
 
 func newTestServer(t *testing.T, addr string) (*Service, error) {
 	t.Helper()
+	return newTestServerWithCfg(t, testCfg(addr))
+}
+
+func newTestServerWithCfg(t *testing.T, cfg *model.Cfg) (*Service, error) {
+	t.Helper()
 	ctx := context.Background()
 	log := logger.NewWithWriter("test", false, "error", io.Discard)
-	cfg := testCfg(addr)
 	a, err := auth.New(ctx, cfg, memory.NewAccountRepository(), memory.NewClientRepository(), log)
 	if err != nil {
 		t.Fatalf("auth.New: %v", err)
@@ -73,6 +77,49 @@ func TestAuthConfigReportsOIDCDisabled(t *testing.T) {
 	}
 	if resp.StatusCode != http.StatusOK || body.OIDC == nil || *body.OIDC {
 		t.Fatalf("expected 200 {\"oidc\":false}, got %d %+v", resp.StatusCode, body)
+	}
+}
+
+// TestSwaggerServesSpecOnlyWhenEnabled checks the generated /api/v1 document
+// is registered and served, and that disabling the toggle unmounts it.
+func TestSwaggerServesSpecOnlyWhenEnabled(t *testing.T) {
+	for _, enabled := range []bool{true, false} {
+		cfg := testCfg("127.0.0.1:0")
+		cfg.SIS.HTTPServer.Swagger.Enabled = enabled
+		s, err := newTestServerWithCfg(t, cfg)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		t.Cleanup(func() { _ = s.Close(context.Background()) })
+
+		resp, err := http.Get("http://" + s.Addr().String() + "/swagger/doc.json")
+		if err != nil {
+			t.Fatalf("GET /swagger/doc.json: %v", err)
+		}
+		var doc struct {
+			BasePath string                     `json:"basePath"`
+			Paths    map[string]json.RawMessage `json:"paths"`
+		}
+		decodeErr := json.NewDecoder(resp.Body).Decode(&doc)
+		_ = resp.Body.Close()
+
+		if !enabled {
+			if resp.StatusCode != http.StatusNotFound {
+				t.Fatalf("disabled: expected 404, got %d", resp.StatusCode)
+			}
+			continue
+		}
+		if resp.StatusCode != http.StatusOK || decodeErr != nil {
+			t.Fatalf("enabled: expected 200 JSON, got %d (%v)", resp.StatusCode, decodeErr)
+		}
+		if doc.BasePath != "/api/v1" {
+			t.Errorf("basePath = %q, want /api/v1", doc.BasePath)
+		}
+		for _, p := range []string{"/persons", "/persons/{id}", "/enrollments/{id}"} {
+			if _, ok := doc.Paths[p]; !ok {
+				t.Errorf("spec is missing path %s", p)
+			}
+		}
 	}
 }
 

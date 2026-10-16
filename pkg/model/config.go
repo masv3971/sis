@@ -34,12 +34,20 @@ type HTTPServer struct {
 	// ShutdownTimeout is the grace period for in-flight requests on SIGTERM.
 	ShutdownTimeout time.Duration `yaml:"shutdown_timeout" default:"10s" validate:"gt=0"`
 	Web             Web           `yaml:"web"`
+	Swagger         Swagger       `yaml:"swagger"`
 }
 
 type Web struct {
 	// Root is the directory with the built admin UI (index.html, assets/).
 	// Empty disables the UI.
 	Root string `yaml:"root"`
+}
+
+type Swagger struct {
+	// Enabled serves the /api/v1 OpenAPI document and Swagger UI at
+	// /swagger/index.html. The page itself is public; calls made from it
+	// still need a Bearer token.
+	Enabled bool `yaml:"enabled" default:"true"`
 }
 
 // MinProductionJWTSecretLen is the minimum jwt_secret length in bytes when

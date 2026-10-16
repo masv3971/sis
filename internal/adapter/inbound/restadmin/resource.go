@@ -16,8 +16,21 @@ import (
 // httpserver can mount directly. Handlers that do not need the Client discard
 // it with _ but keep the signature uniform.
 
+// ListReply is the response envelope of the generic entity list endpoints.
+type ListReply[T any] struct {
+	Items []T `json:"items"`
+	// Total is the number of entities across all pages.
+	Total int `json:"total"`
+	// Limit is the effective page size after defaulting and clamping.
+	Limit  int `json:"limit"`
+	Offset int `json:"offset"`
+}
+
 // ResourceList lists entities of type T with limit/offset paging, bounded by
 // the Client's configured max_limit.
+//
+// The swag annotations for these generic handlers live per entity in
+// swagger.go, because one handler is mounted once per entity type.
 func ResourceList[T any, PT domain.EntityPtr[T]](c *Client, svc *service.Resource[T, PT]) gin.HandlerFunc {
 	return func(gc *gin.Context) {
 		params, err := c.listParams(gc)
@@ -30,11 +43,11 @@ func ResourceList[T any, PT domain.EntityPtr[T]](c *Client, svc *service.Resourc
 			helpers.WriteError(gc, err)
 			return
 		}
-		gc.JSON(http.StatusOK, gin.H{
-			"items":  page.Items,
-			"total":  page.Total,
-			"limit":  params.Limit,
-			"offset": params.Offset,
+		gc.JSON(http.StatusOK, ListReply[PT]{
+			Items:  page.Items,
+			Total:  page.Total,
+			Limit:  params.Limit,
+			Offset: params.Offset,
 		})
 	}
 }
