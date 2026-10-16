@@ -76,6 +76,8 @@ func newFixture(t *testing.T) fixture {
 			Courses:          service.NewResource(memory.NewDocRepo[domain.Course](), nil, nil, log),
 			Offerings:        service.NewResource(port.Repository[domain.Offering, *domain.Offering](offerings), nil, nil, log),
 			Enrollments:      service.NewResource(memory.NewDocRepo[domain.Enrollment](), nil, nil, log),
+			Programs:         service.NewResource(memory.NewDocRepo[domain.Program](), nil, nil, log),
+			Results:          service.NewResource(memory.NewDocRepo[domain.Result](), nil, nil, log),
 		},
 		persons:  persons,
 		offering: offerings,
@@ -248,6 +250,39 @@ func TestPublishRefsFlagsOrphans(t *testing.T) {
 	}
 	if o := cases[5].e.(*domain.Offering); o.AcademicSessionID != "" {
 		t.Errorf("dangling optional session published as %q; want it cleared", o.AcademicSessionID)
+	}
+}
+
+// TestPublishRefsProgramsAndResults checks the program/result references:
+// a result is an orphan when its person or its course/program is gone, but
+// not when only its optional offering is.
+func TestPublishRefsProgramsAndResults(t *testing.T) {
+	ctx := t.Context()
+	c := newFixture(t).c
+	_, err := c.Persons.CreatePerson(ctx, domain.Person{ID: "p", SourcedID: "stu", GivenName: "A", FamilyName: "B", Status: domain.StatusActive})
+	must(t, err)
+	_, err = c.Organizations.Create(ctx, &domain.Organization{Base: domain.Base{ID: "o", SourcedID: "uni"}, Name: "U"})
+	must(t, err)
+	_, err = c.Programs.Create(ctx, &domain.Program{Base: domain.Base{ID: "g", SourcedID: "BSc"}, Title: "BSc", OrgID: "o"})
+	must(t, err)
+	_, err = c.Courses.Create(ctx, &domain.Course{Base: domain.Base{ID: "c", SourcedID: "DA101"}, Title: "C"})
+	must(t, err)
+
+	program := &domain.Program{OrgID: "o"}
+	forProgram := &domain.Result{PersonID: "p", ProgramID: "g"}
+	forCourse := &domain.Result{PersonID: "p", CourseID: "c", OfferingID: "f-gone"}
+	courseGone := &domain.Result{PersonID: "p", CourseID: "c-gone"}
+	programGone := &domain.Result{PersonID: "p", ProgramID: "g-gone"}
+	ok, err := c.PublishRefs(ctx, program, forProgram, forCourse, courseGone, programGone)
+	must(t, err)
+	if want := []bool{true, true, true, false, false}; !slices.Equal(ok, want) {
+		t.Fatalf("publishable = %v, want %v", ok, want)
+	}
+	if program.OrgID != "uni" || forProgram.ProgramID != "BSc" || forCourse.CourseID != "DA101" || forCourse.PersonID != "stu" || forCourse.OfferingID != "" {
+		t.Fatalf("refs not published as sourcedIds: %+v %+v %+v", program, forProgram, forCourse)
+	}
+	if err := c.CheckRefs(ctx, &domain.Result{PersonID: "p", ProgramID: "BSc"}); err == nil {
+		t.Fatal("CheckRefs must refuse a program sourcedId")
 	}
 }
 

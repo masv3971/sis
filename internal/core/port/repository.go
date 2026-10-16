@@ -2,12 +2,18 @@ package port
 
 import (
 	"context"
+	"time"
 
 	"github.com/SUNET/sis/internal/core/domain"
 )
 
 // Repository is the generic persistence port for any canonical entity. T is the
 // entity value type and PT its pointer, which must implement domain.Entity.
+//
+// Expired records (domain.Expired) are invisible to every method except
+// DeleteExpired: reads skip them, Update and Delete answer ErrNotFound, and
+// Create replaces an expired record holding the same id or sourcedId instead
+// of reporting ErrConflict. The sweeper removes them physically.
 type Repository[T any, PT domain.EntityPtr[T]] interface {
 	Create(ctx context.Context, e PT) error
 	Update(ctx context.Context, e PT) error
@@ -18,4 +24,7 @@ type Repository[T any, PT domain.EntityPtr[T]] interface {
 	GetBySourcedID(ctx context.Context, sourcedID string) (PT, error)
 	List(ctx context.Context, params ListParams) (Page[PT], error)
 	Delete(ctx context.Context, id string) error
+	// DeleteExpired removes every record expired at now and returns their
+	// ids, in no particular order.
+	DeleteExpired(ctx context.Context, now time.Time) ([]string, error)
 }

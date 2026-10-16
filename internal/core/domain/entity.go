@@ -13,6 +13,8 @@ type Entity interface {
 	SetCreatedAt(time.Time)
 	GetUpdatedAt() time.Time
 	SetUpdatedAt(time.Time)
+	GetExpiresAt() *time.Time
+	SetExpiresAt(*time.Time)
 	EntityType() string
 	Validate() error
 }
@@ -32,6 +34,17 @@ type Base struct {
 	Status    Status    `json:"status,omitempty"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
+	// ExpiresAt is when the record stops being served and becomes eligible
+	// for deletion; nil means it never expires. Server-managed: only
+	// POST /api/v1/populate with a ttl sets it, and /api/v1 writes ignore it.
+	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
+}
+
+// Expired reports whether a record with the given expiry is expired at now.
+// A nil expiry never expires. The boundary is inclusive (expired at exactly
+// expiresAt), matching the repositories' `expires_at > now()` read filter.
+func Expired(expiresAt *time.Time, now time.Time) bool {
+	return expiresAt != nil && !now.Before(*expiresAt)
 }
 
 // validateStatus rejects a status outside the declared states. Status is
@@ -51,3 +64,6 @@ func (b *Base) GetCreatedAt() time.Time  { return b.CreatedAt }
 func (b *Base) SetCreatedAt(t time.Time) { b.CreatedAt = t }
 func (b *Base) GetUpdatedAt() time.Time  { return b.UpdatedAt }
 func (b *Base) SetUpdatedAt(t time.Time) { b.UpdatedAt = t }
+
+func (b *Base) GetExpiresAt() *time.Time  { return b.ExpiresAt }
+func (b *Base) SetExpiresAt(t *time.Time) { b.ExpiresAt = t }

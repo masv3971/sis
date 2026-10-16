@@ -83,6 +83,30 @@ type Association struct {
 	State         string `json:"state,omitempty"`
 }
 
+// Program is an OEAPI program.
+type Program struct {
+	ProgramID            string `json:"programId"`
+	Name                 string `json:"name,omitempty"`
+	Abbreviation         string `json:"abbreviation,omitempty"`
+	LevelOfQualification string `json:"levelOfQualification,omitempty"`
+	OrganizationID       string `json:"organizationId,omitempty"`
+}
+
+// Result is an OEAPI result. In OEAPI a result hangs off an association;
+// here it is published as its own resource carrying the person and the
+// course or program it is for.
+type Result struct {
+	ResultID   string  `json:"resultId"`
+	PersonID   string  `json:"personId"`
+	CourseID   string  `json:"courseId,omitempty"`
+	ProgramID  string  `json:"programId,omitempty"`
+	OfferingID string  `json:"offeringId,omitempty"`
+	State      string  `json:"state,omitempty"`
+	Score      string  `json:"score,omitempty"`
+	ECTS       float64 `json:"ects,omitempty"`
+	ResultDate string  `json:"resultDate,omitempty"`
+}
+
 // FromPerson maps a canonical person to the OEAPI shape.
 func FromPerson(p domain.Person) Person {
 	var mail string
@@ -132,6 +156,62 @@ func FromOffering(o *domain.Offering) Offering {
 	return Offering{
 		OfferingID: o.SourcedID, Name: o.Title, CourseID: o.CourseID, AcademicSessionID: o.AcademicSessionID,
 	}
+}
+
+// FromProgram maps a canonical program.
+func FromProgram(p *domain.Program) Program {
+	return Program{
+		ProgramID: p.SourcedID, Name: p.Title, Abbreviation: p.Code,
+		LevelOfQualification: p.Level, OrganizationID: p.OrgID,
+	}
+}
+
+// FromResult maps a canonical result.
+func FromResult(r *domain.Result) Result {
+	return Result{
+		ResultID: r.SourcedID, PersonID: r.PersonID, CourseID: r.CourseID, ProgramID: r.ProgramID,
+		OfferingID: r.OfferingID, State: string(r.Status), Score: r.Grade, ECTS: r.Credits, ResultDate: r.ResultDate,
+	}
+}
+
+// Bundle is a set of converted records in OEAPI shape, one array per
+// resource collection, keyed like the provider's paths.
+type Bundle struct {
+	Persons          []Person          `json:"persons"`
+	Organizations    []Organization    `json:"organizations"`
+	AcademicSessions []AcademicSession `json:"academicSessions"`
+	Courses          []Course          `json:"courses"`
+	Programs         []Program         `json:"programs"`
+	Offerings        []Offering        `json:"offerings"`
+	Associations     []Association     `json:"associations"`
+	Results          []Result          `json:"results"`
+}
+
+// FromBundle maps a converted domain.Bundle, whose references are already
+// sourcedIds, to OEAPI shape.
+func FromBundle(b *domain.Bundle) Bundle {
+	out := Bundle{
+		Persons:          make([]Person, 0, len(b.Persons)),
+		Organizations:    mapAll(b.Organizations, FromOrganization),
+		AcademicSessions: mapAll(b.AcademicSessions, FromAcademicSession),
+		Courses:          mapAll(b.Courses, FromCourse),
+		Programs:         mapAll(b.Programs, FromProgram),
+		Offerings:        mapAll(b.Offerings, FromOffering),
+		Associations:     mapAll(b.Enrollments, FromAssociation),
+		Results:          mapAll(b.Results, FromResult),
+	}
+	for _, p := range b.Persons {
+		out.Persons = append(out.Persons, FromPerson(p))
+	}
+	return out
+}
+
+func mapAll[E, D any](in []E, fn func(E) D) []D {
+	out := make([]D, 0, len(in))
+	for _, e := range in {
+		out = append(out, fn(e))
+	}
+	return out
 }
 
 // FromAssociation maps a canonical enrollment to an OEAPI association.

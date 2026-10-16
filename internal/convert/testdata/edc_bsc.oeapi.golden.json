@@ -1,0 +1,85 @@
+{
+  "persons": [
+    {
+      "personId": "urn:epass:person:liu-student-4711",
+      "givenName": "Ada",
+      "surname": "Lovelace",
+      "displayName": "Ada Lovelace",
+      "mail": "adalo123@student.liu.se"
+    }
+  ],
+  "organizations": [
+    {
+      "organizationId": "urn:epass:org:liu",
+      "name": "Linköping University"
+    },
+    {
+      "organizationId": "urn:epass:org:liu-ifm",
+      "name": "Department of Physics, Chemistry and Biology",
+      "parentOrganization": "urn:epass:org:liu"
+    }
+  ],
+  "academicSessions": [
+    {
+      "academicSessionId": "urn:epass:period:ht25",
+      "name": "Autumn 2025",
+      "type": "term",
+      "startDate": "2025-09-01",
+      "endDate": "2026-01-18"
+    }
+  ],
+  "courses": [
+    {
+      "courseId": "urn:epass:learningAchievementSpec:bi101",
+      "name": "Biology 101",
+      "abbreviation": "BI101",
+      "organizationId": "urn:epass:org:liu-ifm"
+    }
+  ],
+  "programs": [
+    {
+      "programId": "urn:epass:qualification:bsc-bio",
+      "name": "Bachelor of Science in Biology",
+      "abbreviation": "NBIO",
+      "levelOfQualification": "6",
+      "organizationId": "urn:epass:org:liu"
+    }
+  ],
+  "offerings": [
+    {
+      "offeringId": "urn:epass:learningActivity:bi101-ht25",
+      "name": "Biology 101, autumn 2025",
+      "courseId": "urn:epass:learningAchievementSpec:bi101",
+      "academicSessionId": "urn:epass:period:ht25"
+    }
+  ],
+  "associations": [
+    {
+      "associationId": "urn:epass:learningActivity:bi101-ht25#enrollment:urn:epass:person:liu-student-4711",
+      "personId": "urn:epass:person:liu-student-4711",
+      "offeringId": "urn:epass:learningActivity:bi101-ht25",
+      "role": "student",
+      "state": "active"
+    }
+  ],
+  "results": [
+    {
+      "resultId": "urn:epass:learningAchievement:bsc",
+      "personId": "urn:epass:person:liu-student-4711",
+      "programId": "urn:epass:qualification:bsc-bio",
+      "state": "active",
+      "ects": 180,
+      "resultDate": "2026-01-31"
+    },
+    {
+      "resultId": "urn:epass:learningAchievement:bi101",
+      "personId": "urn:epass:person:liu-student-4711",
+      "courseId": "urn:epass:learningAchievementSpec:bi101",
+      "offeringId": "urn:epass:learningActivity:bi101-ht25",
+      "state": "active",
+      "score": "A",
+      "ects": 7.5,
+      "resultDate": "2026-01-20"
+    }
+  ]
+}

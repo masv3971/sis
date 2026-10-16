@@ -5,6 +5,7 @@ package port
 
 import (
 	"context"
+	"time"
 
 	"github.com/SUNET/sis/internal/core/domain"
 )
@@ -29,7 +30,8 @@ type Page[T any] struct {
 	Total int
 }
 
-// PersonRepository is the persistence port for Person aggregates.
+// PersonRepository is the persistence port for Person aggregates. Expired
+// persons behave as described on Repository.
 type PersonRepository interface {
 	Create(ctx context.Context, p domain.Person) error
 	Update(ctx context.Context, p domain.Person) error
@@ -40,6 +42,9 @@ type PersonRepository interface {
 	GetBySourcedID(ctx context.Context, sourcedID string) (domain.Person, error)
 	List(ctx context.Context, params ListParams) (Page[domain.Person], error)
 	Delete(ctx context.Context, id string) error
+	// DeleteExpired removes every person expired at now and returns their
+	// ids, in no particular order.
+	DeleteExpired(ctx context.Context, now time.Time) ([]string, error)
 }
 
 // EventPublisher is the port for emitting domain events to the outside world.

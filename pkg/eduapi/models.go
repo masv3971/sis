@@ -92,6 +92,34 @@ type Enrollment struct {
 	Role             string  `json:"role,omitempty"`
 }
 
+// Program is an academic program (a structured set of courses leading to a
+// qualification). Edu-API 1.0 has no first-class program resource; the shape
+// follows the 1EdTech conventions used by the other resources here.
+type Program struct {
+	SourcedID        string   `json:"sourcedId"`
+	Status           string   `json:"status,omitempty"`
+	DateLastModified string   `json:"dateLastModified,omitempty"`
+	Title            string   `json:"title"`
+	ProgramCode      string   `json:"programCode,omitempty"`
+	Level            string   `json:"level,omitempty"`
+	Org              *GUIDRef `json:"org,omitempty"`
+}
+
+// Result is a person's outcome for a course or program (OneRoster lineage:
+// score/scoreDate), extended with the program link and credits.
+type Result struct {
+	SourcedID        string   `json:"sourcedId"`
+	Status           string   `json:"status,omitempty"`
+	DateLastModified string   `json:"dateLastModified,omitempty"`
+	Student          GUIDRef  `json:"student"`
+	Course           *GUIDRef `json:"course,omitempty"`
+	Program          *GUIDRef `json:"program,omitempty"`
+	Class            *GUIDRef `json:"class,omitempty"`
+	Score            string   `json:"score,omitempty"`
+	Credits          float64  `json:"credits,omitempty"`
+	ScoreDate        string   `json:"scoreDate,omitempty"`
+}
+
 // FromPerson maps a canonical person to the Edu-API shape.
 func FromPerson(p domain.Person) Person {
 	roles := make([]Role, 0, len(p.Roles))
@@ -162,6 +190,64 @@ func FromEnrollment(e *domain.Enrollment) Enrollment {
 		Class: GUIDRef{SourcedID: e.OfferingID, Type: "class"},
 		Role:  string(e.Role),
 	}
+}
+
+// FromProgram maps a canonical program.
+func FromProgram(p *domain.Program) Program {
+	return Program{
+		SourcedID: p.SourcedID, Status: string(p.Status), DateLastModified: rfc3339(p.UpdatedAt),
+		Title: p.Title, ProgramCode: p.Code, Level: p.Level, Org: ref(p.OrgID, "org"),
+	}
+}
+
+// FromResult maps a canonical result.
+func FromResult(r *domain.Result) Result {
+	return Result{
+		SourcedID: r.SourcedID, Status: string(r.Status), DateLastModified: rfc3339(r.UpdatedAt),
+		Student: GUIDRef{SourcedID: r.PersonID, Type: "user"},
+		Course:  ref(r.CourseID, "course"), Program: ref(r.ProgramID, "program"), Class: ref(r.OfferingID, "class"),
+		Score: r.Grade, Credits: r.Credits, ScoreDate: r.ResultDate,
+	}
+}
+
+// Bundle is a set of converted records in Edu-API shape, one array per
+// resource collection, keyed like the provider's list responses.
+type Bundle struct {
+	Persons          []Person          `json:"persons"`
+	Orgs             []Org             `json:"orgs"`
+	AcademicSessions []AcademicSession `json:"academicSessions"`
+	Courses          []Course          `json:"courses"`
+	Programs         []Program         `json:"programs"`
+	Classes          []Class           `json:"classes"`
+	Enrollments      []Enrollment      `json:"enrollments"`
+	Results          []Result          `json:"results"`
+}
+
+// FromBundle maps a converted domain.Bundle, whose references are already
+// sourcedIds, to Edu-API shape.
+func FromBundle(b *domain.Bundle) Bundle {
+	out := Bundle{
+		Persons:          make([]Person, 0, len(b.Persons)),
+		Orgs:             mapAll(b.Organizations, FromOrg),
+		AcademicSessions: mapAll(b.AcademicSessions, FromAcademicSession),
+		Courses:          mapAll(b.Courses, FromCourse),
+		Programs:         mapAll(b.Programs, FromProgram),
+		Classes:          mapAll(b.Offerings, FromClass),
+		Enrollments:      mapAll(b.Enrollments, FromEnrollment),
+		Results:          mapAll(b.Results, FromResult),
+	}
+	for _, p := range b.Persons {
+		out.Persons = append(out.Persons, FromPerson(p))
+	}
+	return out
+}
+
+func mapAll[E, D any](in []E, fn func(E) D) []D {
+	out := make([]D, 0, len(in))
+	for _, e := range in {
+		out = append(out, fn(e))
+	}
+	return out
 }
 
 func ref(id, typ string) *GUIDRef {

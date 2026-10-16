@@ -1,0 +1,106 @@
+{
+  "@context": [
+    "https://www.w3.org/2018/credentials/v1",
+    "http://data.europa.eu/snb/model/context/edc-ap"
+  ],
+  "id": "urn:credential:7c1b2e3a-liu-bsc",
+  "type": ["VerifiableCredential", "EuropeanDigitalCredential"],
+  "credentialSchema": [
+    {"id": "http://data.europa.eu/snb/model/ap/edc-generic-full", "type": "ShaclValidator2017"}
+  ],
+  "issuanceDate": "2026-02-01T10:00:00+01:00",
+  "validFrom": "2026-02-01T10:00:00+01:00",
+  "issuer": {
+    "id": "urn:epass:org:liu-ifm",
+    "type": "Organisation",
+    "legalName": {"en": "Department of Physics, Chemistry and Biology", "sv": "Institutionen för fysik, kemi och biologi"},
+    "parentOrganisation": {
+      "id": "urn:epass:org:liu",
+      "type": "Organisation",
+      "legalName": {"en": "Linköping University", "sv": "Linköpings universitet"},
+      "registration": {"id": "urn:epass:legalIdentifier:1", "type": "LegalIdentifier", "notation": "202100-3096", "spatial": {"id": "http://publications.europa.eu/resource/authority/country/SWE", "type": "Concept"}}
+    }
+  },
+  "credentialSubject": {
+    "id": "urn:epass:person:liu-student-4711",
+    "type": "Person",
+    "givenName": {"en": "Ada"},
+    "familyName": {"en": "Lovelace"},
+    "fullName": {"en": "Ada Lovelace"},
+    "dateOfBirth": "2001-12-10T00:00:00+01:00",
+    "identifier": [
+      {"id": "urn:epass:identifier:1", "type": "Identifier", "notation": "adalo123", "schemeName": "LiU-ID"}
+    ],
+    "contactPoint": [
+      {"id": "urn:epass:contactPoint:1", "type": "ContactPoint", "emailAddress": [{"id": "mailto:adalo123@student.liu.se", "type": "Mailbox"}]}
+    ],
+    "hasClaim": [
+      {
+        "id": "urn:epass:learningAchievement:bsc",
+        "type": "LearningAchievement",
+        "title": {"en": "Bachelor of Science in Biology"},
+        "awardedBy": {
+          "id": "urn:epass:awardingProcess:bsc",
+          "type": "AwardingProcess",
+          "awardingBody": ["urn:epass:org:liu"],
+          "awardingDate": "2026-01-31T00:00:00+01:00"
+        },
+        "specifiedBy": {
+          "id": "urn:epass:qualification:bsc-bio",
+          "type": "Qualification",
+          "title": {"en": "Bachelor of Science in Biology", "sv": "Kandidatexamen i biologi"},
+          "identifier": [{"id": "urn:epass:identifier:2", "type": "Identifier", "notation": "NBIO"}],
+          "eqfLevel": {"id": "http://data.europa.eu/snb/eqf/6", "type": "Concept", "prefLabel": {"en": "Level 6"}},
+          "creditPoint": [{"id": "urn:epass:creditPoint:1", "type": "CreditPoint", "framework": {"id": "http://data.europa.eu/snb/education-credit/6fcec5c5af", "type": "Concept", "prefLabel": {"en": "European Credit Transfer System"}}, "point": "180"}]
+        },
+        "hasPart": [
+          {
+            "id": "urn:epass:learningAchievement:bi101",
+            "type": "LearningAchievement",
+            "title": {"en": "Biology 101"},
+            "awardedBy": {
+              "id": "urn:epass:awardingProcess:bi101",
+              "type": "AwardingProcess",
+              "awardingBody": [{"id": "urn:epass:org:liu-ifm"}],
+              "awardingDate": "2026-01-20T00:00:00+01:00"
+            },
+            "creditReceived": [
+              {"id": "urn:epass:creditPoint:2", "type": "CreditPoint", "framework": {"id": "urn:local:hp", "type": "Concept", "prefLabel": {"en": "Local points"}}, "point": "9"},
+              {"id": "urn:epass:creditPoint:3", "type": "CreditPoint", "framework": {"id": "http://data.europa.eu/snb/education-credit/6fcec5c5af", "type": "Concept", "prefLabel": {"en": "European Credit Transfer System"}}, "point": "7,5"}
+            ],
+            "specifiedBy": {
+              "id": "urn:epass:learningAchievementSpec:bi101",
+              "type": "LearningAchievementSpecification",
+              "title": {"en": "Biology 101", "sv": "Biologi 101"},
+              "identifier": [{"id": "urn:epass:identifier:3", "type": "Identifier", "notation": "BI101"}]
+            },
+            "wasDerivedFrom": [
+              {
+                "id": "urn:epass:learningAssessment:bi101-exam",
+                "type": "LearningAssessment",
+                "title": {"en": "Final examination"},
+                "grade": {"id": "urn:epass:note:1", "type": "Note", "noteLiteral": {"en": "A"}}
+              }
+            ],
+            "wasInfluencedBy": [
+              {
+                "id": "urn:epass:learningActivity:bi101-ht25",
+                "type": "LearningActivity",
+                "title": {"en": "Biology 101, autumn 2025"},
+                "temporal": [
+                  {"id": "urn:epass:period:ht25", "type": "PeriodOfTime", "prefLabel": {"en": "Autumn 2025"}, "startDate": "2025-09-01T00:00:00+02:00", "endDate": "2026-01-18T00:00:00+01:00"}
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "urn:epass:learningEntitlement:1",
+        "type": "LearningEntitlement",
+        "title": {"en": "Access to master studies"}
+      }
+    ]
+  },
+  "displayParameter": {"id": "urn:epass:displayParameter:1", "type": "DisplayParameter", "primaryLanguage": {"id": "http://publications.europa.eu/resource/authority/language/ENG", "type": "Concept"}}
+}

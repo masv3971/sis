@@ -99,15 +99,33 @@ type OIDCRP struct {
 type Adapter struct {
 	Inbound  Inbound  `yaml:"inbound"`
 	Outbound Outbound `yaml:"outbound"`
+	Sweeper  Sweeper  `yaml:"sweeper"`
+}
+
+// Sweeper deletes records whose ttl (POST /api/v1/populate) has passed.
+// Expired records are hidden from every API at once; the sweeper only
+// reclaims their storage.
+type Sweeper struct {
+	// Interval between sweeps.
+	Interval time.Duration `yaml:"interval" default:"1m" validate:"gt=0"`
 }
 
 // Inbound holds the API settings. Page sizes above the max are clamped to
 // it; max must be >= default.
 type Inbound struct {
-	AuthAPI   AuthAPI   `yaml:"authapi"`
-	RestAdmin RestAdmin `yaml:"restadmin"`
-	OEAPI     OEAPI     `yaml:"oeapi"`
-	EduAPI    EduAPI    `yaml:"eduapi"`
+	AuthAPI    AuthAPI    `yaml:"authapi"`
+	RestAdmin  RestAdmin  `yaml:"restadmin"`
+	OEAPI      OEAPI      `yaml:"oeapi"`
+	EduAPI     EduAPI     `yaml:"eduapi"`
+	ConvertAPI ConvertAPI `yaml:"convertapi"`
+}
+
+// ConvertAPI configures POST /api/v1/parse and /api/v1/populate, which take
+// whole documents (e.g. an ELM credential) rather than single records.
+type ConvertAPI struct {
+	// MaxBodyBytes caps the request body of these two endpoints; every
+	// other endpoint keeps the 1 MiB cap. Larger requests get 413.
+	MaxBodyBytes int64 `yaml:"max_body_bytes" default:"5242880" validate:"gt=0"`
 }
 
 type AuthAPI struct {

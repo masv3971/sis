@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -30,24 +31,34 @@ func preallocCap(limit int) int {
 // personColumns is the shared projection for person reads.
 const personColumns = `id, sourced_id, status, given_name, family_name,
 	middle_name, date_of_birth, roles, identifiers, emails, phones,
-	created_at, updated_at`
+	created_at, updated_at, expires_at`
 
 // PersonRepository is the pgx-backed port.PersonRepository.
 type PersonRepository struct {
 	pool *pgxpool.Pool
 }
 
-// Create inserts a person, mapping a unique-key violation to domain.ErrConflict.
+// Create inserts a person, mapping a unique-key violation with a live person
+// to domain.ErrConflict. An expired person holding the same id or sourcedId
+// is deleted first, in the same transaction.
 func (r *PersonRepository) Create(ctx context.Context, p domain.Person) error {
 	roles, ids, emails, phones, err := marshalArrays(p)
 	if err != nil {
 		return err
 	}
-	_, err = r.pool.Exec(ctx, `INSERT INTO persons (`+personColumns+`)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-		p.ID, p.SourcedID, p.Status, p.GivenName, p.FamilyName,
-		p.MiddleName, p.DateOfBirth, roles, ids, emails, phones,
-		p.CreatedAt, p.UpdatedAt)
+	err = pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx,
+			`DELETE FROM persons WHERE (id=$1 OR sourced_id=$2) AND expires_at <= now()`,
+			p.ID, p.SourcedID); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `INSERT INTO persons (`+personColumns+`)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+			p.ID, p.SourcedID, p.Status, p.GivenName, p.FamilyName,
+			p.MiddleName, p.DateOfBirth, roles, ids, emails, phones,
+			p.CreatedAt, p.UpdatedAt, p.ExpiresAt)
+		return err
+	})
 	return mapUniqueViolation(err)
 }
 
@@ -62,33 +73,44 @@ func mapUniqueViolation(err error) error {
 	return err
 }
 
-// Update replaces a person, returning domain.ErrNotFound if it does not exist
-// and domain.ErrConflict if the new sourcedId belongs to another person.
+// Update replaces a live person, returning domain.ErrNotFound if it does not
+// exist and domain.ErrConflict if the new sourcedId belongs to another live
+// person. An expired holder of that sourcedId is deleted first.
 func (r *PersonRepository) Update(ctx context.Context, p domain.Person) error {
 	roles, ids, emails, phones, err := marshalArrays(p)
 	if err != nil {
 		return err
 	}
-	tag, err := r.pool.Exec(ctx, `UPDATE persons SET
-		sourced_id=$2, status=$3, given_name=$4, family_name=$5,
-		middle_name=$6, date_of_birth=$7, roles=$8, identifiers=$9,
-		emails=$10, phones=$11, updated_at=$12
-		WHERE id=$1`,
-		p.ID, p.SourcedID, p.Status, p.GivenName, p.FamilyName,
-		p.MiddleName, p.DateOfBirth, roles, ids, emails, phones,
-		p.UpdatedAt)
+	var affected int64
+	err = pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx,
+			`DELETE FROM persons WHERE sourced_id=$1 AND id<>$2 AND expires_at <= now()`,
+			p.SourcedID, p.ID); err != nil {
+			return err
+		}
+		tag, err := tx.Exec(ctx, `UPDATE persons SET
+			sourced_id=$2, status=$3, given_name=$4, family_name=$5,
+			middle_name=$6, date_of_birth=$7, roles=$8, identifiers=$9,
+			emails=$10, phones=$11, updated_at=$12, expires_at=$13
+			WHERE id=$1 AND `+liveFilter,
+			p.ID, p.SourcedID, p.Status, p.GivenName, p.FamilyName,
+			p.MiddleName, p.DateOfBirth, roles, ids, emails, phones,
+			p.UpdatedAt, p.ExpiresAt)
+		affected = tag.RowsAffected()
+		return err
+	})
 	if err != nil {
 		return mapUniqueViolation(err)
 	}
-	if tag.RowsAffected() == 0 {
+	if affected == 0 {
 		return domain.ErrNotFound
 	}
 	return nil
 }
 
-// Get returns a person by id.
+// Get returns a live person by id.
 func (r *PersonRepository) Get(ctx context.Context, id string) (domain.Person, error) {
-	return r.scanOne(ctx, `SELECT `+personColumns+` FROM persons WHERE id=$1`, id)
+	return r.scanOne(ctx, `SELECT `+personColumns+` FROM persons WHERE id=$1 AND `+liveFilter, id)
 }
 
 // GetByIDs returns the persons whose id is in ids in one query.
@@ -96,7 +118,7 @@ func (r *PersonRepository) GetByIDs(ctx context.Context, ids []string) ([]domain
 	if len(ids) == 0 {
 		return nil, nil
 	}
-	rows, err := r.pool.Query(ctx, `SELECT `+personColumns+` FROM persons WHERE id = ANY($1)`, ids)
+	rows, err := r.pool.Query(ctx, `SELECT `+personColumns+` FROM persons WHERE id = ANY($1) AND `+liveFilter, ids)
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +137,7 @@ func (r *PersonRepository) GetByIDs(ctx context.Context, ids []string) ([]domain
 
 // GetBySourcedID returns a person by business key.
 func (r *PersonRepository) GetBySourcedID(ctx context.Context, sourcedID string) (domain.Person, error) {
-	return r.scanOne(ctx, `SELECT `+personColumns+` FROM persons WHERE sourced_id=$1`, sourcedID)
+	return r.scanOne(ctx, `SELECT `+personColumns+` FROM persons WHERE sourced_id=$1 AND `+liveFilter, sourcedID)
 }
 
 // List returns a page of persons ordered by family name, given name, then id.
@@ -123,11 +145,11 @@ func (r *PersonRepository) GetBySourcedID(ctx context.Context, sourcedID string)
 // pages for people who share a name.
 func (r *PersonRepository) List(ctx context.Context, params port.ListParams) (port.Page[domain.Person], error) {
 	var total int
-	if err := r.pool.QueryRow(ctx, `SELECT count(*) FROM persons`).Scan(&total); err != nil {
+	if err := r.pool.QueryRow(ctx, `SELECT count(*) FROM persons WHERE `+liveFilter).Scan(&total); err != nil {
 		return port.Page[domain.Person]{}, err
 	}
 
-	query := `SELECT ` + personColumns + ` FROM persons ORDER BY family_name, given_name, id OFFSET $1`
+	query := `SELECT ` + personColumns + ` FROM persons WHERE ` + liveFilter + ` ORDER BY family_name, given_name, id OFFSET $1`
 	args := []any{params.Offset}
 	if params.Limit > 0 {
 		query += ` LIMIT $2`
@@ -154,9 +176,9 @@ func (r *PersonRepository) List(ctx context.Context, params port.ListParams) (po
 	return port.Page[domain.Person]{Items: items, Total: total}, nil
 }
 
-// Delete removes a person by id.
+// Delete removes a live person by id.
 func (r *PersonRepository) Delete(ctx context.Context, id string) error {
-	tag, err := r.pool.Exec(ctx, `DELETE FROM persons WHERE id=$1`, id)
+	tag, err := r.pool.Exec(ctx, `DELETE FROM persons WHERE id=$1 AND `+liveFilter, id)
 	if err != nil {
 		return err
 	}
@@ -164,6 +186,11 @@ func (r *PersonRepository) Delete(ctx context.Context, id string) error {
 		return domain.ErrNotFound
 	}
 	return nil
+}
+
+// DeleteExpired removes every person expired at now and returns their ids.
+func (r *PersonRepository) DeleteExpired(ctx context.Context, now time.Time) ([]string, error) {
+	return collectIDs(r.pool.Query(ctx, `DELETE FROM persons WHERE expires_at <= $1 RETURNING id`, now))
 }
 
 func (r *PersonRepository) scanOne(ctx context.Context, query, arg string) (domain.Person, error) {
@@ -186,7 +213,7 @@ func scanPerson(r row) (domain.Person, error) {
 	)
 	if err := r.Scan(&p.ID, &p.SourcedID, &p.Status, &p.GivenName, &p.FamilyName,
 		&p.MiddleName, &p.DateOfBirth, &roles, &ids, &emails, &phones,
-		&p.CreatedAt, &p.UpdatedAt); err != nil {
+		&p.CreatedAt, &p.UpdatedAt, &p.ExpiresAt); err != nil {
 		return domain.Person{}, err
 	}
 	if err := unmarshalInto(roles, &p.Roles); err != nil {

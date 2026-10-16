@@ -63,6 +63,8 @@ type Person struct {
 	DateOfBirth string       `json:"dateOfBirth,omitempty"`
 	CreatedAt   time.Time    `json:"createdAt"`
 	UpdatedAt   time.Time    `json:"updatedAt"`
+	// ExpiresAt: see Base.ExpiresAt.
+	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
 }
 
 // Validate checks required invariants for a Person.

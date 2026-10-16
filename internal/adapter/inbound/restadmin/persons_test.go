@@ -127,3 +127,26 @@ func TestWriteHandlersKeepServiceErrorClassification(t *testing.T) {
 		t.Fatalf("status = %d, want 404; body=%s", w.Code, w.Body)
 	}
 }
+
+// TestWritesIgnoreExpiresAt checks expiresAt is server-managed: /api/v1
+// writes cannot make a record expire (only POST /api/v1/populate with a ttl
+// can), so a client cannot schedule the deletion of shared data.
+func TestWritesIgnoreExpiresAt(t *testing.T) {
+	r := newTestRouter(t)
+	for _, path := range []string{"/persons", "/courses"} {
+		body := `{"givenName":"A","familyName":"B","status":"active","expiresAt":"2030-01-01T00:00:00Z"}`
+		if path == "/courses" {
+			body = `{"title":"T","expiresAt":"2030-01-01T00:00:00Z"}`
+		}
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusCreated {
+			t.Fatalf("%s: status = %d; body=%s", path, w.Code, w.Body)
+		}
+		if strings.Contains(w.Body.String(), "expiresAt") {
+			t.Fatalf("%s: caller-supplied expiresAt was stored: %s", path, w.Body)
+		}
+	}
+}

@@ -114,3 +114,69 @@ func (e *Enrollment) Validate() error {
 	}
 	return nil
 }
+
+// Program is a structured collection of courses leading to a qualification
+// (degree, diploma, certificate). OEAPI calls it a programme; ELM a
+// Qualification.
+type Program struct {
+	Base
+	Code  string `json:"code,omitempty"`
+	Title string `json:"title"`
+	// Level is the qualification level, e.g. an EQF level ("6") or a local
+	// level code.
+	Level string `json:"level,omitempty"`
+	OrgID string `json:"orgId,omitempty"`
+}
+
+// EntityType returns the stable type tag.
+func (p *Program) EntityType() string { return "program" }
+
+// Validate checks required invariants.
+func (p *Program) Validate() error {
+	if err := p.validateStatus(); err != nil {
+		return err
+	}
+	if p.Title == "" {
+		return &ValidationError{Field: "title", Msg: "required"}
+	}
+	return nil
+}
+
+// Result is a person's outcome for a course or a program: the grade (or
+// score) and the credits awarded.
+type Result struct {
+	Base
+	PersonID string `json:"personId"`
+	// Exactly one of CourseID and ProgramID is set: what the result is for.
+	CourseID  string `json:"courseId,omitempty"`
+	ProgramID string `json:"programId,omitempty"`
+	// OfferingID optionally names the offering (class) the result was
+	// obtained in.
+	OfferingID string `json:"offeringId,omitempty"`
+	// Grade is the grade as awarded, e.g. "A", "VG", "Pass".
+	Grade string `json:"grade,omitempty"`
+	// Credits awarded, e.g. ECTS.
+	Credits float64 `json:"credits,omitempty"`
+	// ResultDate is the ISO 8601 date the result was awarded.
+	ResultDate string `json:"resultDate,omitempty"`
+}
+
+// EntityType returns the stable type tag.
+func (r *Result) EntityType() string { return "result" }
+
+// Validate checks required invariants.
+func (r *Result) Validate() error {
+	if err := r.validateStatus(); err != nil {
+		return err
+	}
+	if r.PersonID == "" {
+		return &ValidationError{Field: "personId", Msg: "required"}
+	}
+	if (r.CourseID == "") == (r.ProgramID == "") {
+		return &ValidationError{Field: "courseId", Msg: "exactly one of courseId and programId is required"}
+	}
+	if r.Credits < 0 {
+		return &ValidationError{Field: "credits", Msg: "must not be negative"}
+	}
+	return nil
+}

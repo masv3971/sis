@@ -7,20 +7,53 @@ import (
 	"slices"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/SUNET/sis/internal/core/domain"
 	"github.com/SUNET/sis/internal/core/port"
 )
 
-// PersonRepository is an in-memory port.PersonRepository.
+// PersonRepository is an in-memory port.PersonRepository. Expired persons
+// are invisible except to DeleteExpired (see port.Repository).
 type PersonRepository struct {
 	mu   sync.RWMutex
 	byID map[string]domain.Person
+	now  func() time.Time
 }
 
 // NewPersonRepository returns an empty in-memory person repository.
 func NewPersonRepository() *PersonRepository {
-	return &PersonRepository{byID: make(map[string]domain.Person)}
+	return &PersonRepository{byID: make(map[string]domain.Person), now: time.Now}
+}
+
+// WithClock replaces the clock the expiry filter reads (tests only) and
+// returns r.
+func (r *PersonRepository) WithClock(now func() time.Time) *PersonRepository {
+	r.now = now
+	return r
+}
+
+// live returns the stored person for id if it exists and has not expired.
+func (r *PersonRepository) live(id string, now time.Time) (domain.Person, bool) {
+	p, ok := r.byID[id]
+	if !ok || domain.Expired(p.ExpiresAt, now) {
+		return domain.Person{}, false
+	}
+	return p, true
+}
+
+// sourcedOwner returns the id of the stored person (live or expired) holding
+// sourcedID.
+func (r *PersonRepository) sourcedOwner(sourcedID string) (string, bool) {
+	if sourcedID == "" {
+		return "", false
+	}
+	for id, p := range r.byID {
+		if p.SourcedID == sourcedID {
+			return id, true
+		}
+	}
+	return "", false
 }
 
 // clonePerson returns a copy of p that shares no slice backing arrays with
@@ -33,74 +66,86 @@ func clonePerson(p domain.Person) domain.Person {
 	p.Identifiers = slices.Clone(p.Identifiers)
 	p.Emails = slices.Clone(p.Emails)
 	p.Phones = slices.Clone(p.Phones)
+	if p.ExpiresAt != nil {
+		t := *p.ExpiresAt
+		p.ExpiresAt = &t
+	}
 	return p
 }
 
-// Create stores a new person, rejecting duplicate id or sourcedId.
+// Create stores a new person, rejecting an id or sourcedId held by a live
+// person. An expired holder of either key is replaced.
 func (r *PersonRepository) Create(_ context.Context, p domain.Person) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if _, ok := r.byID[p.ID]; ok {
+	now := r.now()
+	if _, ok := r.live(p.ID, now); ok {
 		return domain.ErrConflict
 	}
-	for _, e := range r.byID {
-		if p.SourcedID != "" && e.SourcedID == p.SourcedID {
+	owner, owned := r.sourcedOwner(p.SourcedID)
+	if owned {
+		if _, ok := r.live(owner, now); ok {
 			return domain.ErrConflict
 		}
+		delete(r.byID, owner)
 	}
 	r.byID[p.ID] = clonePerson(p)
 	return nil
 }
 
-// Update replaces an existing person, rejecting a sourcedId already held by a
-// different person (mirrors the Postgres UNIQUE constraint).
+// Update replaces an existing live person, rejecting a sourcedId already held
+// by a different live person (mirrors the Postgres UNIQUE constraint). An
+// expired holder of the sourcedId is replaced.
 func (r *PersonRepository) Update(_ context.Context, p domain.Person) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if _, ok := r.byID[p.ID]; !ok {
+	now := r.now()
+	if _, ok := r.live(p.ID, now); !ok {
 		return domain.ErrNotFound
 	}
-	if p.SourcedID != "" {
-		for id, e := range r.byID {
-			if id != p.ID && e.SourcedID == p.SourcedID {
-				return domain.ErrConflict
-			}
+	owner, owned := r.sourcedOwner(p.SourcedID)
+	if owned && owner != p.ID {
+		if _, ok := r.live(owner, now); ok {
+			return domain.ErrConflict
 		}
+		delete(r.byID, owner)
 	}
 	r.byID[p.ID] = clonePerson(p)
 	return nil
 }
 
-// Get returns a person by id.
+// Get returns a live person by id.
 func (r *PersonRepository) Get(_ context.Context, id string) (domain.Person, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	p, ok := r.byID[id]
+	p, ok := r.live(id, r.now())
 	if !ok {
 		return domain.Person{}, domain.ErrNotFound
 	}
 	return clonePerson(p), nil
 }
 
-// GetByIDs returns the persons whose id is in ids.
+// GetByIDs returns the live persons whose id is in ids.
 func (r *PersonRepository) GetByIDs(_ context.Context, ids []string) ([]domain.Person, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	now := r.now()
 	items := make([]domain.Person, 0, len(ids))
 	for _, id := range ids {
-		if p, ok := r.byID[id]; ok {
+		if p, ok := r.live(id, now); ok {
 			items = append(items, clonePerson(p))
 		}
 	}
 	return items, nil
 }
 
-// GetBySourcedID returns a person by business key.
+// GetBySourcedID returns a live person by business key.
 func (r *PersonRepository) GetBySourcedID(_ context.Context, sourcedID string) (domain.Person, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	now := r.now()
 	for _, p := range r.byID {
-		if p.SourcedID == sourcedID {
+		if p.SourcedID == sourcedID && !domain.Expired(p.ExpiresAt, now) {
 			return clonePerson(p), nil
 		}
 	}
@@ -113,9 +158,12 @@ func (r *PersonRepository) GetBySourcedID(_ context.Context, sourcedID string) (
 func (r *PersonRepository) List(_ context.Context, params port.ListParams) (port.Page[domain.Person], error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	now := r.now()
 	items := make([]domain.Person, 0, len(r.byID))
 	for _, p := range r.byID {
-		items = append(items, clonePerson(p))
+		if !domain.Expired(p.ExpiresAt, now) {
+			items = append(items, clonePerson(p))
+		}
 	}
 	sort.Slice(items, func(i, j int) bool {
 		a, b := items[i], items[j]
@@ -144,13 +192,29 @@ func pageBounds(total, offset, limit int) (lo, hi int) {
 	return lo, hi
 }
 
-// Delete removes a person by id.
+// Delete removes a live person by id.
 func (r *PersonRepository) Delete(_ context.Context, id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if _, ok := r.byID[id]; !ok {
+	if _, ok := r.live(id, r.now()); !ok {
 		return domain.ErrNotFound
 	}
 	delete(r.byID, id)
 	return nil
+}
+
+// DeleteExpired removes every person expired at now and returns their ids.
+func (r *PersonRepository) DeleteExpired(_ context.Context, now time.Time) ([]string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var ids []string
+	for id, p := range r.byID {
+		if domain.Expired(p.ExpiresAt, now) {
+			ids = append(ids, id)
+		}
+	}
+	for _, id := range ids {
+		delete(r.byID, id)
+	}
+	return ids, nil
 }

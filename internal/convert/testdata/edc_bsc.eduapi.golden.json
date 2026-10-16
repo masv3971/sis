@@ -1,0 +1,144 @@
+{
+  "persons": [
+    {
+      "sourcedId": "urn:epass:person:liu-student-4711",
+      "status": "active",
+      "givenName": "Ada",
+      "familyName": "Lovelace",
+      "email": "adalo123@student.liu.se",
+      "roles": [
+        {
+          "role": "student"
+        }
+      ],
+      "userIds": [
+        {
+          "type": "LiU-ID",
+          "identifier": "adalo123"
+        }
+      ]
+    }
+  ],
+  "orgs": [
+    {
+      "sourcedId": "urn:epass:org:liu",
+      "status": "active",
+      "name": "Linköping University"
+    },
+    {
+      "sourcedId": "urn:epass:org:liu-ifm",
+      "status": "active",
+      "name": "Department of Physics, Chemistry and Biology",
+      "parent": {
+        "sourcedId": "urn:epass:org:liu",
+        "type": "org"
+      }
+    }
+  ],
+  "academicSessions": [
+    {
+      "sourcedId": "urn:epass:period:ht25",
+      "status": "active",
+      "title": "Autumn 2025",
+      "type": "term",
+      "startDate": "2025-09-01",
+      "endDate": "2026-01-18"
+    }
+  ],
+  "courses": [
+    {
+      "sourcedId": "urn:epass:learningAchievementSpec:bi101",
+      "status": "active",
+      "title": "Biology 101",
+      "courseCode": "BI101",
+      "org": {
+        "sourcedId": "urn:epass:org:liu-ifm",
+        "type": "org"
+      }
+    }
+  ],
+  "programs": [
+    {
+      "sourcedId": "urn:epass:qualification:bsc-bio",
+      "status": "active",
+      "title": "Bachelor of Science in Biology",
+      "programCode": "NBIO",
+      "level": "6",
+      "org": {
+        "sourcedId": "urn:epass:org:liu",
+        "type": "org"
+      }
+    }
+  ],
+  "classes": [
+    {
+      "sourcedId": "urn:epass:learningActivity:bi101-ht25",
+      "status": "active",
+      "title": "Biology 101, autumn 2025",
+      "course": {
+        "sourcedId": "urn:epass:learningAchievementSpec:bi101",
+        "type": "course"
+      },
+      "terms": [
+        {
+          "sourcedId": "urn:epass:period:ht25",
+          "type": "academicSession"
+        }
+      ],
+      "school": {
+        "sourcedId": "urn:epass:org:liu-ifm",
+        "type": "org"
+      }
+    }
+  ],
+  "enrollments": [
+    {
+      "sourcedId": "urn:epass:learningActivity:bi101-ht25#enrollment:urn:epass:person:liu-student-4711",
+      "status": "active",
+      "user": {
+        "sourcedId": "urn:epass:person:liu-student-4711",
+        "type": "user"
+      },
+      "class": {
+        "sourcedId": "urn:epass:learningActivity:bi101-ht25",
+        "type": "class"
+      },
+      "role": "student"
+    }
+  ],
+  "results": [
+    {
+      "sourcedId": "urn:epass:learningAchievement:bsc",
+      "status": "active",
+      "student": {
+        "sourcedId": "urn:epass:person:liu-student-4711",
+        "type": "user"
+      },
+      "program": {
+        "sourcedId": "urn:epass:qualification:bsc-bio",
+        "type": "program"
+      },
+      "credits": 180,
+      "scoreDate": "2026-01-31"
+    },
+    {
+      "sourcedId": "urn:epass:learningAchievement:bi101",
+      "status": "active",
+      "student": {
+        "sourcedId": "urn:epass:person:liu-student-4711",
+        "type": "user"
+      },
+      "course": {
+        "sourcedId": "urn:epass:learningAchievementSpec:bi101",
+        "type": "course"
+      },
+      "class": {
+        "sourcedId": "urn:epass:learningActivity:bi101-ht25",
+        "type": "class"
+      },
+      "score": "A",
+      "credits": 7.5,
+      "scoreDate": "2026-01-20"
+    }
+  ]
+}

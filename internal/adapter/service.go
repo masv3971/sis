@@ -18,6 +18,7 @@ import (
 
 	"github.com/SUNET/sis/internal/adapter/outbound/events"
 	"github.com/SUNET/sis/internal/adapter/outbound/postgres"
+	"github.com/SUNET/sis/internal/adapter/sweeper"
 	"github.com/SUNET/sis/internal/auth"
 	"github.com/SUNET/sis/internal/core/domain"
 	"github.com/SUNET/sis/internal/core/port"
@@ -58,7 +59,11 @@ type Inbound struct {
 type Service struct {
 	outbound Outbound
 	inbound  Inbound
-	log      *logger.Log
+	// sweeper deletes expired (ttl) records in the background. It sits
+	// between the two sides: it writes through the read-model services and
+	// must stop before the outbound pool closes.
+	sweeper *sweeper.Service
+	log     *logger.Log
 }
 
 // New builds the full adapter graph. It picks the persistence backend
@@ -89,7 +94,7 @@ func New(ctx context.Context, cfg *model.Cfg, log *logger.Log) (*Service, error)
 		return nil, err
 	}
 
-	// Read-model Client: person service + the five typed entity services,
+	// Read-model Client: person service + the typed entity services,
 	// used by both /api/v1 and the standards (OEAPI/Edu-API) providers.
 	// Built inline here because the generic doc-repo helper must stay in
 	// this package (see docrepo.go); readmodel is now a pure bundle type.
@@ -101,6 +106,8 @@ func New(ctx context.Context, cfg *model.Cfg, log *logger.Log) (*Service, error)
 		Courses:          service.NewResource(docRepo[domain.Course](pg), events, nil, log),
 		Offerings:        service.NewResource(docRepo[domain.Offering](pg), events, nil, log),
 		Enrollments:      service.NewResource(docRepo[domain.Enrollment](pg), events, nil, log),
+		Programs:         service.NewResource(docRepo[domain.Program](pg), events, nil, log),
+		Results:          service.NewResource(docRepo[domain.Result](pg), events, nil, log),
 	}
 	s.log.Info("read-model catalog built")
 
@@ -109,6 +116,11 @@ func New(ctx context.Context, cfg *model.Cfg, log *logger.Log) (*Service, error)
 	// seeds any bootstrap credentials. httpserver asks it OIDCEnabled() to
 	// decide whether to mount the OIDC routes.
 	if s.inbound.auth, err = auth.New(ctx, cfg, store.Accounts, store.Clients, log); err != nil {
+		return nil, err
+	}
+
+	// Expiry sweeper: a Service (background loop), closed before pg.
+	if s.sweeper, err = sweeper.New(ctx, cfg, s.inbound.readmodel, log); err != nil {
 		return nil, err
 	}
 
@@ -122,8 +134,9 @@ func New(ctx context.Context, cfg *model.Cfg, log *logger.Log) (*Service, error)
 }
 
 // Close shuts the adapter graph down in dependency order: inbound first (so
-// no new work enters the graph), then outbound persistence. Errors from both
-// stages are joined so the caller sees every failure.
+// no new work enters the graph), then the sweeper, then outbound
+// persistence. Errors from every stage are joined so the caller sees every
+// failure.
 //
 // The whole teardown is bounded by ctx: if the HTTP drain hits the deadline,
 // httpserver.Close cancels in-flight request contexts (aborting their
@@ -134,6 +147,11 @@ func (s *Service) Close(ctx context.Context) error {
 	var errs []error
 	if s.inbound.http != nil {
 		if err := s.inbound.http.Close(ctx); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if s.sweeper != nil {
+		if err := s.sweeper.Close(ctx); err != nil {
 			errs = append(errs, err)
 		}
 	}

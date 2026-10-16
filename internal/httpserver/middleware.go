@@ -32,10 +32,17 @@ func requestLogger(log *logger.Log) gin.HandlerFunc {
 	}
 }
 
-// bodyLimit caps request body size to guard against oversized payloads.
-func bodyLimit(n int64) gin.HandlerFunc {
+// bodyLimit caps request body size to guard against oversized payloads: n
+// bytes, or perRoute[route] for a matched route pattern (gin's FullPath,
+// e.g. "/api/v1/parse"). Global middleware runs after routing, so the
+// pattern is known here.
+func bodyLimit(n int64, perRoute map[string]int64) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, n)
+		limit := n
+		if l, ok := perRoute[c.FullPath()]; ok {
+			limit = l
+		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, limit)
 		c.Next()
 	}
 }
