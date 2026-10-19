@@ -1,6 +1,7 @@
 package service
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"time"
@@ -75,8 +76,14 @@ func (s *Resource[T, PT]) Update(ctx context.Context, e PT) (PT, error) {
 	return s.update(ctx, e, func(existing PT) *time.Time { return existing.GetExpiresAt() })
 }
 
-// update replaces an existing entity; expiry picks the stored ExpiresAt
-// from the record being replaced.
+// update replaces an existing entity; expiry picks the new ExpiresAt from
+// the record being replaced.
+//
+// The read and the write are tied together by the repository's conditional
+// Update: the write applies only while the stored expiry is still the one
+// expiry was computed from. If a concurrent write changed it in between
+// (domain.ErrStale), the record is re-read and the merge redone, so a stale
+// finite expiry can never overwrite a record that just became permanent.
 func (s *Resource[T, PT]) update(ctx context.Context, e PT, expiry func(existing PT) *time.Time) (PT, error) {
 	if e.GetID() == "" {
 		return nil, &domain.ValidationError{Field: "id", Msg: "required"}
@@ -84,21 +91,26 @@ func (s *Resource[T, PT]) update(ctx context.Context, e PT, expiry func(existing
 	if err := e.Validate(); err != nil {
 		return nil, err
 	}
-	existing, err := s.repo.Get(ctx, e.GetID())
-	if err != nil {
-		return nil, err
+	sourcedID := e.GetSourcedID()
+	for attempt := 1; ; attempt++ {
+		existing, err := s.repo.Get(ctx, e.GetID())
+		if err != nil {
+			return nil, err
+		}
+		e.SetExpiresAt(expiry(existing))
+		e.SetCreatedAt(existing.GetCreatedAt())
+		e.SetUpdatedAt(s.now().UTC())
+		e.SetSourcedID(cmp.Or(sourcedID, existing.GetSourcedID()))
+		err = s.repo.Update(ctx, e, existing.GetExpiresAt())
+		if errors.Is(err, domain.ErrStale) && attempt < maxStaleRetries {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		s.emit(ctx, s.typeName+".updated", e.GetID(), e)
+		return e, nil
 	}
-	e.SetExpiresAt(expiry(existing))
-	e.SetCreatedAt(existing.GetCreatedAt())
-	e.SetUpdatedAt(s.now().UTC())
-	if e.GetSourcedID() == "" {
-		e.SetSourcedID(existing.GetSourcedID())
-	}
-	if err := s.repo.Update(ctx, e); err != nil {
-		return nil, err
-	}
-	s.emit(ctx, s.typeName+".updated", e.GetID(), e)
-	return e, nil
 }
 
 // UpsertBySourcedID creates or updates by business key (idempotent ingress).

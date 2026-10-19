@@ -34,7 +34,8 @@ type Page[T any] struct {
 // persons behave as described on Repository.
 type PersonRepository interface {
 	Create(ctx context.Context, p domain.Person) error
-	Update(ctx context.Context, p domain.Person) error
+	// Update is conditional on the stored expiry, as Repository.Update.
+	Update(ctx context.Context, p domain.Person, prevExpiresAt *time.Time) error
 	Get(ctx context.Context, id string) (domain.Person, error)
 	// GetByIDs returns the persons whose id is in ids, in no particular
 	// order. Ids that match nothing are skipped, not an error.

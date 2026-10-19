@@ -5,6 +5,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/SUNET/sis/internal/adapter/outbound/memory"
 	"github.com/SUNET/sis/internal/core/domain"
@@ -100,6 +101,52 @@ func (r racyPersons) GetBySourcedID(ctx context.Context, sid string) (domain.Per
 		r.gate.Wait()
 	}
 	return p, err
+}
+
+// interleavedPersons runs before once, just ahead of the first Update, to
+// simulate a concurrent writer landing between update's read and write.
+type interleavedPersons struct {
+	*memory.PersonRepository
+	before func()
+}
+
+func (r *interleavedPersons) Update(ctx context.Context, p domain.Person, prev *time.Time) error {
+	if f := r.before; f != nil {
+		r.before = nil
+		f()
+	}
+	return r.PersonRepository.Update(ctx, p, prev)
+}
+
+// TestUpsertPersonWithExpiryRace: a TTL upsert that loses a race to a no-TTL
+// upsert must not make the now-permanent person expire again.
+func TestUpsertPersonWithExpiryRace(t *testing.T) {
+	ctx := t.Context()
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	clock := func() time.Time { return now }
+	repo := &interleavedPersons{PersonRepository: memory.NewPersonRepository().WithClock(clock)}
+	svc := service.New(repo, nil, clock, nil)
+	person := func(given string) domain.Person {
+		return domain.Person{SourcedID: "s", GivenName: given, FamilyName: "F", Status: domain.StatusActive}
+	}
+
+	exp := now.Add(time.Hour)
+	if _, _, err := svc.UpsertPersonWithExpiry(ctx, person("A"), &exp); err != nil {
+		t.Fatal(err)
+	}
+	repo.before = func() {
+		if _, err := svc.UpsertPersonBySourcedID(ctx, person("Permanent")); err != nil {
+			t.Errorf("concurrent permanent upsert: %v", err)
+		}
+	}
+	later := now.Add(2 * time.Hour)
+	if _, _, err := svc.UpsertPersonWithExpiry(ctx, person("Late"), &later); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := svc.GetPersonBySourcedID(ctx, "s")
+	if err != nil || stored.ExpiresAt != nil || stored.GivenName != "Late" {
+		t.Fatalf("stored = %+v, %v; want permanent with the late data", stored, err)
+	}
 }
 
 func TestUpsert_ConcurrentDeliveriesConverge(t *testing.T) {

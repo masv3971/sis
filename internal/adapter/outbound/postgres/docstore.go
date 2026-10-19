@@ -53,15 +53,21 @@ func (r *DocRepo[T, PT]) Create(ctx context.Context, e PT) error {
 	return mapUniqueViolation(err)
 }
 
-// Update replaces a live entity, returning domain.ErrNotFound if absent and
-// domain.ErrConflict if the new sourcedId belongs to another live entity. An
-// expired holder of that sourcedId is deleted first, in the same transaction.
-func (r *DocRepo[T, PT]) Update(ctx context.Context, e PT) error {
+// Update replaces a live entity whose stored expiry still equals
+// prevExpiresAt. It returns domain.ErrNotFound if absent, domain.ErrStale if
+// the expiry changed since the caller read it, and domain.ErrConflict if the
+// new sourcedId belongs to another live entity. An expired holder of that
+// sourcedId is deleted first, in the same transaction (rolled back with any
+// failure).
+//
+// The precondition sits in the UPDATE's WHERE clause, so Postgres checks it
+// against the latest committed row version: a concurrent write cannot slip
+// in between the check and the write.
+func (r *DocRepo[T, PT]) Update(ctx context.Context, e PT, prevExpiresAt *time.Time) error {
 	data, err := json.Marshal(e)
 	if err != nil {
 		return err
 	}
-	var affected int64
 	err = pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx,
 			`DELETE FROM entities WHERE type=$1 AND sourced_id=$2 AND id<>$3 AND expires_at <= now()`,
@@ -70,18 +76,33 @@ func (r *DocRepo[T, PT]) Update(ctx context.Context, e PT) error {
 		}
 		tag, err := tx.Exec(ctx,
 			`UPDATE entities SET sourced_id=$3, data=$4, updated_at=$5, expires_at=$6
-			 WHERE type=$1 AND id=$2 AND `+liveFilter,
-			r.typeName, e.GetID(), e.GetSourcedID(), data, e.GetUpdatedAt(), e.GetExpiresAt())
-		affected = tag.RowsAffected()
-		return err
+			 WHERE type=$1 AND id=$2 AND expires_at IS NOT DISTINCT FROM $7 AND `+liveFilter,
+			r.typeName, e.GetID(), e.GetSourcedID(), data, e.GetUpdatedAt(), e.GetExpiresAt(), prevExpiresAt)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return missOrStale(ctx, tx,
+				`SELECT EXISTS (SELECT 1 FROM entities WHERE type=$1 AND id=$2 AND `+liveFilter+`)`,
+				r.typeName, e.GetID())
+		}
+		return nil
 	})
-	if err != nil {
-		return mapUniqueViolation(err)
+	return mapUniqueViolation(err)
+}
+
+// missOrStale explains a conditional UPDATE that matched no row: the record
+// is live (so the precondition failed: domain.ErrStale) or it is not
+// (domain.ErrNotFound). existsQuery must select one boolean.
+func missOrStale(ctx context.Context, tx pgx.Tx, existsQuery string, args ...any) error {
+	var live bool
+	if err := tx.QueryRow(ctx, existsQuery, args...).Scan(&live); err != nil {
+		return err
 	}
-	if affected == 0 {
-		return domain.ErrNotFound
+	if live {
+		return domain.ErrStale
 	}
-	return nil
+	return domain.ErrNotFound
 }
 
 // Get returns a live entity by id.

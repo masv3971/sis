@@ -66,10 +66,7 @@ func clonePerson(p domain.Person) domain.Person {
 	p.Identifiers = slices.Clone(p.Identifiers)
 	p.Emails = slices.Clone(p.Emails)
 	p.Phones = slices.Clone(p.Phones)
-	if p.ExpiresAt != nil {
-		t := *p.ExpiresAt
-		p.ExpiresAt = &t
-	}
+	p.ExpiresAt = cloneTime(p.ExpiresAt)
 	return p
 }
 
@@ -95,13 +92,18 @@ func (r *PersonRepository) Create(_ context.Context, p domain.Person) error {
 
 // Update replaces an existing live person, rejecting a sourcedId already held
 // by a different live person (mirrors the Postgres UNIQUE constraint). An
-// expired holder of the sourcedId is replaced.
-func (r *PersonRepository) Update(_ context.Context, p domain.Person) error {
+// expired holder of the sourcedId is replaced. The write applies only while
+// the stored expiry equals prevExpiresAt, else domain.ErrStale.
+func (r *PersonRepository) Update(_ context.Context, p domain.Person, prevExpiresAt *time.Time) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	now := r.now()
-	if _, ok := r.live(p.ID, now); !ok {
+	old, ok := r.live(p.ID, now)
+	if !ok {
 		return domain.ErrNotFound
+	}
+	if !domain.SameExpiry(old.ExpiresAt, prevExpiresAt) {
+		return domain.ErrStale
 	}
 	owner, owned := r.sourcedOwner(p.SourcedID)
 	if owned && owner != p.ID {

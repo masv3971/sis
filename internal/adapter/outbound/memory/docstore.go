@@ -89,28 +89,43 @@ func (r *DocRepo[T, PT]) Create(_ context.Context, e PT) error {
 	if sid != "" && owned {
 		r.remove(owner)
 	}
-	r.byID[e.GetID()] = doc{data: data, sourcedID: sid, expiresAt: e.GetExpiresAt()}
+	r.byID[e.GetID()] = doc{data: data, sourcedID: sid, expiresAt: cloneTime(e.GetExpiresAt())}
 	if sid != "" {
 		r.sourcedToID[sid] = e.GetID()
 	}
 	return nil
 }
 
+// cloneTime returns a copy of *t (nil stays nil), so a stored expiry never
+// aliases a caller's pointer: changing the caller's time after a write must
+// not change read visibility or sweeper eligibility.
+func cloneTime(t *time.Time) *time.Time {
+	if t == nil {
+		return nil
+	}
+	c := *t
+	return &c
+}
+
 // Update replaces an existing live entity, maintaining the sourcedId index. A
 // sourcedId already owned by a different live entity is rejected with
 // domain.ErrConflict, matching Create and the Postgres UNIQUE constraint; an
-// expired owner is replaced.
+// expired owner is replaced. The write applies only while the stored expiry
+// equals prevExpiresAt, else domain.ErrStale (see port.Repository).
 //
-// Every check that can fail (lookup, conflict, marshal) runs before either
-// map is touched, so a failed Update leaves the stored record and its
-// sourcedId index exactly as they were.
-func (r *DocRepo[T, PT]) Update(_ context.Context, e PT) error {
+// Every check that can fail (lookup, precondition, conflict, marshal) runs
+// before either map is touched, so a failed Update leaves the stored record
+// and its sourcedId index exactly as they were.
+func (r *DocRepo[T, PT]) Update(_ context.Context, e PT, prevExpiresAt *time.Time) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	now := r.now()
 	old, ok := r.live(e.GetID(), now)
 	if !ok {
 		return domain.ErrNotFound
+	}
+	if !domain.SameExpiry(old.expiresAt, prevExpiresAt) {
+		return domain.ErrStale
 	}
 	sid := e.GetSourcedID()
 	owner, owned := r.sourcedToID[sid]
@@ -131,7 +146,7 @@ func (r *DocRepo[T, PT]) Update(_ context.Context, e PT) error {
 	if old.sourcedID != sid && r.sourcedToID[old.sourcedID] == e.GetID() {
 		delete(r.sourcedToID, old.sourcedID)
 	}
-	r.byID[e.GetID()] = doc{data: data, sourcedID: sid, expiresAt: e.GetExpiresAt()}
+	r.byID[e.GetID()] = doc{data: data, sourcedID: sid, expiresAt: cloneTime(e.GetExpiresAt())}
 	if sid != "" {
 		r.sourcedToID[sid] = e.GetID()
 	}

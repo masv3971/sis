@@ -16,7 +16,12 @@ import (
 // of reporting ErrConflict. The sweeper removes them physically.
 type Repository[T any, PT domain.EntityPtr[T]] interface {
 	Create(ctx context.Context, e PT) error
-	Update(ctx context.Context, e PT) error
+	// Update replaces a live entity, but only while its stored expiry still
+	// equals prevExpiresAt (nil: permanent; see domain.SameExpiry). If
+	// another write changed the expiry since the caller read it, nothing is
+	// written and domain.ErrStale is returned, so the caller can re-read and
+	// merge again instead of overwriting the newer expiry.
+	Update(ctx context.Context, e PT, prevExpiresAt *time.Time) error
 	Get(ctx context.Context, id string) (PT, error)
 	// GetByIDs returns the entities whose canonical id is in ids, in no
 	// particular order. Ids that match nothing are skipped, not an error.

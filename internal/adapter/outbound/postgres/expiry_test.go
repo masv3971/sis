@@ -1,6 +1,7 @@
 package postgres_test
 
 import (
+	"context"
 	"errors"
 	"slices"
 	"testing"
@@ -37,7 +38,7 @@ func TestExpiry(t *testing.T) {
 	if cs, _ := courses.GetByIDs(ctx, []string{c.ID}); len(cs) != 0 {
 		t.Fatalf("GetByIDs expired: %v", cs)
 	}
-	if err := courses.Update(ctx, c); !errors.Is(err, domain.ErrNotFound) {
+	if err := courses.Update(ctx, c, c.ExpiresAt); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("Update expired: %v", err)
 	}
 
@@ -73,5 +74,54 @@ func TestExpiry(t *testing.T) {
 	pids, err := persons.DeleteExpired(ctx, now)
 	if err != nil || !slices.Contains(pids, p.ID) {
 		t.Fatalf("person DeleteExpired = %v, %v", pids, err)
+	}
+}
+
+// TestUpdateIsConditionalOnExpiry checks Update applies only while the
+// stored expiry equals prevExpiresAt (ErrStale otherwise, row untouched) and
+// still reports ErrNotFound for a missing row.
+func TestUpdateIsConditionalOnExpiry(t *testing.T) {
+	ctx := t.Context()
+	svc := newStore(t)
+	suffix := time.Now().Format("150405.000000")
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	exp := now.Add(time.Hour)
+
+	courses := postgres.NewDocRepo[domain.Course](svc)
+	c := &domain.Course{Base: domain.Base{ID: "cc-" + suffix, SourcedID: "ccs-" + suffix, CreatedAt: now, UpdatedAt: now, ExpiresAt: &exp}, Title: "A"}
+	t.Cleanup(func() { _ = courses.Delete(context.Background(), c.ID) })
+	if err := courses.Create(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+	c.Title, c.ExpiresAt = "B", nil
+	if err := courses.Update(ctx, c, nil); !errors.Is(err, domain.ErrStale) {
+		t.Fatalf("doc: want ErrStale, got %v", err)
+	}
+	if got, _ := courses.Get(ctx, c.ID); got.Title != "A" || got.ExpiresAt == nil {
+		t.Fatalf("doc: stale update was applied: %+v", got)
+	}
+	if err := courses.Update(ctx, c, &exp); err != nil {
+		t.Fatalf("doc: matching precondition: %v", err)
+	}
+	missing := &domain.Course{Base: domain.Base{ID: "cc-missing-" + suffix, SourcedID: "ccm-" + suffix}, Title: "M"}
+	if err := courses.Update(ctx, missing, nil); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("doc: missing row: %v", err)
+	}
+
+	persons := svc.Persons()
+	p := domain.Person{ID: "cp-" + suffix, SourcedID: "cps-" + suffix, Status: domain.StatusActive, GivenName: "A", FamilyName: "B", CreatedAt: now, UpdatedAt: now}
+	t.Cleanup(func() { _ = persons.Delete(context.Background(), p.ID) })
+	if err := persons.Create(ctx, p); err != nil {
+		t.Fatal(err)
+	}
+	p.GivenName, p.ExpiresAt = "C", &exp
+	if err := persons.Update(ctx, p, &exp); !errors.Is(err, domain.ErrStale) {
+		t.Fatalf("person: want ErrStale, got %v", err)
+	}
+	if err := persons.Update(ctx, p, nil); err != nil {
+		t.Fatalf("person: matching precondition: %v", err)
+	}
+	if err := persons.Update(ctx, domain.Person{ID: "cp-missing-" + suffix, SourcedID: "x"}, nil); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("person: missing row: %v", err)
 	}
 }

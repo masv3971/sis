@@ -99,6 +99,55 @@ func TestResource_UpsertWithExpiry(t *testing.T) {
 	}
 }
 
+// interleavedDocs runs before once, just ahead of the first Update, to
+// simulate a concurrent writer landing between update's read and write.
+type interleavedDocs struct {
+	*memory.DocRepo[domain.Organization, *domain.Organization]
+	before func()
+}
+
+func (r *interleavedDocs) Update(ctx context.Context, e *domain.Organization, prev *time.Time) error {
+	if f := r.before; f != nil {
+		r.before = nil
+		f()
+	}
+	return r.DocRepo.Update(ctx, e, prev)
+}
+
+// TestResource_UpsertWithExpiryRace is the race from the PR #2 review: a TTL
+// upsert reads a temporary record, a no-TTL upsert makes it permanent, then
+// the TTL upsert writes. The late write must not restore a finite expiry
+// (which would let the sweeper delete a permanent record).
+func TestResource_UpsertWithExpiryRace(t *testing.T) {
+	ctx := t.Context()
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	clock := func() time.Time { return now }
+	repo := &interleavedDocs{DocRepo: memory.NewDocRepo[domain.Organization]().WithClock(clock)}
+	svc := service.NewResource(repo, nil, clock, nil)
+
+	exp := now.Add(time.Hour)
+	if _, _, err := svc.UpsertWithExpiry(ctx, &domain.Organization{Base: domain.Base{SourcedID: "o"}, Name: "A"}, &exp); err != nil {
+		t.Fatal(err)
+	}
+	repo.before = func() {
+		if _, err := svc.UpsertBySourcedID(ctx, &domain.Organization{Base: domain.Base{SourcedID: "o"}, Name: "Permanent"}); err != nil {
+			t.Errorf("concurrent permanent upsert: %v", err)
+		}
+	}
+	later := now.Add(2 * time.Hour)
+	out, _, err := svc.UpsertWithExpiry(ctx, &domain.Organization{Base: domain.Base{SourcedID: "o"}, Name: "Late"}, &later)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.ExpiresAt != nil {
+		t.Fatalf("late TTL write restored expiry %v on a permanent record", out.ExpiresAt)
+	}
+	stored, err := svc.GetBySourcedID(ctx, "o")
+	if err != nil || stored.ExpiresAt != nil || stored.Name != "Late" {
+		t.Fatalf("stored = %+v, %v; want permanent with the late data", stored, err)
+	}
+}
+
 func TestMergeExpiry(t *testing.T) {
 	a, b := time.Unix(1, 0), time.Unix(2, 0)
 	if service.MergeExpiry(nil, &a) != nil {

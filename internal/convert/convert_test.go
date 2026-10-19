@@ -181,6 +181,55 @@ func TestParseELMErrors(t *testing.T) {
 	}
 }
 
+// TestParseELMGrade checks a grade given as a Note (inline or referenced by
+// id elsewhere in the document) yields its noteLiteral, and a plain grade
+// value is used as-is.
+func TestParseELMGrade(t *testing.T) {
+	cases := map[string]string{
+		"plain":      `"grade": "B"`,
+		"inline":     `"grade": {"type": "Note", "noteLiteral": "B"}`,
+		"referenced": `"grade": "urn:note:1"`,
+	}
+	for name, grade := range cases {
+		t.Run(name, func(t *testing.T) {
+			doc := `{"credentialSubject": {"givenName": "A", "familyName": "B",
+				"hasClaim": {"type": "LearningAchievement", "title": "Course X",
+					"wasDerivedFrom": {"type": "LearningAssessment", ` + grade + `}}},
+				"notes": [{"id": "urn:note:1", "type": "Note", "noteLiteral": "B"}]}`
+			parsed, err := newClient(t).Parse(FormatELM, []byte(doc), "data")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if g := parsed.Bundle.Results[0].Grade; g != "B" {
+				t.Fatalf("grade = %q, want B", g)
+			}
+		})
+	}
+}
+
+// TestParseELMRejectsNonFiniteCredits checks credit points such as "NaN" or
+// "+Inf" (which strconv.ParseFloat accepts) cannot reach the bundle: they
+// are skipped as unusable, so the result carries no credits.
+func TestParseELMRejectsNonFiniteCredits(t *testing.T) {
+	for _, point := range []string{"NaN", "+Inf", "-Inf", "Infinity"} {
+		t.Run(point, func(t *testing.T) {
+			doc := `{"credentialSubject": {"givenName": "A", "familyName": "B",
+				"hasClaim": {"type": "LearningAchievement", "title": "Course X",
+					"creditReceived": {"point": "` + point + `"}}}}`
+			parsed, err := newClient(t).Parse(FormatELM, []byte(doc), "data")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if c := parsed.Bundle.Results[0].Credits; c != 0 {
+				t.Fatalf("credits = %v, want 0", c)
+			}
+			if _, err := json.Marshal(parsed.Bundle); err != nil {
+				t.Fatalf("bundle must stay JSON-encodable: %v", err)
+			}
+		})
+	}
+}
+
 // TestParseELMOrganisationCycle checks a parent cycle terminates.
 func TestParseELMOrganisationCycle(t *testing.T) {
 	doc := `{"issuer": {"id": "urn:a", "legalName": "A", "parentOrganisation": {"id": "urn:b", "legalName": "B", "parentOrganisation": "urn:a"}},

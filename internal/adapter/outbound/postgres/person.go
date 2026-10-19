@@ -73,15 +73,16 @@ func mapUniqueViolation(err error) error {
 	return err
 }
 
-// Update replaces a live person, returning domain.ErrNotFound if it does not
-// exist and domain.ErrConflict if the new sourcedId belongs to another live
-// person. An expired holder of that sourcedId is deleted first.
-func (r *PersonRepository) Update(ctx context.Context, p domain.Person) error {
+// Update replaces a live person whose stored expiry still equals
+// prevExpiresAt, returning domain.ErrNotFound if it does not exist,
+// domain.ErrStale if the expiry changed since the caller read it, and
+// domain.ErrConflict if the new sourcedId belongs to another live person. An
+// expired holder of that sourcedId is deleted first. See DocRepo.Update.
+func (r *PersonRepository) Update(ctx context.Context, p domain.Person, prevExpiresAt *time.Time) error {
 	roles, ids, emails, phones, err := marshalArrays(p)
 	if err != nil {
 		return err
 	}
-	var affected int64
 	err = pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx,
 			`DELETE FROM persons WHERE sourced_id=$1 AND id<>$2 AND expires_at <= now()`,
@@ -92,20 +93,20 @@ func (r *PersonRepository) Update(ctx context.Context, p domain.Person) error {
 			sourced_id=$2, status=$3, given_name=$4, family_name=$5,
 			middle_name=$6, date_of_birth=$7, roles=$8, identifiers=$9,
 			emails=$10, phones=$11, updated_at=$12, expires_at=$13
-			WHERE id=$1 AND `+liveFilter,
+			WHERE id=$1 AND expires_at IS NOT DISTINCT FROM $14 AND `+liveFilter,
 			p.ID, p.SourcedID, p.Status, p.GivenName, p.FamilyName,
 			p.MiddleName, p.DateOfBirth, roles, ids, emails, phones,
-			p.UpdatedAt, p.ExpiresAt)
-		affected = tag.RowsAffected()
-		return err
+			p.UpdatedAt, p.ExpiresAt, prevExpiresAt)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return missOrStale(ctx, tx,
+				`SELECT EXISTS (SELECT 1 FROM persons WHERE id=$1 AND `+liveFilter+`)`, p.ID)
+		}
+		return nil
 	})
-	if err != nil {
-		return mapUniqueViolation(err)
-	}
-	if affected == 0 {
-		return domain.ErrNotFound
-	}
-	return nil
+	return mapUniqueViolation(err)
 }
 
 // Get returns a live person by id.

@@ -17,11 +17,11 @@ func TestPersonUpdateRejectsForeignSourcedID(t *testing.T) {
 	_ = r.Create(ctx, domain.Person{ID: "1", SourcedID: "a"})
 	_ = r.Create(ctx, domain.Person{ID: "2", SourcedID: "b"})
 
-	if err := r.Update(ctx, domain.Person{ID: "2", SourcedID: "a"}); !errors.Is(err, domain.ErrConflict) {
+	if err := r.Update(ctx, domain.Person{ID: "2", SourcedID: "a"}, nil); !errors.Is(err, domain.ErrConflict) {
 		t.Fatalf("expected ErrConflict, got %v", err)
 	}
 	// Keeping its own sourcedId is fine.
-	if err := r.Update(ctx, domain.Person{ID: "2", SourcedID: "b", GivenName: "x"}); err != nil {
+	if err := r.Update(ctx, domain.Person{ID: "2", SourcedID: "b", GivenName: "x"}, nil); err != nil {
 		t.Fatalf("self update: %v", err)
 	}
 }
@@ -64,7 +64,7 @@ func TestDocRepoUpdateRejectsForeignSourcedID(t *testing.T) {
 	_ = r.Create(ctx, b)
 
 	steal := &domain.Course{Base: domain.Base{ID: "2", SourcedID: "a"}, Title: "B"}
-	if err := r.Update(ctx, steal); !errors.Is(err, domain.ErrConflict) {
+	if err := r.Update(ctx, steal, nil); !errors.Is(err, domain.ErrConflict) {
 		t.Fatalf("expected ErrConflict, got %v", err)
 	}
 	// The original owner must still be reachable by its business key.
@@ -86,7 +86,7 @@ func TestDocRepoUpdateMarshalFailurePreservesIndex(t *testing.T) {
 
 	// Year 10000 is outside the RFC 3339 range, so json.Marshal fails.
 	bad := &domain.Course{Base: domain.Base{ID: "1", SourcedID: "b", UpdatedAt: time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC)}, Title: "B"}
-	if err := r.Update(ctx, bad); err == nil {
+	if err := r.Update(ctx, bad, nil); err == nil {
 		t.Fatal("expected marshal error")
 	}
 
@@ -195,7 +195,7 @@ func TestPersonRepositoryIsolatesSlices(t *testing.T) {
 	check("after mutating List result")
 
 	upd, _ := r.Get(ctx, "1")
-	if err := r.Update(ctx, upd); err != nil {
+	if err := r.Update(ctx, upd, nil); err != nil {
 		t.Fatal(err)
 	}
 	mutate(upd)

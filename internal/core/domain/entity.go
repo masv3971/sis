@@ -47,6 +47,15 @@ func Expired(expiresAt *time.Time, now time.Time) bool {
 	return expiresAt != nil && !now.Before(*expiresAt)
 }
 
+// SameExpiry reports whether a and b are the same expiry: both nil
+// (permanent) or both set to the same instant.
+func SameExpiry(a, b *time.Time) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.Equal(*b)
+}
+
 // validateStatus rejects a status outside the declared states. Status is
 // optional on entities, so empty is allowed.
 func (b *Base) validateStatus() error {

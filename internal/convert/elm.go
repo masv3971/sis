@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -367,8 +368,10 @@ func (x *elmBuilder) credits(ach, spec *elm.Node) float64 {
 		var fallback float64
 		found := false
 		for _, c := range ns {
+			// ParseFloat accepts "NaN" and "Inf", which are not credits
+			// (and not JSON-encodable): skip them like negative values.
 			v, err := strconv.ParseFloat(strings.ReplaceAll(c.String("point"), ",", "."), 64)
-			if err != nil || v < 0 {
+			if err != nil || v < 0 || math.IsNaN(v) || math.IsInf(v, 0) {
 				continue
 			}
 			if isECTS(c.Node("framework")) {
@@ -406,16 +409,17 @@ func isECTS(fw *elm.Node) bool {
 	return label == "ects" || strings.Contains(label, "european credit transfer")
 }
 
-// grade returns an assessment's grade: a plain grade value, or the literal
-// of its grade Note.
+// grade returns an assessment's grade: the literal of its grade Note (inline
+// or referenced by id elsewhere in the document), else a plain grade value.
+// The Note is tried first because a string grade may be a reference, and
+// returning it as-is would store the Note's id as the grade.
 func grade(a *elm.Node) string {
-	if v := a.Literal("grade"); v != "" {
-		return v
-	}
 	if g := a.Node("grade"); g != nil {
-		return g.Text("noteLiteral")
+		if v := g.Text("noteLiteral"); v != "" {
+			return v
+		}
 	}
-	return ""
+	return a.Literal("grade")
 }
 
 // notation returns the first identifier notation of n (e.g. a course code).

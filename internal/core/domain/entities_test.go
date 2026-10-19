@@ -2,6 +2,7 @@ package domain
 
 import (
 	"errors"
+	"math"
 	"testing"
 )
 
@@ -24,6 +25,9 @@ func TestResultValidate(t *testing.T) {
 		{"neither target", Result{PersonID: "p"}, "courseId"},
 		{"both targets", Result{PersonID: "p", CourseID: "c", ProgramID: "g"}, "courseId"},
 		{"negative credits", Result{PersonID: "p", CourseID: "c", Credits: -1}, "credits"},
+		{"NaN credits", Result{PersonID: "p", CourseID: "c", Credits: math.NaN()}, "credits"},
+		{"+Inf credits", Result{PersonID: "p", CourseID: "c", Credits: math.Inf(1)}, "credits"},
+		{"-Inf credits", Result{PersonID: "p", CourseID: "c", Credits: math.Inf(-1)}, "credits"},
 		{"course", Result{PersonID: "p", CourseID: "c", Credits: 7.5}, ""},
 		{"program", Result{PersonID: "p", ProgramID: "g"}, ""},
 	}

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"time"
@@ -60,22 +61,34 @@ func (s *Service) updatePerson(ctx context.Context, p domain.Person, expiry func
 	if err := p.Validate(); err != nil {
 		return domain.Person{}, err
 	}
-	existing, err := s.persons.Get(ctx, p.ID)
-	if err != nil {
-		return domain.Person{}, err
+	// Conditional write with re-read on domain.ErrStale; see Resource.update.
+	sourcedID := p.SourcedID
+	for attempt := 1; ; attempt++ {
+		existing, err := s.persons.Get(ctx, p.ID)
+		if err != nil {
+			return domain.Person{}, err
+		}
+		p.ExpiresAt = expiry(existing)
+		p.CreatedAt = existing.CreatedAt
+		p.UpdatedAt = s.now().UTC()
+		p.SourcedID = cmp.Or(sourcedID, existing.SourcedID)
+		err = s.persons.Update(ctx, p, existing.ExpiresAt)
+		if errors.Is(err, domain.ErrStale) && attempt < maxStaleRetries {
+			continue
+		}
+		if err != nil {
+			return domain.Person{}, err
+		}
+		s.emit(ctx, "person.updated", "person", p.ID, p)
+		return p, nil
 	}
-	p.ExpiresAt = expiry(existing)
-	p.CreatedAt = existing.CreatedAt
-	p.UpdatedAt = s.now().UTC()
-	if p.SourcedID == "" {
-		p.SourcedID = existing.SourcedID
-	}
-	if err := s.persons.Update(ctx, p); err != nil {
-		return domain.Person{}, err
-	}
-	s.emit(ctx, "person.updated", "person", p.ID, p)
-	return p, nil
 }
+
+// maxStaleRetries bounds how often an update re-reads and retries after its
+// conditional write lost to a concurrent expiry change. Each retry needs a
+// fresh concurrent writer to fail again, so a handful is plenty; past it the
+// caller gets domain.ErrStale (a 409 conflict).
+const maxStaleRetries = 5
 
 // UpsertPersonBySourcedID creates or updates by business key, so repeated
 // deliveries of the same record (bus redelivery, bulk re-import) converge to

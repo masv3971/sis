@@ -1,5 +1,7 @@
 package domain
 
+import "math"
+
 // Organization is an institution or an organizational unit within one.
 type Organization struct {
 	Base
@@ -174,6 +176,9 @@ func (r *Result) Validate() error {
 	}
 	if (r.CourseID == "") == (r.ProgramID == "") {
 		return &ValidationError{Field: "courseId", Msg: "exactly one of courseId and programId is required"}
+	}
+	if math.IsNaN(r.Credits) || math.IsInf(r.Credits, 0) {
+		return &ValidationError{Field: "credits", Msg: "must be a finite number"}
 	}
 	if r.Credits < 0 {
 		return &ValidationError{Field: "credits", Msg: "must not be negative"}

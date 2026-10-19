@@ -66,7 +66,7 @@ func TestPersonRepository_CRUD(t *testing.T) {
 
 	p.GivenName = "Augusta"
 	p.UpdatedAt = time.Now().UTC()
-	if err := repo.Update(ctx, p); err != nil {
+	if err := repo.Update(ctx, p, nil); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 	got, _ = repo.Get(ctx, p.ID)
@@ -107,7 +107,7 @@ func TestUpdateSourcedIDCollisionIsConflict(t *testing.T) {
 		t.Fatalf("create b: %v", err)
 	}
 	b.SourcedID = a.SourcedID
-	if err := persons.Update(ctx, b); !errors.Is(err, domain.ErrConflict) {
+	if err := persons.Update(ctx, b, nil); !errors.Is(err, domain.ErrConflict) {
 		t.Fatalf("person update: expected ErrConflict, got %v", err)
 	}
 
@@ -122,7 +122,7 @@ func TestUpdateSourcedIDCollisionIsConflict(t *testing.T) {
 		t.Fatalf("create cb: %v", err)
 	}
 	cb.SourcedID = ca.SourcedID
-	if err := courses.Update(ctx, cb); !errors.Is(err, domain.ErrConflict) {
+	if err := courses.Update(ctx, cb, nil); !errors.Is(err, domain.ErrConflict) {
 		t.Fatalf("doc update: expected ErrConflict, got %v", err)
 	}
 }
