@@ -157,7 +157,8 @@ type Result struct {
 	OfferingID string `json:"offeringId,omitempty"`
 	// Grade is the grade as awarded, e.g. "A", "VG", "Pass".
 	Grade string `json:"grade,omitempty"`
-	// Credits awarded, e.g. ECTS.
+	// Credits awarded, in ECTS credits. Credits in other systems (e.g.
+	// local points) are not stored here.
 	Credits float64 `json:"credits,omitempty"`
 	// ResultDate is the ISO 8601 date the result was awarded.
 	ResultDate string `json:"resultDate,omitempty"`

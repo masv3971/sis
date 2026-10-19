@@ -55,6 +55,34 @@ func TestNodesResolveReferences(t *testing.T) {
 	}
 }
 
+// TestNodesCompleteTypedReferences checks an inline reference carrying more
+// than its id (e.g. its type) is completed from the indexed definition,
+// keeping its own inline properties, without altering the document.
+func TestNodesCompleteTypedReferences(t *testing.T) {
+	doc, err := Parse([]byte(`{
+		"issuer": {"id": "urn:org:1", "type": "Organisation", "altLabel": "U"},
+		"defs": [{"id": "urn:org:1", "type": "Organisation", "legalName": {"en": "Uni"}, "altLabel": "Full",
+			"parentOrganisation": {"id": "urn:org:0", "type": "Organisation"}},
+			{"id": "urn:org:0", "type": "Organisation", "legalName": "Root"}]
+	}`), "data")
+	if err != nil {
+		t.Fatal(err)
+	}
+	iss := doc.Root.Node("issuer")
+	if iss == nil || iss.Text("legalName") != "Uni" || !iss.Is("Organisation") {
+		t.Fatalf("typed reference not completed: %+v", iss)
+	}
+	if got := iss.Text("altLabel"); got != "U" {
+		t.Errorf("inline property must win over the indexed one: altLabel = %q", got)
+	}
+	if p := iss.Node("parentOrganisation"); p == nil || p.Text("legalName") != "Root" {
+		t.Errorf("nested typed reference not completed: %+v", p)
+	}
+	if def := doc.Root.Nodes("defs")[0]; def.Text("altLabel") != "Full" {
+		t.Errorf("indexed definition was modified: altLabel = %q", def.Text("altLabel"))
+	}
+}
+
 func TestParseRejectsNonObject(t *testing.T) {
 	if _, err := Parse([]byte(`[1]`), "data"); err == nil {
 		t.Fatal("array root must be rejected")

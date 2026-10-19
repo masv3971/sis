@@ -230,6 +230,85 @@ func TestParseELMRejectsNonFiniteCredits(t *testing.T) {
 	}
 }
 
+// TestParseELMOnlyMapsECTSCredits checks credits in a framework other than
+// ECTS (or with none) are never published as ECTS: they are skipped with a
+// warning, and an ECTS value on the specification is used instead.
+func TestParseELMOnlyMapsECTSCredits(t *testing.T) {
+	const local = `{"point": "9", "framework": {"id": "urn:local:hp", "prefLabel": "Local points"}}`
+	const ects = `{"point": "7,5", "framework": {"id": "` + ectsConcept + `"}}`
+	cases := []struct {
+		name, props string
+		want        float64
+		warnings    int
+	}{
+		{"local only", `"creditReceived": [` + local + `]`, 0, 1},
+		{"no framework", `"creditReceived": {"point": "9"}`, 0, 1},
+		{"local received, ECTS specified", `"creditReceived": [` + local + `],
+			"specifiedBy": {"id": "urn:spec:x", "title": "Course X", "creditPoint": ` + ects + `}`, 7.5, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			doc := `{"credentialSubject": {"givenName": "A", "familyName": "B",
+				"hasClaim": {"type": "LearningAchievement", "title": "Course X", ` + tc.props + `}}}`
+			c := newClient(t)
+			parsed, err := c.Parse(FormatELM, []byte(doc), "data")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := parsed.Bundle.Results[0].Credits; got != tc.want {
+				t.Fatalf("credits = %v, want %v", got, tc.want)
+			}
+			if len(parsed.Warnings) != tc.warnings {
+				t.Fatalf("warnings = %v, want %d", parsed.Warnings, tc.warnings)
+			}
+			out, err := c.Render("oeapi", parsed.Bundle)
+			if err != nil {
+				t.Fatal(err)
+			}
+			raw, err := json.Marshal(out)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.want == 0 && bytes.Contains(raw, []byte(`"ects"`)) {
+				t.Fatalf("non-ECTS credits published as ects: %s", raw)
+			}
+		})
+	}
+}
+
+// TestParseELMTypedReference checks an organisation given as a typed
+// reference ({"id", "type"}) is mapped from its definition elsewhere in the
+// document, keeping its parent link, instead of being skipped for lacking a
+// name.
+func TestParseELMTypedReference(t *testing.T) {
+	doc := `{"issuer": {"id": "urn:org:ifm", "type": "Organisation"},
+		"credentialSubject": {"givenName": "A", "familyName": "B",
+			"hasClaim": {"type": "LearningAchievement", "title": "Course X",
+				"specifiedBy": {"id": "urn:spec:x", "type": "LearningAchievementSpecification"}}},
+		"orgs": [{"id": "urn:org:ifm", "type": "Organisation", "legalName": "IFM", "parentOrganisation": {"id": "urn:org:liu", "type": "Organisation"}},
+			{"id": "urn:org:liu", "type": "Organisation", "legalName": "LiU"}],
+		"specs": [{"id": "urn:spec:x", "type": "LearningAchievementSpecification", "title": "Spec title",
+			"identifier": {"notation": "X1"}}]}`
+	parsed, err := newClient(t).Parse(FormatELM, []byte(doc), "data")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := parsed.Bundle
+	orgs := map[string]*domain.Organization{}
+	for _, o := range b.Organizations {
+		orgs[o.SourcedID] = o
+	}
+	if len(orgs) != 2 || orgs["urn:org:ifm"] == nil || orgs["urn:org:ifm"].Name != "IFM" || orgs["urn:org:ifm"].ParentID != "urn:org:liu" {
+		t.Fatalf("organizations = %+v, warnings = %v", b.Organizations, parsed.Warnings)
+	}
+	if len(b.Courses) != 1 || b.Courses[0].Title != "Spec title" || b.Courses[0].Code != "X1" || b.Courses[0].OrgID != "urn:org:ifm" {
+		t.Fatalf("courses = %+v", b.Courses)
+	}
+	if len(parsed.Warnings) != 0 {
+		t.Fatalf("warnings = %v", parsed.Warnings)
+	}
+}
+
 // TestParseELMOrganisationCycle checks a parent cycle terminates.
 func TestParseELMOrganisationCycle(t *testing.T) {
 	doc := `{"issuer": {"id": "urn:a", "legalName": "A", "parentOrganisation": {"id": "urn:b", "legalName": "B", "parentOrganisation": "urn:a"}},

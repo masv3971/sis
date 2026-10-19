@@ -361,27 +361,28 @@ func (x *elmBuilder) session(act *elm.Node) string {
 	return sid
 }
 
-// credits returns the credits received for an achievement, else the credit
-// points of its specification, preferring an ECTS value.
+// credits returns the ECTS credits received for an achievement, else the
+// ECTS credit points of its specification. Result.Credits is ECTS by
+// definition (OEAPI publishes it as "ects"), so credit points in any other
+// framework, or without one, are never used: when no ECTS value is found
+// they are reported in a warning and the result carries no credits.
 func (x *elmBuilder) credits(ach, spec *elm.Node) float64 {
+	var skipped []string
 	pick := func(ns []*elm.Node) (float64, bool) {
-		var fallback float64
-		found := false
 		for _, c := range ns {
 			// ParseFloat accepts "NaN" and "Inf", which are not credits
 			// (and not JSON-encodable): skip them like negative values.
 			v, err := strconv.ParseFloat(strings.ReplaceAll(c.String("point"), ",", "."), 64)
 			if err != nil || v < 0 || math.IsNaN(v) || math.IsInf(v, 0) {
+				x.warn(c.Path, "credit point %q is not a non-negative number; skipped", c.String("point"))
 				continue
 			}
 			if isECTS(c.Node("framework")) {
 				return v, true
 			}
-			if !found {
-				fallback, found = v, true
-			}
+			skipped = append(skipped, c.Path)
 		}
-		return fallback, found
+		return 0, false
 	}
 	if v, ok := pick(ach.Nodes("creditReceived")); ok {
 		return v
@@ -390,6 +391,9 @@ func (x *elmBuilder) credits(ach, spec *elm.Node) float64 {
 		if v, ok := pick(spec.Nodes("creditPoint")); ok {
 			return v
 		}
+	}
+	for _, p := range skipped {
+		x.warn(p, "credit point is not in ECTS (only ECTS credits are mapped); skipped")
 	}
 	return 0
 }

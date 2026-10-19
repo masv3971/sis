@@ -15,6 +15,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -78,6 +79,36 @@ func (d *Document) indexNodes(v any) {
 	}
 }
 
+// complete returns obj with the properties of the indexed definition of its
+// id that obj lacks. obj's own properties win, so an inline override is
+// kept. obj is returned as is when it has no id, no definition, or nothing
+// to add (e.g. it is the indexed definition); otherwise a copy is returned
+// and the document is never modified.
+func (d *Document) complete(obj map[string]any) map[string]any {
+	id, _ := obj["id"].(string)
+	if id == "" {
+		return obj
+	}
+	full, ok := d.index[id]
+	if !ok {
+		return obj
+	}
+	var merged map[string]any
+	for k, v := range full {
+		if _, has := obj[k]; has {
+			continue
+		}
+		if merged == nil {
+			merged = maps.Clone(obj)
+		}
+		merged[k] = v
+	}
+	if merged == nil {
+		return obj
+	}
+	return merged
+}
+
 // ID returns the node's id, or "".
 func (n *Node) ID() string {
 	s, _ := n.obj["id"].(string)
@@ -105,10 +136,12 @@ func (n *Node) Is(t string) bool { return slices.Contains(n.Types(), t) }
 // Has reports whether the property is present and not null.
 func (n *Node) Has(prop string) bool { return n.obj[prop] != nil }
 
-// Nodes returns the nodes held by prop, one or many. Inline objects are used
-// as they are (or, if they are bare {"id"} stubs, resolved); string values
-// are resolved as id references. References that resolve to nothing in the
-// document become nodes holding only their id.
+// Nodes returns the nodes held by prop, one or many. Inline objects with an
+// id are completed from the document's definition of that id: a typed
+// reference such as {"id": "urn:org:1", "type": "Organisation"} gains the
+// indexed legalName etc., while its own inline properties win. String
+// values are resolved as id references. References that resolve to nothing
+// in the document become nodes holding only their id.
 func (n *Node) Nodes(prop string) []*Node {
 	var out []*Node
 	vals := many(n.obj[prop])
@@ -119,12 +152,7 @@ func (n *Node) Nodes(prop string) []*Node {
 		}
 		switch t := v.(type) {
 		case map[string]any:
-			if id, ok := t["id"].(string); ok && len(t) == 1 {
-				if full, ok := n.doc.index[id]; ok {
-					t = full
-				}
-			}
-			out = append(out, &Node{doc: n.doc, obj: t, Path: p})
+			out = append(out, &Node{doc: n.doc, obj: n.doc.complete(t), Path: p})
 		case string:
 			obj, ok := n.doc.index[t]
 			if !ok {
