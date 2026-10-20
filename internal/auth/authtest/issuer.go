@@ -34,6 +34,9 @@ type Issuer struct {
 	JWKSHits atomic.Int64
 	// Down makes discovery and JWKS answer 503.
 	Down atomic.Bool
+	// JWKSURI, when set before the first request, replaces the jwks_uri
+	// that discovery advertises.
+	JWKSURI string
 	// srv is set for TLS issuers, to expose their certificate.
 	srv *httptest.Server
 }
@@ -82,7 +85,11 @@ func newIssuer(t testing.TB, useTLS bool) *Issuer {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
-		writeJSON(w, map[string]any{"issuer": iss.URL, "jwks_uri": iss.URL + "/certs"})
+		jwks := iss.URL + "/certs"
+		if iss.JWKSURI != "" {
+			jwks = iss.JWKSURI
+		}
+		writeJSON(w, map[string]any{"issuer": iss.URL, "jwks_uri": jwks})
 	})
 	mux.HandleFunc("/realms/sis/certs", func(w http.ResponseWriter, _ *http.Request) {
 		iss.JWKSHits.Add(1)

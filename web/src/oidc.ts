@@ -20,6 +20,8 @@ interface Discovery {
 // to the issuer and back, but not outlive the tab.
 const PENDING_KEY = "sis_oidc_pending";
 
+const TOKEN_TIMEOUT_MS = 15_000;
+
 interface Pending {
   state: string;
   verifier: string;
@@ -79,7 +81,9 @@ export async function signIn(cfg: AuthConfig): Promise<void> {
     redirectUri: redirectUri(),
   };
   sessionStorage.setItem(PENDING_KEY, JSON.stringify(pending));
-  const q = new URLSearchParams({
+  // The endpoint may already carry a query (e.g. ?tenant=sis); merge into it.
+  const u = new URL(d.authorization_endpoint);
+  const q = {
     response_type: "code",
     client_id: cfg.client_id,
     redirect_uri: pending.redirectUri,
@@ -87,8 +91,9 @@ export async function signIn(cfg: AuthConfig): Promise<void> {
     state: pending.state,
     code_challenge: await challenge(pending.verifier),
     code_challenge_method: "S256",
-  });
-  location.assign(`${d.authorization_endpoint}?${q}`);
+  };
+  for (const [k, v] of Object.entries(q)) u.searchParams.set(k, v);
+  location.assign(u.toString());
 }
 
 // completeSignIn finishes a sign-in when the issuer has redirected back here
@@ -113,19 +118,30 @@ export async function completeSignIn(): Promise<string | null> {
   // crafted link cannot sign the user in as someone else.
   if (!state || state !== pending.state) throw new Error("Sign-in failed: state mismatch. Try again.");
 
-  const res = await fetch(pending.tokenEndpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "authorization_code",
-      code: code!,
-      redirect_uri: pending.redirectUri,
-      client_id: pending.clientId,
-      code_verifier: pending.verifier,
-    }),
-  });
-  if (!res.ok) throw new Error(`Sign-in failed: the sign-in service answered ${res.status}.`);
-  const data = (await res.json()) as { access_token?: unknown };
+  let data: { access_token?: unknown };
+  try {
+    const res = await fetch(pending.tokenEndpoint, {
+      method: "POST",
+      // The app is not rendered until this settles; a stalled issuer must
+      // not leave the page blank.
+      signal: AbortSignal.timeout(TOKEN_TIMEOUT_MS),
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "authorization_code",
+        code: code!,
+        redirect_uri: pending.redirectUri,
+        client_id: pending.clientId,
+        code_verifier: pending.verifier,
+      }),
+    });
+    if (!res.ok) throw new Error(`Sign-in failed: the sign-in service answered ${res.status}.`);
+    data = (await res.json()) as { access_token?: unknown };
+  } catch (e) {
+    if ((e as Error).name === "TimeoutError") {
+      throw new Error("Sign-in failed: the sign-in service did not answer in time. Try again.");
+    }
+    throw e;
+  }
   if (typeof data.access_token !== "string" || !data.access_token) {
     throw new Error("Sign-in failed: no access token in the response.");
   }

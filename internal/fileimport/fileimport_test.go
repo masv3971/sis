@@ -100,6 +100,9 @@ func TestDecodeRejects(t *testing.T) {
 		"unknown in item": `{"persons": [{"sourcedId": "a", "givenName": "A", "familyName": "B", "status": "active", "shoeSize": 42}]}`,
 		"two values":      `{} {}`,
 		"not json":        `persons:`,
+		"null org":        `{"organizations": [null]}`,
+		"null course":     `{"courses": [null]}`,
+		"null result":     `{"results": [{"sourcedId": "r"}, null]}`,
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {

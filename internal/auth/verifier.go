@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"slices"
 	"strings"
@@ -75,6 +76,8 @@ type Verifier struct {
 type issuer struct {
 	cfg        model.Issuer
 	httpClient *http.Client
+	// httpsOnly (production) rejects an http jwks_uri from discovery.
+	httpsOnly bool
 
 	mu       sync.Mutex
 	verifier *coreoidc.IDTokenVerifier
@@ -85,7 +88,8 @@ type issuer struct {
 func New(_ context.Context, cfg *model.Cfg, log *logger.Log) (*Verifier, error) {
 	log = log.New("auth")
 	v := &Verifier{issuers: map[string]*issuer{}, log: log}
-	hc, err := newHTTPClient(cfg.SIS.Auth.CAFiles)
+	httpsOnly := cfg.Common.Production
+	hc, err := newHTTPClient(cfg.SIS.Auth.CAFiles, httpsOnly)
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +97,7 @@ func New(_ context.Context, cfg *model.Cfg, log *logger.Log) (*Verifier, error) 
 		if _, dup := v.issuers[ic.Issuer]; dup {
 			return nil, fmt.Errorf("auth: issuer %q listed twice", ic.Issuer)
 		}
-		v.issuers[ic.Issuer] = &issuer{cfg: ic, httpClient: hc}
+		v.issuers[ic.Issuer] = &issuer{cfg: ic, httpClient: hc, httpsOnly: httpsOnly}
 		log.Info("trusting token issuer", "issuer", ic.Issuer, "audience", ic.Audience)
 	}
 	if len(v.issuers) == 0 {
@@ -103,10 +107,23 @@ func New(_ context.Context, cfg *model.Cfg, log *logger.Log) (*Verifier, error) 
 }
 
 // newHTTPClient returns the client for discovery and JWKS requests. caFiles
-// are trusted in addition to the system roots, e.g. a development CA.
-func newHTTPClient(caFiles []string) (*http.Client, error) {
+// are trusted in addition to the system roots, e.g. a development CA. With
+// httpsOnly, redirects to anything but https are refused.
+func newHTTPClient(caFiles []string, httpsOnly bool) (*http.Client, error) {
+	hc := &http.Client{Timeout: httpTimeout}
+	if httpsOnly {
+		hc.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+			if !strings.EqualFold(req.URL.Scheme, "https") {
+				return fmt.Errorf("redirect to %s: https is required in production", req.URL.Redacted())
+			}
+			if len(via) >= 10 {
+				return errors.New("stopped after 10 redirects")
+			}
+			return nil
+		}
+	}
 	if len(caFiles) == 0 {
-		return &http.Client{Timeout: httpTimeout}, nil
+		return hc, nil
 	}
 	pool, err := x509.SystemCertPool()
 	if err != nil {
@@ -123,7 +140,8 @@ func newHTTPClient(caFiles []string) (*http.Client, error) {
 	}
 	tr := http.DefaultTransport.(*http.Transport).Clone()
 	tr.TLSClientConfig = &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}
-	return &http.Client{Timeout: httpTimeout, Transport: tr}, nil
+	hc.Transport = tr
+	return hc, nil
 }
 
 // Verify checks raw was signed by a trusted issuer and is valid now
@@ -185,6 +203,11 @@ func (i *issuer) tokenVerifier(ctx context.Context) (*coreoidc.IDTokenVerifier, 
 		if jwksURL, err = discoverJWKS(keyCtx, i.httpClient, i.cfg.Issuer); err != nil {
 			return nil, err
 		}
+		// The keys decide who gets in: in production they must not come
+		// over a tamperable channel, whatever discovery advertises.
+		if i.httpsOnly && !isHTTPS(jwksURL) {
+			return nil, fmt.Errorf("discovered jwks_uri %s: https is required in production", jwksURL)
+		}
 	}
 	i.verifier = coreoidc.NewVerifier(i.cfg.Issuer, coreoidc.NewRemoteKeySet(keyCtx, jwksURL), &coreoidc.Config{
 		ClientID: i.cfg.Audience,
@@ -231,6 +254,11 @@ func discoverJWKS(ctx context.Context, hc *http.Client, issuerURL string) (strin
 		return "", fmt.Errorf("discovery %s: no jwks_uri", u)
 	}
 	return doc.JWKSURI, nil
+}
+
+func isHTTPS(raw string) bool {
+	u, err := url.Parse(raw)
+	return err == nil && strings.EqualFold(u.Scheme, "https")
 }
 
 // parseScope reads a scope claim: a space-separated string (RFC 9068), or a

@@ -91,6 +91,17 @@ func Decode(data []byte) (*domain.Bundle, error) {
 	if err := dec.Decode(new(json.RawMessage)); !errors.Is(err, io.EOF) {
 		return nil, errors.New("parse: more than one JSON value")
 	}
+	if err := errors.Join(
+		noNulls("organizations", f.Organizations),
+		noNulls("academicSessions", f.AcademicSessions),
+		noNulls("courses", f.Courses),
+		noNulls("programs", f.Programs),
+		noNulls("offerings", f.Offerings),
+		noNulls("enrollments", f.Enrollments),
+		noNulls("results", f.Results),
+	); err != nil {
+		return nil, err
+	}
 	// Ids are SIS's to assign; a file cannot pin them. (Populate already
 	// clears entity ids, and the services set timestamps and expiry.)
 	for i := range f.Persons {
@@ -106,4 +117,14 @@ func Decode(data []byte) (*domain.Bundle, error) {
 		Enrollments:      f.Enrollments,
 		Results:          f.Results,
 	}, nil
+}
+
+// noNulls rejects null array elements, which Populate cannot handle.
+func noNulls[T any](name string, list []*T) error {
+	for i, e := range list {
+		if e == nil {
+			return fmt.Errorf("parse: %s[%d] is null", name, i)
+		}
+	}
+	return nil
 }

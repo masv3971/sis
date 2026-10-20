@@ -136,6 +136,8 @@ func loadFile(path string, cfg *model.Cfg) error {
 // reached over https (its keys decide who gets in, so they must not be
 // fetched over a tamperable channel) and must name an audience (otherwise a
 // token the issuer minted for any other service would be accepted here).
+// A jwks_uri found by discovery, and every redirect, is held to https at
+// run time by internal/auth.
 func checkProduction(cfg *model.Cfg) error {
 	if !cfg.Common.Production {
 		return nil

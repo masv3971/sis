@@ -2,8 +2,13 @@ package auth_test
 
 import (
 	"context"
+	"encoding/pem"
 	"errors"
 	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 	"time"
@@ -200,4 +205,58 @@ func TestNewRejectsDuplicateIssuer(t *testing.T) {
 	if _, err := auth.New(context.Background(), cfg, logger.NewWithWriter("test", false, "error", io.Discard)); err == nil {
 		t.Fatal("expected duplicate issuer error")
 	}
+}
+
+// TestVerifyProductionRequiresHTTPSKeys checks that in production signing
+// keys are never fetched over http, whether discovery advertises an http
+// jwks_uri or an https key URL redirects to http. Outside production both
+// work, so the failure is the scheme check.
+func TestVerifyProductionRequiresHTTPSKeys(t *testing.T) {
+	keys := authtest.NewIssuer(t) // http: serves the keys the tokens are signed with
+	exp := time.Now().Add(time.Hour).Unix()
+
+	verify := func(t *testing.T, production bool, ic model.Issuer, caFile, tok string) error {
+		t.Helper()
+		cfg := &model.Cfg{}
+		cfg.Common.Production = production
+		cfg.SIS.Auth.Issuers = []model.Issuer{ic}
+		cfg.SIS.Auth.CAFiles = []string{caFile}
+		v, err := auth.New(context.Background(), cfg, logger.NewWithWriter("test", false, "error", io.Discard))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = v.Verify(context.Background(), tok)
+		return err
+	}
+
+	t.Run("discovered http jwks_uri", func(t *testing.T) {
+		iss := authtest.NewTLSIssuer(t)
+		iss.JWKSURI = keys.URL + "/certs"
+		tok := keys.Sign(t, map[string]any{"iss": iss.URL, "sub": "x", "aud": "sis", "exp": exp, "scope": "sis.read"})
+		ca := iss.CAFile(t)
+		if err := verify(t, false, iss.Config(), ca, tok); err != nil {
+			t.Fatalf("development: %v", err)
+		}
+		if err := verify(t, true, iss.Config(), ca, tok); !errors.Is(err, auth.ErrInvalidToken) {
+			t.Fatalf("production: expected ErrInvalidToken, got %v", err)
+		}
+	})
+
+	t.Run("redirect to http", func(t *testing.T) {
+		redir := httptest.NewTLSServer(http.RedirectHandler(keys.URL+"/certs", http.StatusFound))
+		t.Cleanup(redir.Close)
+		ca := filepath.Join(t.TempDir(), "ca.pem")
+		if err := os.WriteFile(ca, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: redir.Certificate().Raw}), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		ic := keys.Config()
+		ic.JWKSURL = redir.URL + "/certs"
+		tok := keys.Token(t, "x", "sis.read")
+		if err := verify(t, false, ic, ca, tok); err != nil {
+			t.Fatalf("development: %v", err)
+		}
+		if err := verify(t, true, ic, ca, tok); !errors.Is(err, auth.ErrInvalidToken) {
+			t.Fatalf("production: expected ErrInvalidToken, got %v", err)
+		}
+	})
 }
