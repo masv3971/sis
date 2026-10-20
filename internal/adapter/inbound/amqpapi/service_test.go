@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -361,6 +362,66 @@ func TestReceiverOptionsCapMessageSize(t *testing.T) {
 	o := receiverOptions(model.AMQPAPI{Prefetch: 7, MaxMessageBytes: 1000})
 	if o.Credit != 7 || o.MaxMessageSize != 1000+envelopeBytes {
 		t.Fatalf("options = credit %d, max size %d", o.Credit, o.MaxMessageSize)
+	}
+}
+
+// TestReceiverOptionsRequireUnsettled: settlement reports the outcome, so the
+// broker must not pre-settle deliveries.
+func TestReceiverOptionsRequireUnsettled(t *testing.T) {
+	o := receiverOptions(model.AMQPAPI{Prefetch: 1, MaxMessageBytes: 1})
+	if o.RequestedSenderSettleMode == nil || *o.RequestedSenderSettleMode != amqp.SenderSettleModeUnsettled {
+		t.Fatalf("RequestedSenderSettleMode = %v, want unsettled", o.RequestedSenderSettleMode)
+	}
+}
+
+// TestRejectionIsBounded: an error quoting a huge field name must not make a
+// disposition frame the broker refuses (that would fail the connection).
+func TestRejectionIsBounded(t *testing.T) {
+	f := newFixture(t, auth.ScopeWrite)
+	body := `{"givenName":"A","familyName":"B","status":"active","` + strings.Repeat("x", 200_000) + `":1}`
+	s := f.expect(t, message("person.create", "", body), "rejected")
+	if s.err.Condition != amqp.ErrCondInvalidField || len(s.err.Description) > maxRejectionBytes {
+		t.Fatalf("rejection = %s, %d bytes", s.err.Condition, len(s.err.Description))
+	}
+	var e struct{ Title string }
+	if err := json.Unmarshal([]byte(s.err.Description), &e); err != nil || e.Title == "" {
+		t.Fatalf("description %q: %v", s.err.Description, err)
+	}
+	// A short one keeps its details.
+	s = f.expect(t, message("person.create", "", `{"givenName":"A","familyName":"B","status":"active","bogus":1}`), "rejected")
+	if !strings.Contains(s.err.Description, "bogus") {
+		t.Fatalf("description %q lost its details", s.err.Description)
+	}
+}
+
+// TestBackoffGrowsOverShortLivedLinks: a link that attaches and then fails at
+// once does not reset the backoff.
+func TestBackoffGrowsOverShortLivedLinks(t *testing.T) {
+	minRetryDelay, maxRetryDelay = 10*time.Millisecond, 80*time.Millisecond
+	t.Cleanup(func() { minRetryDelay, maxRetryDelay = time.Second, 30*time.Second })
+	log := logger.NewWithWriter("test", false, "error", io.Discard)
+	dials := make(chan time.Time, 16)
+	dial := func(context.Context) (link, error) {
+		dials <- time.Now()
+		l := newFakeLink()
+		l.fail <- &amqp.LinkError{}
+		return l, nil
+	}
+	ac := model.AMQPAPI{Prefetch: 1, MaxMessageBytes: 1 << 20}
+	s := start(t.Context(), ac, nil, nil, dial, log)
+	t.Cleanup(func() { _ = s.Close(context.Background()) })
+	var at []time.Time
+	for range 5 {
+		select {
+		case d := <-dials:
+			at = append(at, d)
+		case <-time.After(5 * time.Second):
+			t.Fatal("no redial")
+		}
+	}
+	// Delays 10, 20, 40, 80 ms: the fourth gap is at least 80 ms.
+	if gap := at[4].Sub(at[3]); gap < maxRetryDelay {
+		t.Fatalf("fourth redial after %s, want >= %s", gap, maxRetryDelay)
 	}
 }
 

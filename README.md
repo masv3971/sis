@@ -17,7 +17,21 @@ make start                          # sis + postgres + mellon (OIDC test IdP for
 
 Under compose, set `sis.httpserver.web.root: "/web"` (the image's SPA) and
 point `sis.adapter.outbound.postgres.connection_string` at host `postgres`
-instead of `localhost`.
+instead of `localhost`. To consume commands from the compose RabbitMQ (see
+[AMQP 1.0](#amqp-10-write-commands-from-a-broker)), also set:
+
+```yaml
+sis:
+  adapter:
+    inbound:
+      amqpapi:
+        enabled: true
+        url: "amqp://sis:sis@rabbitmq:5672"
+        address: "/queues/sis.commands"
+        scopes: [sis.write]   # dev only: trust messages without a token
+```
+
+and run `make restart` after editing `config.yaml`.
 
 The compose setup includes mellon, a test token issuer on
 <https://localhost:9443> (`realm.json`). It has the machine clients `liu`
@@ -278,7 +292,9 @@ RabbitMQ hands their messages to SIS over 1.0.
 | application property `authorization` (0-9-1: header) | `Bearer <token>`, checked like an API token; needs `sis.write` |
 | `message-id`, `correlation-id` | Optional, logged |
 
-There are no replies. The outcome is how SIS settles the message:
+There are no replies. The outcome is how SIS settles the message, so SIS
+asks the broker to send messages unsettled. A broker that cannot do this
+refuses the link, and SIS keeps retrying the connection.
 
 | Outcome | When | Broker |
 | ------- | ---- | ------ |
@@ -295,12 +311,21 @@ messages are refused when published.
 
 A message without `authorization` is only accepted when
 `sis.adapter.inbound.amqpapi.scopes` is `[sis.write]`. That setting trusts
-everyone who may publish to the queue. Redelivery runs a command again: a
-repeated create gets a conflict and is dead-lettered.
+everyone who may publish to the queue.
+
+Redelivery runs a command again (e.g. when the write committed but the
+settlement was lost). A repeated create only gets a conflict, and is
+dead-lettered, when the body carries a stable `id` or `sourcedId` and the
+record still exists. Without both, SIS generates fresh identifiers on every
+attempt, so a redelivered create can store a duplicate record. `message-id`
+is only logged; it does not deduplicate commands. Publishers that need
+exactly-once creates must send an `id` or `sourcedId`.
 
 `make start` runs RabbitMQ (`developer_tools/rabbitmq/`, management UI on
-http://localhost:15672, sis/sis), and the dev config consumes
-`sis.commands` without tokens. To send a command, open the queue
+http://localhost:15673, sis/sis; AMQP on localhost:5673). With the
+`amqpapi` settings from [Quick start](#quick-start) SIS consumes
+`sis.commands` without tokens (`config.yaml.sample` ships with `amqpapi`
+disabled). To send a command, open the queue
 `sis.commands` in the UI and use **Publish message**: set the property
 `type` to `person.create` and paste a person as the payload. Rejected
 messages appear in `sis.commands.dlq`.

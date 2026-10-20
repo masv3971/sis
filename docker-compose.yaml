@@ -55,15 +55,17 @@ services:
   # AMQP 1.0 broker for sis.adapter.inbound.amqpapi. Topology (sis.commands,
   # dead-lettering to sis.commands.dlq) and the user sis/sis come from
   # developer_tools/rabbitmq/definitions.json. Management UI:
-  # http://localhost:15672 (sis/sis).
+  # http://localhost:15673 (sis/sis).
   rabbitmq:
     image: rabbitmq:4-management
     # Started as root, the entrypoint can leave .erlang.cookie unreadable.
     user: rabbitmq
-    # Loopback only: the credentials are public development defaults.
+    # Loopback only: the credentials are public development defaults. Host
+    # ports are off by one from the standard 5672/15672, which VS Code may
+    # already forward from a dev container; inside sisnet they are standard.
     ports:
-      - "127.0.0.1:5672:5672"
-      - "127.0.0.1:15672:15672"
+      - "127.0.0.1:5673:5672"
+      - "127.0.0.1:15673:15672"
     volumes:
       - ./developer_tools/rabbitmq/rabbitmq.conf:/etc/rabbitmq/conf.d/20-sis.conf:ro
       - ./developer_tools/rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro

@@ -26,12 +26,20 @@ import (
 	"github.com/SUNET/sis/pkg/model"
 )
 
-// Reconnect backoff bounds and the time allowed to settle one message.
+// Reconnect backoff bounds, how long a link must stay up before the backoff
+// starts over, and the time allowed to settle one message.
 var (
 	minRetryDelay = time.Second
 	maxRetryDelay = 30 * time.Second
+	stableLink    = time.Minute
 	settleTimeout = 5 * time.Second
 )
+
+// maxRejectionBytes bounds the description of a rejection. A disposition
+// travels in one frame and AMQP lets a peer cap frames at 512 bytes; the rest
+// of the frame takes well under 112. A larger frame would fail the whole
+// connection instead of rejecting one message.
+const maxRejectionBytes = 400
 
 // tokenVerifier is the part of *auth.Verifier the consumer needs.
 type tokenVerifier interface {
@@ -93,7 +101,10 @@ func (s *Service) Close(ctx context.Context) error {
 	}
 }
 
-// run keeps one receiver link open, reconnecting with backoff.
+// run keeps one receiver link open, reconnecting with backoff. The backoff
+// starts over only after a link stayed up for stableLink, so a broker that
+// accepts the attach and then drops the link at once is not redialled at the
+// minimum interval forever.
 func (s *Service) run(recvCtx, workCtx context.Context) {
 	defer close(s.done)
 	delay := minRetryDelay
@@ -101,11 +112,14 @@ func (s *Service) run(recvCtx, workCtx context.Context) {
 		l, err := s.dial(recvCtx)
 		if err == nil {
 			s.log.Info("consuming commands", "address", s.cfg.Address, "prefetch", s.cfg.Prefetch)
-			delay = minRetryDelay
+			up := time.Now()
 			err = s.consume(recvCtx, workCtx, l)
 			closeCtx, cancel := context.WithTimeout(context.WithoutCancel(workCtx), settleTimeout)
 			_ = l.Close(closeCtx)
 			cancel()
+			if time.Since(up) >= stableLink {
+				delay = minRetryDelay
+			}
 		}
 		if recvCtx.Err() != nil {
 			return
@@ -206,9 +220,17 @@ func (s *Service) process(ctx context.Context, l link, msg *amqp.Message) error 
 }
 
 // rejection describes a client error for the dead-lettered message. The
-// detail of a classified *helpers.Error is safe to return.
+// detail of a classified *helpers.Error is safe to return. A description
+// above maxRejectionBytes (e.g. a decoder error quoting a huge field name)
+// keeps only the title.
 func rejection(e *helpers.Error) *amqp.Error {
-	desc, _ := json.Marshal(e)
+	desc, err := json.Marshal(e)
+	if err != nil || len(desc) > maxRejectionBytes {
+		desc, err = json.Marshal(&helpers.Error{Title: e.Title, Err: "details omitted: too long"})
+		if err != nil || len(desc) > maxRejectionBytes {
+			desc = []byte(`{"title":"rejected"}`)
+		}
+	}
 	cond := amqp.ErrCondInvalidField
 	switch e.Status() {
 	case http.StatusUnauthorized, http.StatusForbidden:

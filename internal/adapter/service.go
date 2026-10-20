@@ -15,6 +15,7 @@ package adapter
 import (
 	"context"
 	"errors"
+	"sync"
 
 	"github.com/SUNET/sis/internal/adapter/inbound/amqpapi"
 	"github.com/SUNET/sis/internal/adapter/outbound/events"
@@ -159,23 +160,30 @@ func New(ctx context.Context, cfg *model.Cfg, log *logger.Log) (*Service, error)
 // persistence. Errors from every stage are joined so the caller sees every
 // failure.
 //
-// The whole teardown is bounded by ctx: if the HTTP drain hits the deadline,
+// The inbound transports (HTTP, AMQP) are closed at the same time: both stop
+// taking work at once and drain within the same grace period, so a long HTTP
+// request cannot use it up while AMQP keeps dispatching commands.
+//
+// The whole teardown is bounded by ctx: if a drain hits the deadline,
 // httpserver.Close cancels in-flight request contexts (aborting their
-// postgres queries) and force-closes connections, and postgres.Close returns
+// postgres queries) and force-closes connections, amqpapi.Close cancels the
+// commands in flight (the broker redelivers them), and postgres.Close returns
 // on ctx.Done rather than blocking on a still-borrowed connection.
 func (s *Service) Close(ctx context.Context) error {
 	s.log.Info("stopping adapters")
-	var errs []error
+	var inbound []interface{ Close(context.Context) error }
 	if s.inbound.http != nil {
-		if err := s.inbound.http.Close(ctx); err != nil {
-			errs = append(errs, err)
-		}
+		inbound = append(inbound, s.inbound.http)
 	}
 	if s.inbound.amqp != nil {
-		if err := s.inbound.amqp.Close(ctx); err != nil {
-			errs = append(errs, err)
-		}
+		inbound = append(inbound, s.inbound.amqp)
 	}
+	errs := make([]error, len(inbound))
+	var wg sync.WaitGroup
+	for i, svc := range inbound {
+		wg.Go(func() { errs[i] = svc.Close(ctx) })
+	}
+	wg.Wait()
 	if s.sweeper != nil {
 		if err := s.sweeper.Close(ctx); err != nil {
 			errs = append(errs, err)

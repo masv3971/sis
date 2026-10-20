@@ -97,10 +97,17 @@ func newDialer(ac model.AMQPAPI) (dialFunc, error) {
 // read into memory before the body cap or the token is checked. A delivery
 // above the cap closes the link (message-size-exceeded): the broker returns
 // the message, and its delivery limit dead-letters it.
+//
+// The sender (broker) must send deliveries unsettled: settlement is how SIS
+// reports the outcome, and go-amqp's Accept/Reject/Modify are silent no-ops
+// on a message that arrived settled, so a failed command would be lost while
+// logged as redelivered. Requesting the mode makes the attach fail when the
+// broker cannot honour it.
 func receiverOptions(ac model.AMQPAPI) *amqp.ReceiverOptions {
 	return &amqp.ReceiverOptions{
-		Credit:         int32(ac.Prefetch),                         //nolint:gosec // bounded by newDialer
-		MaxMessageSize: uint64(ac.MaxMessageBytes) + envelopeBytes, //nolint:gosec // validated gt=0
+		Credit:                    int32(ac.Prefetch),                         //nolint:gosec // bounded by newDialer
+		MaxMessageSize:            uint64(ac.MaxMessageBytes) + envelopeBytes, //nolint:gosec // validated gt=0
+		RequestedSenderSettleMode: new(amqp.SenderSettleModeUnsettled),
 	}
 }
 
