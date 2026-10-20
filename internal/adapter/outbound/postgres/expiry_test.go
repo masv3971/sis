@@ -21,7 +21,7 @@ func TestExpiry(t *testing.T) {
 	past := now.Add(-time.Minute)
 
 	courses := postgres.NewDocRepo[domain.Course](svc)
-	c := &domain.Course{Base: domain.Base{ID: "xc-" + suffix, SourcedID: "xcs-" + suffix, CreatedAt: now, UpdatedAt: now, ExpiresAt: &past}, Title: "A"}
+	c := &domain.Course{ID: "xc-" + suffix, SourcedID: "xcs-" + suffix, CreatedAt: now, UpdatedAt: now, ExpiresAt: &past, Title: "A"}
 	t.Cleanup(func() {
 		_, _ = courses.DeleteExpired(ctx, time.Now().Add(time.Hour))
 		_ = courses.Delete(ctx, "xc2-"+suffix)
@@ -43,7 +43,7 @@ func TestExpiry(t *testing.T) {
 	}
 
 	// Reusing the sourcedId replaces the expired row.
-	c2 := &domain.Course{Base: domain.Base{ID: "xc2-" + suffix, SourcedID: c.SourcedID, CreatedAt: now, UpdatedAt: now}, Title: "B"}
+	c2 := &domain.Course{ID: "xc2-" + suffix, SourcedID: c.SourcedID, CreatedAt: now, UpdatedAt: now, Title: "B"}
 	if err := courses.Create(ctx, c2); err != nil {
 		t.Fatalf("create over expired: %v", err)
 	}
@@ -53,7 +53,7 @@ func TestExpiry(t *testing.T) {
 	}
 
 	// DeleteExpired returns the expired ids.
-	c3 := &domain.Course{Base: domain.Base{ID: "xc3-" + suffix, SourcedID: "xcs3-" + suffix, CreatedAt: now, UpdatedAt: now, ExpiresAt: &past}, Title: "C"}
+	c3 := &domain.Course{ID: "xc3-" + suffix, SourcedID: "xcs3-" + suffix, CreatedAt: now, UpdatedAt: now, ExpiresAt: &past, Title: "C"}
 	if err := courses.Create(ctx, c3); err != nil {
 		t.Fatalf("create c3: %v", err)
 	}
@@ -88,7 +88,7 @@ func TestUpdateIsConditionalOnExpiry(t *testing.T) {
 	exp := now.Add(time.Hour)
 
 	courses := postgres.NewDocRepo[domain.Course](svc)
-	c := &domain.Course{Base: domain.Base{ID: "cc-" + suffix, SourcedID: "ccs-" + suffix, CreatedAt: now, UpdatedAt: now, ExpiresAt: &exp}, Title: "A"}
+	c := &domain.Course{ID: "cc-" + suffix, SourcedID: "ccs-" + suffix, CreatedAt: now, UpdatedAt: now, ExpiresAt: &exp, Title: "A"}
 	t.Cleanup(func() { _ = courses.Delete(context.Background(), c.ID) })
 	if err := courses.Create(ctx, c); err != nil {
 		t.Fatal(err)
@@ -103,7 +103,7 @@ func TestUpdateIsConditionalOnExpiry(t *testing.T) {
 	if err := courses.Update(ctx, c, &exp); err != nil {
 		t.Fatalf("doc: matching precondition: %v", err)
 	}
-	missing := &domain.Course{Base: domain.Base{ID: "cc-missing-" + suffix, SourcedID: "ccm-" + suffix}, Title: "M"}
+	missing := &domain.Course{ID: "cc-missing-" + suffix, SourcedID: "ccm-" + suffix, Title: "M"}
 	if err := courses.Update(ctx, missing, nil); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("doc: missing row: %v", err)
 	}

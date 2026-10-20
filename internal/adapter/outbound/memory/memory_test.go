@@ -88,12 +88,12 @@ func TestPersonListStableForSameName(t *testing.T) {
 func TestDocRepoUpdateRejectsForeignSourcedID(t *testing.T) {
 	ctx := context.Background()
 	r := NewDocRepo[domain.Course]()
-	a := &domain.Course{Base: domain.Base{ID: "1", SourcedID: "a"}, Title: "A"}
-	b := &domain.Course{Base: domain.Base{ID: "2", SourcedID: "b"}, Title: "B"}
+	a := &domain.Course{ID: "1", SourcedID: "a", Title: "A"}
+	b := &domain.Course{ID: "2", SourcedID: "b", Title: "B"}
 	_ = r.Create(ctx, a)
 	_ = r.Create(ctx, b)
 
-	steal := &domain.Course{Base: domain.Base{ID: "2", SourcedID: "a"}, Title: "B"}
+	steal := &domain.Course{ID: "2", SourcedID: "a", Title: "B"}
 	if err := r.Update(ctx, steal, nil); !errors.Is(err, domain.ErrConflict) {
 		t.Fatalf("expected ErrConflict, got %v", err)
 	}
@@ -110,12 +110,12 @@ func TestDocRepoUpdateRejectsForeignSourcedID(t *testing.T) {
 func TestDocRepoUpdateMarshalFailurePreservesIndex(t *testing.T) {
 	ctx := context.Background()
 	r := NewDocRepo[domain.Course]()
-	if err := r.Create(ctx, &domain.Course{Base: domain.Base{ID: "1", SourcedID: "a"}, Title: "A"}); err != nil {
+	if err := r.Create(ctx, &domain.Course{ID: "1", SourcedID: "a", Title: "A"}); err != nil {
 		t.Fatal(err)
 	}
 
 	// Year 10000 is outside the RFC 3339 range, so json.Marshal fails.
-	bad := &domain.Course{Base: domain.Base{ID: "1", SourcedID: "b", UpdatedAt: time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC)}, Title: "B"}
+	bad := &domain.Course{ID: "1", SourcedID: "b", UpdatedAt: time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC), Title: "B"}
 	if err := r.Update(ctx, bad, nil); err == nil {
 		t.Fatal("expected marshal error")
 	}

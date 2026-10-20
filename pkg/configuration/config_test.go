@@ -55,6 +55,44 @@ func TestNewLoadsFileAndDefaults(t *testing.T) {
 	if cfg.SIS.Adapter.Outbound.Events.URL != "nats://localhost:4222" {
 		t.Fatalf("expected default events url, got %q", cfg.SIS.Adapter.Outbound.Events.URL)
 	}
+	if a := in.AMQPAPI; a.Enabled || a.Prefetch != 10 || a.MaxMessageBytes != 5<<20 {
+		t.Fatalf("unexpected amqpapi defaults: %+v", a)
+	}
+}
+
+func TestNewAMQPAPIRules(t *testing.T) {
+	amqp := func(prod bool, body string) string {
+		s := ""
+		if prod {
+			s = "common:\n  production: true\n"
+		}
+		return s + "sis:\n  adapter:\n    inbound:\n      amqpapi:\n" + body
+	}
+	cases := []struct {
+		name    string
+		body    string
+		wantErr string
+	}{
+		{"disabled needs nothing", amqp(true, "        enabled: false\n"), ""},
+		{"enabled needs url", amqp(false, "        enabled: true\n        address: q\n"), "url"},
+		{"enabled needs address", amqp(false, "        enabled: true\n        url: amqp://b\n"), "address"},
+		{"dev allows amqp", amqp(false, "        enabled: true\n        url: amqp://b\n        address: q\n"), ""},
+		{"prod requires amqps", amqp(true, "        enabled: true\n        url: amqp://b\n        address: q\n"), "amqps"},
+		{"prod amqps ok", amqp(true, "        enabled: true\n        url: amqps://b\n        address: q\n"), ""},
+		{"only sis.write as fallback scope", amqp(false, "        scopes: [sis.read]\n"), "scopes"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Setenv("SIS_CONFIG_YAML", writeConfig(t, c.body))
+			_, err := configuration.New(context.Background(), "sis")
+			switch {
+			case c.wantErr == "" && err != nil:
+				t.Fatalf("unexpected error: %v", err)
+			case c.wantErr != "" && (err == nil || !strings.Contains(err.Error(), c.wantErr)):
+				t.Fatalf("expected error containing %q, got %v", c.wantErr, err)
+			}
+		})
+	}
 }
 
 // TestMaxBelowDefaultRejected checks that a maximum smaller than its default

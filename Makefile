@@ -141,7 +141,7 @@ swagger-fmt: ## Format Swagger annotations
 
 swagger-restadmin: ## Generate /api/v1 Swagger docs into docs/restadmin
 	$(info Generating /api/v1 Swagger docs)
-	$(SWAG) init -d internal/adapter/inbound/restadmin,internal/adapter/inbound/convertapi,internal/readmodel,internal/core/domain,internal/auth,pkg/helpers \
+	$(SWAG) init -d internal/adapter/inbound/restadmin,internal/adapter/inbound/convertapi,internal/command,internal/readmodel,internal/core/domain,internal/auth,pkg/helpers \
 		-g swagger.go --output docs/restadmin $(SWAGGER_OPTS)
 
 swagger-check: swagger ## Fail if the committed Swagger docs are stale

@@ -177,13 +177,33 @@ func NewErrorFromError(err error) *Error {
 // followed by garbage or a second object would be accepted, and trailing
 // bytes past the body limit would never trip the 413.
 func BindJSON(gc *gin.Context, v any) error {
-	err := bindSingleJSON(gc.Request, v)
-	if err == nil {
-		return nil
+	if gc.Request == nil || gc.Request.Body == nil {
+		return DecodeJSON(nil, v)
 	}
-	if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
-		return &Error{Title: ErrTooLarge, HTTPStatus: http.StatusRequestEntityTooLarge}
+	body, err := io.ReadAll(gc.Request.Body)
+	if err != nil {
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
+			return &Error{Title: ErrTooLarge, HTTPStatus: http.StatusRequestEntityTooLarge}
+		}
+		return decodeError(err)
 	}
+	return DecodeJSON(body, v)
+}
+
+// DecodeJSON decodes body, which must hold exactly one JSON value, into v,
+// rejecting unknown fields and checking `binding` tags, and returns a
+// classified *Error (400) on failure. It is BindJSON without the HTTP
+// request, for transports that hand over a whole message (e.g. AMQP).
+func DecodeJSON(body []byte, v any) error {
+	if err := decodeSingleJSON(body, v); err != nil {
+		return decodeError(err)
+	}
+	return nil
+}
+
+// decodeError classifies a body read or decode failure, which is always the
+// client's fault (400).
+func decodeError(err error) error {
 	if e := NewErrorFromError(err); !e.IsUnclassified() {
 		return e
 	}
@@ -192,25 +212,18 @@ func BindJSON(gc *gin.Context, v any) error {
 	return &Error{Title: ErrBadRequest, Err: err.Error(), HTTPStatus: http.StatusBadRequest}
 }
 
-// errTrailingJSON is returned when a request body holds more than one JSON
-// value. It is an *Error so BindJSON passes it through as a 400 unchanged.
+// errTrailingJSON is returned when a body holds more than one JSON value. It
+// is an *Error so DecodeJSON passes it through as a 400 unchanged.
 var errTrailingJSON = &Error{
 	Title:      ErrBadRequest,
 	Err:        "request body must contain a single JSON value",
 	HTTPStatus: http.StatusBadRequest,
 }
 
-// bindSingleJSON reads the entire (size-capped) body, rejects anything but a
-// single JSON value, then decodes and validates it with gin's JSON binding so
-// decoder settings and `binding` tags behave exactly as with ShouldBindJSON.
-func bindSingleJSON(req *http.Request, v any) error {
-	if req == nil || req.Body == nil {
-		return io.EOF
-	}
-	body, err := io.ReadAll(req.Body)
-	if err != nil {
-		return err
-	}
+// decodeSingleJSON rejects anything but a single JSON value, then decodes
+// strictly and validates with gin's validator, so `binding` tags behave as
+// with ShouldBindJSON under EnableJsonDecoderDisallowUnknownFields.
+func decodeSingleJSON(body []byte, v any) error {
 	dec := json.NewDecoder(bytes.NewReader(body))
 	var first json.RawMessage
 	if err := dec.Decode(&first); err != nil {
@@ -219,7 +232,15 @@ func bindSingleJSON(req *http.Request, v any) error {
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
 		return errTrailingJSON
 	}
-	return binding.JSON.BindBody(body, v)
+	strict := json.NewDecoder(bytes.NewReader(first))
+	strict.DisallowUnknownFields()
+	if err := strict.Decode(v); err != nil {
+		return err
+	}
+	if binding.Validator == nil {
+		return nil
+	}
+	return binding.Validator.ValidateStruct(v)
 }
 
 // WriteError classifies err and writes it as the HTTP error response. The detail

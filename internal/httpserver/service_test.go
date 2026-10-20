@@ -20,6 +20,7 @@ import (
 	"github.com/SUNET/sis/internal/adapter/outbound/memory"
 	"github.com/SUNET/sis/internal/auth"
 	"github.com/SUNET/sis/internal/auth/authtest"
+	"github.com/SUNET/sis/internal/command"
 	"github.com/SUNET/sis/internal/core/domain"
 	"github.com/SUNET/sis/internal/core/service"
 	"github.com/SUNET/sis/internal/readmodel"
@@ -41,7 +42,17 @@ func newTestServer(t *testing.T, addr string) (*Service, error) {
 func newTestServerWithCfg(t *testing.T, cfg *model.Cfg) (*Service, error) {
 	t.Helper()
 	log := logger.NewWithWriter("test", false, "error", io.Discard)
-	return New(context.Background(), cfg, newVerifier(t, cfg), &readmodel.Client{}, log)
+	catalog := &readmodel.Client{}
+	return New(context.Background(), cfg, newVerifier(t, cfg), catalog, newCommands(t, catalog), log)
+}
+
+func newCommands(t *testing.T, catalog *readmodel.Client) *command.Client {
+	t.Helper()
+	c, err := command.New(context.Background(), &model.Cfg{}, catalog, logger.NewWithWriter("test", false, "error", io.Discard))
+	if err != nil {
+		t.Fatalf("command.New: %v", err)
+	}
+	return c
 }
 
 func newVerifier(t *testing.T, cfg *model.Cfg) *auth.Verifier {
@@ -60,7 +71,7 @@ func startWithIssuer(t *testing.T, cfg *model.Cfg, catalog *readmodel.Client) (*
 	iss := authtest.NewIssuer(t)
 	cfg.SIS.Auth.Issuers = []model.Issuer{iss.Config()}
 	log := logger.NewWithWriter("test", false, "error", io.Discard)
-	s, err := New(context.Background(), cfg, newVerifier(t, cfg), catalog, log)
+	s, err := New(context.Background(), cfg, newVerifier(t, cfg), catalog, newCommands(t, catalog), log)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

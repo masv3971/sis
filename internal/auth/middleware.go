@@ -13,7 +13,7 @@ const claimsKey = "authClaims"
 // RequireAuth verifies the Bearer token and stores its claims in the context.
 func (v *Verifier) RequireAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		raw, ok := bearerToken(c.GetHeader("Authorization"))
+		raw, ok := BearerToken(c.GetHeader("Authorization"))
 		if !ok {
 			challenge(c, "")
 			abort(c, http.StatusUnauthorized, "missing bearer token")
@@ -35,11 +35,11 @@ func (v *Verifier) RequireAuth() gin.HandlerFunc {
 	}
 }
 
-// bearerToken extracts the credentials from an Authorization header using the
+// BearerToken extracts the credentials from an Authorization header using the
 // Bearer scheme. The scheme name is matched case-insensitively (RFC 9110
 // §11.1), so "bearer <token>" and "BEARER <token>" are accepted too. It
 // reports false when the scheme is not Bearer or no token follows it.
-func bearerToken(header string) (string, bool) {
+func BearerToken(header string) (string, bool) {
 	scheme, credentials, found := strings.Cut(strings.TrimSpace(header), " ")
 	if !found || !strings.EqualFold(scheme, "Bearer") {
 		return "", false

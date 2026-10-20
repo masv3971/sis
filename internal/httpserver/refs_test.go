@@ -36,12 +36,12 @@ func TestProvidersPublishReferencesAsSourcedIDs(t *testing.T) {
 		}
 	}
 	must(catalog.Persons.CreatePerson(ctx, domain.Person{ID: "p-internal", SourcedID: "p-external", GivenName: "A", FamilyName: "B", Status: domain.StatusActive}))
-	must(catalog.Organizations.Create(ctx, &domain.Organization{Base: domain.Base{ID: "o-root", SourcedID: "uni"}, Name: "U"}))
-	must(catalog.Organizations.Create(ctx, &domain.Organization{Base: domain.Base{ID: "o-dept", SourcedID: "dept"}, Name: "D", ParentID: "o-root"}))
-	must(catalog.AcademicSessions.Create(ctx, &domain.AcademicSession{Base: domain.Base{ID: "s-internal", SourcedID: "ht26"}, Title: "HT26"}))
-	must(catalog.Courses.Create(ctx, &domain.Course{Base: domain.Base{ID: "c-internal", SourcedID: "DA101"}, Title: "C", OrgID: "o-dept"}))
-	must(catalog.Offerings.Create(ctx, &domain.Offering{Base: domain.Base{ID: "f-internal", SourcedID: "DA101-ht26"}, CourseID: "c-internal", AcademicSessionID: "s-internal", OrgID: "o-dept"}))
-	must(catalog.Enrollments.Create(ctx, &domain.Enrollment{Base: domain.Base{ID: "e-internal", SourcedID: "enr-1"}, PersonID: "p-internal", OfferingID: "f-internal", Role: domain.RoleStudent}))
+	must(catalog.Organizations.Create(ctx, &domain.Organization{ID: "o-root", SourcedID: "uni", Name: "U"}))
+	must(catalog.Organizations.Create(ctx, &domain.Organization{ID: "o-dept", SourcedID: "dept", Name: "D", ParentID: "o-root"}))
+	must(catalog.AcademicSessions.Create(ctx, &domain.AcademicSession{ID: "s-internal", SourcedID: "ht26", Title: "HT26"}))
+	must(catalog.Courses.Create(ctx, &domain.Course{ID: "c-internal", SourcedID: "DA101", Title: "C", OrgID: "o-dept"}))
+	must(catalog.Offerings.Create(ctx, &domain.Offering{ID: "f-internal", SourcedID: "DA101-ht26", CourseID: "c-internal", AcademicSessionID: "s-internal", OrgID: "o-dept"}))
+	must(catalog.Enrollments.Create(ctx, &domain.Enrollment{ID: "e-internal", SourcedID: "enr-1", PersonID: "p-internal", OfferingID: "f-internal", Role: domain.RoleStudent}))
 
 	cfg := testCfg("127.0.0.1:0")
 	cfg.SIS.Adapter.Inbound.OEAPI.DefaultPageSize, cfg.SIS.Adapter.Inbound.OEAPI.MaxPageSize = 10, 10
@@ -159,9 +159,9 @@ func TestProvidersPublishReferencesAsSourcedIDs(t *testing.T) {
 	// required relationship: Get answers 404 and List omits them.
 	t.Run("orphaned enrollments", func(t *testing.T) {
 		must(catalog.Persons.CreatePerson(ctx, domain.Person{ID: "p-gone", SourcedID: "p-gone", GivenName: "A", FamilyName: "B", Status: domain.StatusActive}))
-		must(catalog.Offerings.Create(ctx, &domain.Offering{Base: domain.Base{ID: "f-gone", SourcedID: "f-gone"}, CourseID: "c-internal"}))
-		must(catalog.Enrollments.Create(ctx, &domain.Enrollment{Base: domain.Base{ID: "e-person", SourcedID: "enr-person-gone"}, PersonID: "p-gone", OfferingID: "f-internal"}))
-		must(catalog.Enrollments.Create(ctx, &domain.Enrollment{Base: domain.Base{ID: "e-offering", SourcedID: "enr-offering-gone"}, PersonID: "p-internal", OfferingID: "f-gone"}))
+		must(catalog.Offerings.Create(ctx, &domain.Offering{ID: "f-gone", SourcedID: "f-gone", CourseID: "c-internal"}))
+		must(catalog.Enrollments.Create(ctx, &domain.Enrollment{ID: "e-person", SourcedID: "enr-person-gone", PersonID: "p-gone", OfferingID: "f-internal"}))
+		must(catalog.Enrollments.Create(ctx, &domain.Enrollment{ID: "e-offering", SourcedID: "enr-offering-gone", PersonID: "p-internal", OfferingID: "f-gone"}))
 		if err := catalog.Persons.DeletePerson(ctx, "p-gone"); err != nil {
 			t.Fatal(err)
 		}

@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/SUNET/sis/internal/adapter/outbound/memory"
+	"github.com/SUNET/sis/internal/command"
 	"github.com/SUNET/sis/internal/core/domain"
 	"github.com/SUNET/sis/internal/core/service"
 	"github.com/SUNET/sis/internal/readmodel"
@@ -30,10 +31,14 @@ func newTestRouter(t *testing.T) *gin.Engine {
 		Organizations: service.NewResource(memory.NewDocRepo[domain.Organization](), nil, nil, log),
 		Courses:       service.NewResource(memory.NewDocRepo[domain.Course](), nil, nil, log),
 	}
-	if _, err := catalog.Organizations.Create(context.Background(), &domain.Organization{Base: domain.Base{ID: "o-id", SourcedID: "uni"}, Name: "U"}); err != nil {
+	if _, err := catalog.Organizations.Create(context.Background(), &domain.Organization{ID: "o-id", SourcedID: "uni", Name: "U"}); err != nil {
 		t.Fatal(err)
 	}
-	c, err := New(context.Background(), &model.Cfg{}, catalog, log)
+	commands, err := command.New(context.Background(), &model.Cfg{}, catalog, log)
+	if err != nil {
+		t.Fatalf("command.New: %v", err)
+	}
+	c, err := New(context.Background(), &model.Cfg{}, catalog, commands, log)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

@@ -14,7 +14,7 @@ definitions:
         example: missing bearer token
         type: string
     type: object
-  convertapi.Metadata:
+  command.Metadata:
     properties:
       input_format:
         description: 'InputFormat is the format of data. Supported: elm.'
@@ -28,35 +28,7 @@ definitions:
     required:
     - input_format
     type: object
-  convertapi.ParseReply:
-    properties:
-      data:
-        description: |-
-          Data holds the converted records, one array per resource collection of
-          the output format (Edu-API: persons, orgs, academicSessions, courses,
-          programs, classes, enrollments, results; OEAPI: persons, organizations,
-          academicSessions, courses, programs, offerings, associations, results).
-          References between them are sourcedIds.
-        type: object
-      metadata:
-        $ref: '#/definitions/convertapi.Metadata'
-      warnings:
-        description: Warnings name the parts of the document that were not converted.
-        items:
-          type: string
-        type: array
-    type: object
-  convertapi.ParseRequest:
-    properties:
-      data:
-        description: Data is the document to convert, e.g. an ELM v3 credential (JSON-LD).
-        type: object
-      metadata:
-        $ref: '#/definitions/convertapi.Metadata'
-    required:
-    - data
-    type: object
-  convertapi.PopulateReply:
+  command.PopulateReply:
     properties:
       expiresAt:
         description: |-
@@ -70,25 +42,53 @@ definitions:
           $ref: '#/definitions/readmodel.PopulateItem'
         type: array
       metadata:
-        $ref: '#/definitions/convertapi.Metadata'
+        $ref: '#/definitions/command.Metadata'
       warnings:
         items:
           type: string
         type: array
     type: object
-  convertapi.PopulateRequest:
+  command.PopulateRequest:
     properties:
       data:
         description: Data is the document to load, e.g. an ELM v3 credential (JSON-LD).
         type: object
       metadata:
-        $ref: '#/definitions/convertapi.Metadata'
+        $ref: '#/definitions/command.Metadata'
       ttl:
         description: |-
           TTL is how long the records are served, as a Go duration ("24h",
           "90m"). Omitted: they never expire.
         example: 24h
         type: string
+    required:
+    - data
+    type: object
+  convertapi.ParseReply:
+    properties:
+      data:
+        description: |-
+          Data holds the converted records, one array per resource collection of
+          the output format (Edu-API: persons, orgs, academicSessions, courses,
+          programs, classes, enrollments, results; OEAPI: persons, organizations,
+          academicSessions, courses, programs, offerings, associations, results).
+          References between them are sourcedIds.
+        type: object
+      metadata:
+        $ref: '#/definitions/command.Metadata'
+      warnings:
+        description: Warnings name the parts of the document that were not converted.
+        items:
+          type: string
+        type: array
+    type: object
+  convertapi.ParseRequest:
+    properties:
+      data:
+        description: Data is the document to convert, e.g. an ELM v3 credential (JSON-LD).
+        type: object
+      metadata:
+        $ref: '#/definitions/command.Metadata'
     required:
     - data
     type: object
@@ -1951,14 +1951,14 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/convertapi.PopulateRequest'
+          $ref: '#/definitions/command.PopulateRequest'
       produces:
       - application/json
       responses:
         "200":
           description: Stored records
           schema:
-            $ref: '#/definitions/convertapi.PopulateReply'
+            $ref: '#/definitions/command.PopulateReply'
         "400":
           description: Malformed body, unsupported format, invalid ttl, or a document
             that cannot be converted

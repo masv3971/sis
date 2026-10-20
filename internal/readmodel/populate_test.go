@@ -87,11 +87,11 @@ func TestPopulateStoresWithCanonicalRefs(t *testing.T) {
 func TestPopulateResolvesStoredRefs(t *testing.T) {
 	ctx := t.Context()
 	c := newFixture(t).c
-	_, err := c.Courses.Create(ctx, &domain.Course{Base: domain.Base{ID: "c-id", SourcedID: "DA101"}, Title: "C"})
+	_, err := c.Courses.Create(ctx, &domain.Course{ID: "c-id", SourcedID: "DA101", Title: "C"})
 	must(t, err)
 	b := &domain.Bundle{
 		Persons: []domain.Person{{SourcedID: "stu", Status: domain.StatusActive, GivenName: "A", FamilyName: "B"}},
-		Results: []*domain.Result{{Base: domain.Base{SourcedID: "r"}, PersonID: "stu", CourseID: "DA101"}},
+		Results: []*domain.Result{{SourcedID: "r", PersonID: "stu", CourseID: "DA101"}},
 	}
 	_, err = c.Populate(ctx, b, nil)
 	must(t, err)
@@ -108,7 +108,7 @@ func TestPopulateBatchesStoredRefs(t *testing.T) {
 	ctx := t.Context()
 	f := newFixture(t)
 	c := f.c
-	_, err := c.Offerings.Create(ctx, &domain.Offering{Base: domain.Base{ID: "f-id", SourcedID: "DA101-ht26"}, CourseID: "c-id"})
+	_, err := c.Offerings.Create(ctx, &domain.Offering{ID: "f-id", SourcedID: "DA101-ht26", CourseID: "c-id"})
 	must(t, err)
 	b := &domain.Bundle{}
 	for i := range 5 {
@@ -116,7 +116,7 @@ func TestPopulateBatchesStoredRefs(t *testing.T) {
 		_, err := c.Persons.CreatePerson(ctx, domain.Person{ID: "p" + sid, SourcedID: sid, GivenName: "A", FamilyName: "B", Status: domain.StatusActive})
 		must(t, err)
 		b.Enrollments = append(b.Enrollments, &domain.Enrollment{
-			Base:     domain.Base{SourcedID: "enr" + strconv.Itoa(i), Status: domain.StatusActive},
+			SourcedID: "enr" + strconv.Itoa(i), Status: domain.StatusActive,
 			PersonID: sid, OfferingID: "DA101-ht26", Role: domain.RoleStudent,
 		})
 	}

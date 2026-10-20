@@ -29,18 +29,18 @@ func TestFromPerson(t *testing.T) {
 // TestOptionalRefsAreOmitted checks an empty reference becomes no GUIDRef at
 // all rather than one with an empty sourcedId.
 func TestOptionalRefsAreOmitted(t *testing.T) {
-	c := FromClass(&domain.Offering{Base: domain.Base{SourcedID: "o"}, CourseID: "c"})
+	c := FromClass(&domain.Offering{SourcedID: "o", CourseID: "c"})
 	if c.Course == nil || c.Course.SourcedID != "c" || c.Course.Type != "course" || c.School != nil || c.Terms != nil {
 		t.Fatalf("class = %+v", c)
 	}
-	c = FromClass(&domain.Offering{Base: domain.Base{SourcedID: "o"}, CourseID: "c", AcademicSessionID: "ht26", OrgID: "uni"})
+	c = FromClass(&domain.Offering{SourcedID: "o", CourseID: "c", AcademicSessionID: "ht26", OrgID: "uni"})
 	if len(c.Terms) != 1 || c.Terms[0].SourcedID != "ht26" || c.School == nil || c.School.SourcedID != "uni" {
 		t.Fatalf("class with terms = %+v", c)
 	}
-	if o := FromOrg(&domain.Organization{Base: domain.Base{SourcedID: "uni"}}); o.Parent != nil {
+	if o := FromOrg(&domain.Organization{SourcedID: "uni"}); o.Parent != nil {
 		t.Fatalf("org parent = %+v", o.Parent)
 	}
-	r := FromResult(&domain.Result{Base: domain.Base{SourcedID: "r"}, PersonID: "stu", ProgramID: "BSc"})
+	r := FromResult(&domain.Result{SourcedID: "r", PersonID: "stu", ProgramID: "BSc"})
 	if r.Student.SourcedID != "stu" || r.Course != nil || r.Class != nil || r.Program == nil || r.Program.SourcedID != "BSc" {
 		t.Fatalf("result = %+v", r)
 	}
@@ -49,7 +49,7 @@ func TestOptionalRefsAreOmitted(t *testing.T) {
 func TestFromBundle(t *testing.T) {
 	out := FromBundle(&domain.Bundle{
 		Persons:     []domain.Person{{SourcedID: "stu"}},
-		Enrollments: []*domain.Enrollment{{Base: domain.Base{SourcedID: "e"}, PersonID: "stu", OfferingID: "o"}},
+		Enrollments: []*domain.Enrollment{{SourcedID: "e", PersonID: "stu", OfferingID: "o"}},
 	})
 	if len(out.Persons) != 1 || len(out.Enrollments) != 1 || out.Enrollments[0].User.SourcedID != "stu" || out.Orgs == nil {
 		t.Fatalf("bundle = %+v", out)

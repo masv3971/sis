@@ -109,13 +109,13 @@ func TestPublishRefsUsesSourcedIDs(t *testing.T) {
 	c := f.c
 	_, err := c.Persons.CreatePerson(ctx, domain.Person{ID: "p-id", SourcedID: "student-1", GivenName: "A", FamilyName: "B", Status: domain.StatusActive})
 	must(t, err)
-	_, err = c.Organizations.Create(ctx, &domain.Organization{Base: domain.Base{ID: "o-id", SourcedID: "uni"}, Name: "U"})
+	_, err = c.Organizations.Create(ctx, &domain.Organization{ID: "o-id", SourcedID: "uni", Name: "U"})
 	must(t, err)
-	_, err = c.AcademicSessions.Create(ctx, &domain.AcademicSession{Base: domain.Base{ID: "s-id", SourcedID: "ht26"}, Title: "HT26"})
+	_, err = c.AcademicSessions.Create(ctx, &domain.AcademicSession{ID: "s-id", SourcedID: "ht26", Title: "HT26"})
 	must(t, err)
-	_, err = c.Courses.Create(ctx, &domain.Course{Base: domain.Base{ID: "c-id", SourcedID: "DA101"}, Title: "C", OrgID: "o-id"})
+	_, err = c.Courses.Create(ctx, &domain.Course{ID: "c-id", SourcedID: "DA101", Title: "C", OrgID: "o-id"})
 	must(t, err)
-	_, err = c.Offerings.Create(ctx, &domain.Offering{Base: domain.Base{ID: "f-id", SourcedID: "DA101-ht26"}, CourseID: "c-id", AcademicSessionID: "s-id", OrgID: "o-id"})
+	_, err = c.Offerings.Create(ctx, &domain.Offering{ID: "f-id", SourcedID: "DA101-ht26", CourseID: "c-id", AcademicSessionID: "s-id", OrgID: "o-id"})
 	must(t, err)
 
 	child := &domain.Organization{ParentID: "o-id"}
@@ -174,7 +174,7 @@ func TestPublishRefsBatchesLookups(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t)
 	c := f.c
-	_, err := c.Courses.Create(ctx, &domain.Course{Base: domain.Base{ID: "c"}, Title: "C"})
+	_, err := c.Courses.Create(ctx, &domain.Course{ID: "c", Title: "C"})
 	must(t, err)
 	const n = 50
 	page := make([]domain.Entity, 0, n)
@@ -182,7 +182,7 @@ func TestPublishRefsBatchesLookups(t *testing.T) {
 		pid, fid := "p"+strconv.Itoa(i), "f"+strconv.Itoa(i)
 		_, err := c.Persons.CreatePerson(ctx, domain.Person{ID: pid, GivenName: "G", FamilyName: "F", Status: domain.StatusActive})
 		must(t, err)
-		_, err = c.Offerings.Create(ctx, &domain.Offering{Base: domain.Base{ID: fid}, CourseID: "c"})
+		_, err = c.Offerings.Create(ctx, &domain.Offering{ID: fid, CourseID: "c"})
 		must(t, err)
 		page = append(page, &domain.Enrollment{PersonID: pid, OfferingID: fid})
 	}
@@ -216,15 +216,15 @@ func TestPublishRefsFlagsOrphans(t *testing.T) {
 	_, err = c.Persons.CreatePerson(ctx, domain.Person{ID: "p-gone", GivenName: "A", FamilyName: "B", Status: domain.StatusActive})
 	must(t, err)
 	for _, id := range []string{"c", "c-gone"} {
-		_, err = c.Courses.Create(ctx, &domain.Course{Base: domain.Base{ID: id}, Title: "C"})
+		_, err = c.Courses.Create(ctx, &domain.Course{ID: id, Title: "C"})
 		must(t, err)
 	}
-	_, err = c.AcademicSessions.Create(ctx, &domain.AcademicSession{Base: domain.Base{ID: "s-gone"}, Title: "S"})
+	_, err = c.AcademicSessions.Create(ctx, &domain.AcademicSession{ID: "s-gone", Title: "S"})
 	must(t, err)
 	for _, o := range []*domain.Offering{
-		{Base: domain.Base{ID: "f"}, CourseID: "c", AcademicSessionID: "s-gone"},
-		{Base: domain.Base{ID: "f-gone"}, CourseID: "c"},
-		{Base: domain.Base{ID: "f-orphan"}, CourseID: "c-gone"},
+		{ID: "f", CourseID: "c", AcademicSessionID: "s-gone"},
+		{ID: "f-gone", CourseID: "c"},
+		{ID: "f-orphan", CourseID: "c-gone"},
 	} {
 		_, err = c.Offerings.Create(ctx, o)
 		must(t, err)
@@ -271,11 +271,11 @@ func TestPublishRefsProgramsAndResults(t *testing.T) {
 	c := newFixture(t).c
 	_, err := c.Persons.CreatePerson(ctx, domain.Person{ID: "p", SourcedID: "stu", GivenName: "A", FamilyName: "B", Status: domain.StatusActive})
 	must(t, err)
-	_, err = c.Organizations.Create(ctx, &domain.Organization{Base: domain.Base{ID: "o", SourcedID: "uni"}, Name: "U"})
+	_, err = c.Organizations.Create(ctx, &domain.Organization{ID: "o", SourcedID: "uni", Name: "U"})
 	must(t, err)
-	_, err = c.Programs.Create(ctx, &domain.Program{Base: domain.Base{ID: "g", SourcedID: "BSc"}, Title: "BSc", OrgID: "o"})
+	_, err = c.Programs.Create(ctx, &domain.Program{ID: "g", SourcedID: "BSc", Title: "BSc", OrgID: "o"})
 	must(t, err)
-	_, err = c.Courses.Create(ctx, &domain.Course{Base: domain.Base{ID: "c", SourcedID: "DA101"}, Title: "C"})
+	_, err = c.Courses.Create(ctx, &domain.Course{ID: "c", SourcedID: "DA101", Title: "C"})
 	must(t, err)
 
 	program := &domain.Program{OrgID: "o"}
@@ -316,9 +316,9 @@ func TestCheckRefsRequiresCanonicalIDs(t *testing.T) {
 	c := newFixture(t).c
 	_, err := c.Persons.CreatePerson(ctx, domain.Person{ID: "p-id", SourcedID: "student-1", GivenName: "A", FamilyName: "B", Status: domain.StatusActive})
 	must(t, err)
-	_, err = c.Courses.Create(ctx, &domain.Course{Base: domain.Base{ID: "c-id", SourcedID: "DA101"}, Title: "C"})
+	_, err = c.Courses.Create(ctx, &domain.Course{ID: "c-id", SourcedID: "DA101", Title: "C"})
 	must(t, err)
-	_, err = c.Offerings.Create(ctx, &domain.Offering{Base: domain.Base{ID: "f-id", SourcedID: "DA101-ht26"}, CourseID: "c-id"})
+	_, err = c.Offerings.Create(ctx, &domain.Offering{ID: "f-id", SourcedID: "DA101-ht26", CourseID: "c-id"})
 	must(t, err)
 
 	cases := []struct {

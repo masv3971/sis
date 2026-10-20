@@ -262,6 +262,42 @@ These two endpoints accept bodies up to `sis.adapter.inbound.convertapi.max_body
 their own write timeout, `sis.adapter.inbound.convertapi.write_timeout` (2m by
 default), instead of `sis.httpserver.write_timeout`.
 
+### AMQP 1.0: write commands from a broker
+
+With `sis.adapter.inbound.amqpapi.enabled`, SIS consumes one queue on an
+AMQP 1.0 broker (RabbitMQ 4, Azure Service Bus, ActiveMQ Artemis, Qpid) and
+runs each message as the matching `/api/v1` write. SIS creates no queues.
+The broker admin creates the queue and gives it a delivery limit and a
+dead-letter target. AMQP 0-9-1 clients can publish to RabbitMQ 4 too;
+RabbitMQ hands their messages to SIS over 1.0.
+
+| Message | Content |
+| ------- | ------- |
+| subject (0-9-1: `type`) | `person.create`, `person.update`, `person.delete`, the same for `organization`, `academicSession`, `course`, `offering`, `enrollment`, `program`, `result`, and `populate` |
+| body | One data section of JSON, the `/api/v1` request body. Update carries the `id` in the body; delete is `{"id": "..."}` |
+| application property `authorization` (0-9-1: header) | `Bearer <token>`, checked like an API token; needs `sis.write` |
+| `message-id`, `correlation-id` | Optional, logged |
+
+There are no replies. The outcome is how SIS settles the message:
+
+| Outcome | When | Broker |
+| ------- | ---- | ------ |
+| accepted | done | removes it |
+| rejected | the message's fault (the 4xx cases of `/api/v1`: bad body, unknown subject, missing record, conflict, no or bad token) | dead-letters it; the AMQP error describes why |
+| modified, delivery failed | SIS's fault (5xx: database or token issuer down) | redelivers it, up to its delivery limit |
+
+A message without `authorization` is only accepted when
+`sis.adapter.inbound.amqpapi.scopes` is `[sis.write]`. That setting trusts
+everyone who may publish to the queue. Redelivery runs a command again: a
+repeated create gets a conflict and is dead-lettered.
+
+`make start` runs RabbitMQ (`developer_tools/rabbitmq/`, management UI on
+http://localhost:15672, sis/sis), and the dev config consumes
+`sis.commands` without tokens. To send a command, open the queue
+`sis.commands` in the UI and use **Publish message**: set the property
+`type` to `person.create` and paste a person as the payload. Rejected
+messages appear in `sis.commands.dlq`.
+
 ### `/oeapi`: Open Education API v6.0 (read-only)
 
 `GET` list (`?pageNumber=&pageSize=`) and `GET /:id` for:

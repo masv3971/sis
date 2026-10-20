@@ -31,8 +31,8 @@ func TestSweepDeletesExpired(t *testing.T) {
 	exp := now.Add(time.Minute)
 	_, err := c.Populate(ctx, &domain.Bundle{
 		Persons: []domain.Person{{SourcedID: "p", Status: domain.StatusActive, GivenName: "A", FamilyName: "B"}},
-		Courses: []*domain.Course{{Base: domain.Base{SourcedID: "c"}, Title: "C"}},
-		Results: []*domain.Result{{Base: domain.Base{SourcedID: "r"}, PersonID: "p", CourseID: "c"}},
+		Courses: []*domain.Course{{SourcedID: "c", Title: "C"}},
+		Results: []*domain.Result{{SourcedID: "r", PersonID: "p", CourseID: "c"}},
 	}, &exp)
 	if err != nil {
 		t.Fatal(err)

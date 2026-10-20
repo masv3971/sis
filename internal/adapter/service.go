@@ -16,10 +16,12 @@ import (
 	"context"
 	"errors"
 
+	"github.com/SUNET/sis/internal/adapter/inbound/amqpapi"
 	"github.com/SUNET/sis/internal/adapter/outbound/events"
 	"github.com/SUNET/sis/internal/adapter/outbound/postgres"
 	"github.com/SUNET/sis/internal/adapter/sweeper"
 	"github.com/SUNET/sis/internal/auth"
+	"github.com/SUNET/sis/internal/command"
 	"github.com/SUNET/sis/internal/core/domain"
 	"github.com/SUNET/sis/internal/core/port"
 	"github.com/SUNET/sis/internal/core/service"
@@ -48,8 +50,11 @@ type Outbound struct {
 // (e.g. gRPC) arrives it will share this bundle.
 type Inbound struct {
 	readmodel *readmodel.Client
+	commands  *command.Client
 	auth      *auth.Verifier
 	http      *httpserver.Service
+	// amqp is nil unless sis.adapter.inbound.amqpapi.enabled.
+	amqp *amqpapi.Service
 }
 
 // Service owns every adapter plus the support Clients that glue them
@@ -118,6 +123,11 @@ func New(ctx context.Context, cfg *model.Cfg, log *logger.Log) (*Service, error)
 		return nil, err
 	}
 
+	// Write commands, shared by every inbound transport.
+	if s.inbound.commands, err = command.New(ctx, cfg, s.inbound.readmodel, log); err != nil {
+		return nil, err
+	}
+
 	// Token verifier: checks every API request's token against the trusted
 	// issuers (sis.auth.issuers). SIS issues no tokens.
 	if s.inbound.auth, err = auth.New(ctx, cfg, log); err != nil {
@@ -131,8 +141,14 @@ func New(ctx context.Context, cfg *model.Cfg, log *logger.Log) (*Service, error)
 
 	// Inbound HTTP transport. This is a Service — it owns the listener and
 	// background accept loop and must be closed first on shutdown.
-	if s.inbound.http, err = httpserver.New(ctx, cfg, s.inbound.auth, s.inbound.readmodel, log.New("httpserver")); err != nil {
+	if s.inbound.http, err = httpserver.New(ctx, cfg, s.inbound.auth, s.inbound.readmodel, s.inbound.commands, log.New("httpserver")); err != nil {
 		return nil, err
+	}
+
+	if cfg.SIS.Adapter.Inbound.AMQPAPI.Enabled {
+		if s.inbound.amqp, err = amqpapi.New(ctx, cfg, s.inbound.auth, s.inbound.commands, s.inbound.readmodel, log); err != nil {
+			return nil, err
+		}
 	}
 
 	return s, nil
@@ -152,6 +168,11 @@ func (s *Service) Close(ctx context.Context) error {
 	var errs []error
 	if s.inbound.http != nil {
 		if err := s.inbound.http.Close(ctx); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if s.inbound.amqp != nil {
+		if err := s.inbound.amqp.Close(ctx); err != nil {
 			errs = append(errs, err)
 		}
 	}
