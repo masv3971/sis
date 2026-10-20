@@ -19,6 +19,10 @@ import (
 
 var dialTimeout = 10 * time.Second
 
+// envelopeBytes is what a message may carry on top of its body: header,
+// properties, annotations and the authorization token.
+const envelopeBytes = 64 << 10
+
 // link is the receiver side of a broker connection; *amqp.Receiver plus a
 // Close that also closes the connection. Tests replace it with a fake.
 type link interface {
@@ -65,7 +69,7 @@ func newDialer(ac model.AMQPAPI) (dialFunc, error) {
 		}
 		opts.TLSConfig = &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}
 	}
-	credit := int32(ac.Prefetch) //nolint:gosec // bounded above
+	rcvOpts := receiverOptions(ac)
 	return func(ctx context.Context) (link, error) {
 		ctx, cancel := context.WithTimeout(ctx, dialTimeout)
 		defer cancel()
@@ -78,13 +82,26 @@ func newDialer(ac model.AMQPAPI) (dialFunc, error) {
 			_ = conn.Close()
 			return nil, fmt.Errorf("begin session: %w", err)
 		}
-		rcv, err := sess.NewReceiver(ctx, ac.Address, &amqp.ReceiverOptions{Credit: credit})
+		rcv, err := sess.NewReceiver(ctx, ac.Address, rcvOpts)
 		if err != nil {
 			_ = conn.Close()
 			return nil, fmt.Errorf("attach receiver to %s: %w", ac.Address, err)
 		}
 		return brokerLink{Receiver: rcv, conn: conn}, nil
 	}, nil
+}
+
+// receiverOptions sets the credit to prefetch and caps the encoded message at
+// max_message_bytes plus envelopeBytes. go-amqp buffers a whole delivery
+// before Receive returns it, so without a wire cap a large message would be
+// read into memory before the body cap or the token is checked. A delivery
+// above the cap closes the link (message-size-exceeded): the broker returns
+// the message, and its delivery limit dead-letters it.
+func receiverOptions(ac model.AMQPAPI) *amqp.ReceiverOptions {
+	return &amqp.ReceiverOptions{
+		Credit:         int32(ac.Prefetch),                         //nolint:gosec // bounded by newDialer
+		MaxMessageSize: uint64(ac.MaxMessageBytes) + envelopeBytes, //nolint:gosec // validated gt=0
+	}
 }
 
 // certPool returns the system roots plus the PEM certificates in files.

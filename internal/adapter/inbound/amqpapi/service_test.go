@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -34,13 +35,27 @@ type fakeLink struct {
 	in      chan *amqp.Message
 	settled chan settlement
 	fail    chan error
+	// acceptErr, when it holds an error, fails the next AcceptMessage.
+	acceptErr chan error
+	// closed gets a value on every Close.
+	closed chan struct{}
 }
 
 func newFakeLink() *fakeLink {
-	return &fakeLink{in: make(chan *amqp.Message, 16), settled: make(chan settlement, 16), fail: make(chan error, 1)}
+	return &fakeLink{
+		in: make(chan *amqp.Message, 16), settled: make(chan settlement, 16), fail: make(chan error, 1),
+		acceptErr: make(chan error, 1), closed: make(chan struct{}, 16),
+	}
 }
 
+// Receive returns a queued (prefetched) message even when ctx is done, as
+// *amqp.Receiver does.
 func (f *fakeLink) Receive(ctx context.Context, _ *amqp.ReceiveOptions) (*amqp.Message, error) {
+	select {
+	case m := <-f.in:
+		return m, nil
+	default:
+	}
 	select {
 	case m := <-f.in:
 		return m, nil
@@ -52,6 +67,11 @@ func (f *fakeLink) Receive(ctx context.Context, _ *amqp.ReceiveOptions) (*amqp.M
 }
 
 func (f *fakeLink) AcceptMessage(_ context.Context, m *amqp.Message) error {
+	select {
+	case err := <-f.acceptErr:
+		return err
+	default:
+	}
 	f.settled <- settlement{msg: m, outcome: "accepted"}
 	return nil
 }
@@ -69,7 +89,13 @@ func (f *fakeLink) ModifyMessage(_ context.Context, m *amqp.Message, o *amqp.Mod
 	return nil
 }
 
-func (f *fakeLink) Close(context.Context) error { return nil }
+func (f *fakeLink) Close(context.Context) error {
+	select {
+	case f.closed <- struct{}{}:
+	default:
+	}
+	return nil
+}
 
 type fixture struct {
 	link    *fakeLink
@@ -275,6 +301,67 @@ func TestReconnectsAfterLinkFailure(t *testing.T) {
 	f := newFixture(t, auth.ScopeWrite)
 	f.link.fail <- &amqp.LinkError{}
 	f.expect(t, message("person.create", "", `{"givenName":"A","familyName":"B","status":"active"}`), "accepted")
+}
+
+// TestSettlementFailureReconnects: a delivery left unsettled holds its
+// credit, so the link is closed and reopened (the broker redelivers it)
+// rather than left to stall.
+func TestSettlementFailureReconnects(t *testing.T) {
+	minRetryDelay = 10 * time.Millisecond
+	t.Cleanup(func() { minRetryDelay = time.Second })
+	f := newFixture(t, auth.ScopeWrite)
+	body := `{"givenName":"A","familyName":"B","status":"active"}`
+	f.link.acceptErr <- context.DeadlineExceeded
+	f.link.in <- message("person.create", "", body)
+	select {
+	case <-f.link.closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("link not closed after a failed settlement")
+	}
+	f.expect(t, message("person.create", "", body), "accepted")
+}
+
+// TestCloseStopsDispatching: messages the link already holds are not run
+// once Close has begun; closing the link releases them to the broker.
+func TestCloseStopsDispatching(t *testing.T) {
+	log := logger.NewWithWriter("test", false, "error", io.Discard)
+	l := newFakeLink()
+	started, release := make(chan struct{}), make(chan struct{})
+	var runs atomic.Int32
+	table := map[string]handlerFunc{"slow": func(context.Context, []byte) error {
+		if runs.Add(1) == 1 {
+			close(started)
+			<-release
+		}
+		return nil
+	}}
+	ac := model.AMQPAPI{Prefetch: 1, MaxMessageBytes: 1 << 20, Scopes: []string{auth.ScopeWrite}}
+	s := start(t.Context(), ac, nil, table, func(context.Context) (link, error) { return l, nil }, log)
+
+	first := message("slow", "", `{}`)
+	l.in <- first
+	<-started
+	l.in <- message("slow", "", `{}`) // prefetched, not yet dispatched
+	s.stopRecv()                      // what Close does first
+	close(release)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	if err := s.Close(ctx); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if got := <-l.settled; got.msg != first || got.outcome != "accepted" {
+		t.Fatalf("first settlement = %+v", got)
+	}
+	if n := runs.Load(); n != 1 || len(l.settled) != 0 {
+		t.Fatalf("after Close: %d runs, %d more settlements; want 1, 0", n, len(l.settled))
+	}
+}
+
+func TestReceiverOptionsCapMessageSize(t *testing.T) {
+	o := receiverOptions(model.AMQPAPI{Prefetch: 7, MaxMessageBytes: 1000})
+	if o.Credit != 7 || o.MaxMessageSize != 1000+envelopeBytes {
+		t.Fatalf("options = credit %d, max size %d", o.Credit, o.MaxMessageSize)
+	}
 }
 
 // TestInternalErrorsAreRetried: an unclassified failure (e.g. the database

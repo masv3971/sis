@@ -120,27 +120,48 @@ func (s *Service) run(recvCtx, workCtx context.Context) {
 	}
 }
 
-// consume runs up to prefetch commands at once until the link fails or
-// recvCtx is cancelled, then waits for them to be settled.
+// consume runs up to prefetch commands at once until the link fails, a
+// settlement fails or recvCtx is cancelled, then waits for the commands in
+// flight to be settled. A failed settlement leaves its delivery unsettled
+// and the link without that credit, so the link is given up: run closes it
+// and reconnects, and the broker redelivers what was not settled. A message
+// received after the stop is not dispatched; closing the link releases it.
 func (s *Service) consume(recvCtx, workCtx context.Context, l link) error {
+	linkCtx, fail := context.WithCancelCause(recvCtx)
+	defer fail(nil)
 	var wg sync.WaitGroup
 	defer wg.Wait()
 	slots := make(chan struct{}, s.cfg.Prefetch)
 	for {
-		msg, err := l.Receive(recvCtx, nil)
+		// Receive hands out prefetched messages even when its ctx is done,
+		// so check before taking a slot and again before dispatching.
+		if linkCtx.Err() != nil {
+			return context.Cause(linkCtx)
+		}
+		select {
+		case slots <- struct{}{}:
+		case <-linkCtx.Done():
+			return context.Cause(linkCtx)
+		}
+		msg, err := l.Receive(linkCtx, nil)
+		if linkCtx.Err() != nil {
+			return context.Cause(linkCtx)
+		}
 		if err != nil {
 			return err
 		}
-		slots <- struct{}{}
 		wg.Go(func() {
 			defer func() { <-slots }()
-			s.process(workCtx, l, msg)
+			if err := s.process(workCtx, l, msg); err != nil {
+				fail(err)
+			}
 		})
 	}
 }
 
-// process runs one command and settles its message.
-func (s *Service) process(ctx context.Context, l link, msg *amqp.Message) {
+// process runs one command and settles its message. It returns the error of
+// a failed settlement.
+func (s *Service) process(ctx context.Context, l link, msg *amqp.Message) error {
 	began := time.Now()
 	err := s.handle(ctx, msg)
 	e := helpers.NewErrorFromError(err)
@@ -173,6 +194,7 @@ func (s *Service) process(ctx context.Context, l link, msg *amqp.Message) {
 	switch {
 	case settleErr != nil:
 		s.log.Error("settle message", append(attrs, "err", settleErr)...)
+		return fmt.Errorf("settle message: %w", settleErr)
 	case outcome == "retry":
 		s.log.Error("command failed; redelivering", append(attrs, "err", err)...)
 	case outcome == "rejected":
@@ -180,6 +202,7 @@ func (s *Service) process(ctx context.Context, l link, msg *amqp.Message) {
 	default:
 		s.log.Info("command", attrs...)
 	}
+	return nil
 }
 
 // rejection describes a client error for the dead-lettered message. The

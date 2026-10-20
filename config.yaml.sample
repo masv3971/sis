@@ -118,6 +118,10 @@ sis:
         ca_files: []        # extra CAs for the broker's certificate
         address: "/queues/sis.commands"   # RabbitMQ 4; Service Bus/Artemis: the queue name
         prefetch: 10        # commands run at once
+        # Body cap; the whole message may be 64 KiB more. Larger ones close
+        # the link until the broker's delivery limit dead-letters them:
+        # set a matching publish limit at the broker (RabbitMQ:
+        # max_message_size = max_message_bytes + 65536).
         max_message_bytes: 5242880
         # Messages carry "authorization: Bearer <token>" (application
         # property), checked like an API token; it needs sis.write. A

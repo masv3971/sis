@@ -16,9 +16,6 @@ type clock struct{ t time.Time }
 
 func (c *clock) now() time.Time { return c.t }
 
-//go:fix inline
-func at(t time.Time) *time.Time { return new(t) }
-
 // TestDocRepoExpiry checks an expired entity disappears from every read,
 // cannot be updated or deleted, is replaced by a Create holding its keys, and
 // is removed by DeleteExpired.

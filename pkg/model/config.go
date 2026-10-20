@@ -149,7 +149,12 @@ type AMQPAPI struct {
 	Address string `yaml:"address" validate:"required_if=Enabled true"`
 	// Prefetch is how many commands run at once.
 	Prefetch int `yaml:"prefetch" default:"10" validate:"gt=0,lte=1000"`
-	// MaxMessageBytes caps a command's body; larger ones are rejected.
+	// MaxMessageBytes caps a command's body; larger ones are rejected. The
+	// whole encoded message may be 64 KiB larger (properties, token); a
+	// message above that closes the link, and the broker hands it back
+	// until its delivery limit dead-letters it. Give the broker a matching
+	// publish limit (RabbitMQ: max_message_size) so it refuses such
+	// messages up front.
 	MaxMessageBytes int64 `yaml:"max_message_bytes" default:"5242880" validate:"gt=0"`
 	// Scopes are granted to messages without an authorization property
 	// ("Bearer <token>", checked like an API token). Empty requires a token

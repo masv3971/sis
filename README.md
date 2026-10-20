@@ -286,6 +286,13 @@ There are no replies. The outcome is how SIS settles the message:
 | rejected | the message's fault (the 4xx cases of `/api/v1`: bad body, unknown subject, missing record, conflict, no or bad token) | dead-letters it; the AMQP error describes why |
 | modified, delivery failed | SIS's fault (5xx: database or token issuer down) | redelivers it, up to its delivery limit |
 
+`max_message_bytes` caps the body (larger: rejected). SIS reads at most
+64 KiB more for the rest of the message; a bigger message closes the link
+before it is read, the broker hands it back, and its delivery limit
+dead-letters it. Give the broker a matching publish limit (RabbitMQ:
+`max_message_size`, as in `developer_tools/rabbitmq/rabbitmq.conf`) so such
+messages are refused when published.
+
 A message without `authorization` is only accepted when
 `sis.adapter.inbound.amqpapi.scopes` is `[sis.write]`. That setting trusts
 everyone who may publish to the queue. Redelivery runs a command again: a
