@@ -154,16 +154,18 @@ func (r *DocRepo[T, PT]) GetBySourcedID(ctx context.Context, sourcedID string) (
 }
 
 // List returns a page of live entities ordered by sourcedId. The total comes
-// from the same statement as the page, so the two always agree.
+// from the same statement as the page, so the two always agree; a page past
+// the end is one row with NULL data that carries only the total.
 func (r *DocRepo[T, PT]) List(ctx context.Context, params port.ListParams) (port.Page[PT], error) {
-	query := `SELECT data, count(*) OVER () FROM entities WHERE type=$1 AND ` + liveFilter + ` ORDER BY sourced_id OFFSET $2`
-	args := []any{r.typeName, params.Offset}
+	var limit any // nil: LIMIT NULL, no limit
 	if params.Limit > 0 {
-		query += ` LIMIT $3`
-		args = append(args, params.Limit)
+		limit = params.Limit
 	}
-
-	rows, err := r.pool.Query(ctx, query, args...)
+	rows, err := r.pool.Query(ctx, `SELECT p.data, t.n
+		FROM (SELECT count(*) AS n FROM entities WHERE type=$1 AND `+liveFilter+`) t
+		LEFT JOIN LATERAL (SELECT data, sourced_id FROM entities WHERE type=$1 AND `+liveFilter+`
+			ORDER BY sourced_id OFFSET $2 LIMIT $3) p ON true
+		ORDER BY p.sourced_id`, r.typeName, params.Offset, limit)
 	if err != nil {
 		return port.Page[PT]{}, err
 	}
@@ -176,6 +178,9 @@ func (r *DocRepo[T, PT]) List(ctx context.Context, params port.ListParams) (port
 		if err := rows.Scan(&data, &total); err != nil {
 			return port.Page[PT]{}, err
 		}
+		if data == nil {
+			continue
+		}
 		e, err := unmarshalDoc[T, PT](data)
 		if err != nil {
 			return port.Page[PT]{}, err
@@ -184,12 +189,6 @@ func (r *DocRepo[T, PT]) List(ctx context.Context, params port.ListParams) (port
 	}
 	if err := rows.Err(); err != nil {
 		return port.Page[PT]{}, err
-	}
-	// A page past the end has no row to carry the total.
-	if len(items) == 0 && params.Offset > 0 {
-		if err := r.pool.QueryRow(ctx, `SELECT count(*) FROM entities WHERE type=$1 AND `+liveFilter, r.typeName).Scan(&total); err != nil {
-			return port.Page[PT]{}, err
-		}
 	}
 	return port.Page[PT]{Items: items, Total: total}, nil
 }

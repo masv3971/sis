@@ -156,16 +156,18 @@ func (r *PersonRepository) GetBySourcedID(ctx context.Context, sourcedID string)
 // List returns a page of persons ordered by family name, given name, then id.
 // The unique id tie-breaker makes the order total so rows cannot move between
 // pages for people who share a name. The total comes from the same statement
-// as the page, so the two always agree.
+// as the page, so the two always agree; a page past the end is one row of
+// NULL person columns that carries only the total.
 func (r *PersonRepository) List(ctx context.Context, params port.ListParams) (port.Page[domain.Person], error) {
-	query := `SELECT ` + personColumns + `, count(*) OVER () FROM persons WHERE ` + liveFilter + ` ORDER BY family_name, given_name, id OFFSET $1`
-	args := []any{params.Offset}
+	var limit any // nil: LIMIT NULL, no limit
 	if params.Limit > 0 {
-		query += ` LIMIT $2`
-		args = append(args, params.Limit)
+		limit = params.Limit
 	}
-
-	rows, err := r.pool.Query(ctx, query, args...)
+	rows, err := r.pool.Query(ctx, `SELECT p.*, t.n
+		FROM (SELECT count(*) AS n FROM persons WHERE `+liveFilter+`) t
+		LEFT JOIN LATERAL (SELECT `+personColumns+` FROM persons WHERE `+liveFilter+`
+			ORDER BY family_name, given_name, id OFFSET $1 LIMIT $2) p ON true
+		ORDER BY p.family_name, p.given_name, p.id`, params.Offset, limit)
 	if err != nil {
 		return port.Page[domain.Person]{}, err
 	}
@@ -174,6 +176,14 @@ func (r *PersonRepository) List(ctx context.Context, params port.ListParams) (po
 	var total int
 	items := make([]domain.Person, 0, preallocCap(params.Limit))
 	for rows.Next() {
+		if rows.RawValues()[0] == nil { // NULL id: only the total
+			dest := make([]any, len(rows.FieldDescriptions())) // nil skips a column
+			dest[len(dest)-1] = &total
+			if err := rows.Scan(dest...); err != nil {
+				return port.Page[domain.Person]{}, err
+			}
+			continue
+		}
 		p, err := scanPerson(rows, &total)
 		if err != nil {
 			return port.Page[domain.Person]{}, err
@@ -182,12 +192,6 @@ func (r *PersonRepository) List(ctx context.Context, params port.ListParams) (po
 	}
 	if err := rows.Err(); err != nil {
 		return port.Page[domain.Person]{}, err
-	}
-	// A page past the end has no row to carry the total.
-	if len(items) == 0 && params.Offset > 0 {
-		if err := r.pool.QueryRow(ctx, `SELECT count(*) FROM persons WHERE `+liveFilter).Scan(&total); err != nil {
-			return port.Page[domain.Person]{}, err
-		}
 	}
 	return port.Page[domain.Person]{Items: items, Total: total}, nil
 }

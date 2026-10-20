@@ -3,6 +3,7 @@ package postgres_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"sync"
@@ -190,6 +191,65 @@ func TestGetByIDs(t *testing.T) {
 	cs, err = courses.GetBySourcedIDs(ctx, []string{ca.SourcedID, ca.ID, "missing"})
 	if err != nil || len(cs) != 1 || cs[0].ID != ca.ID {
 		t.Fatalf("courses GetBySourcedIDs = %+v, %v; want only %s", cs, err, ca.ID)
+	}
+}
+
+// TestListTotalMatchesPageUnderInserts lists just past the end while rows
+// are inserted: an empty page must never report a total beyond its offset,
+// and a non-empty one never a total at or below it.
+func TestListTotalMatchesPageUnderInserts(t *testing.T) {
+	ctx := context.Background()
+	svc := newStore(t)
+	suffix := time.Now().Format("150405.000000")
+	persons := svc.Persons()
+	courses := postgres.NewDocRepo[domain.Course](svc)
+
+	const inserts = 100
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := range inserts {
+			now := time.Now().UTC()
+			id := fmt.Sprintf("lt-%s-%03d", suffix, i)
+			p := domain.Person{ID: id, SourcedID: "s" + id, Status: domain.StatusActive, GivenName: "L", FamilyName: "L", CreatedAt: now, UpdatedAt: now}
+			c := &domain.Course{Base: domain.Base{ID: id, SourcedID: "s" + id, CreatedAt: now, UpdatedAt: now}, Title: "L"}
+			_ = persons.Create(ctx, p)
+			_ = courses.Create(ctx, c)
+		}
+	}()
+	t.Cleanup(func() {
+		for i := range inserts {
+			id := fmt.Sprintf("lt-%s-%03d", suffix, i)
+			_ = persons.Delete(ctx, id)
+			_ = courses.Delete(ctx, id)
+		}
+	})
+
+	check := func(name string, offset, items, total int) {
+		t.Helper()
+		if (items == 0) != (total <= offset) {
+			t.Fatalf("%s at offset %d: %d items with total %d", name, offset, items, total)
+		}
+	}
+	var pOff, cOff int
+	for running := true; running; {
+		select {
+		case <-done:
+			running = false
+		default:
+		}
+		pp, err := persons.List(ctx, port.ListParams{Offset: pOff, Limit: 1})
+		if err != nil {
+			t.Fatalf("persons list: %v", err)
+		}
+		check("persons", pOff, len(pp.Items), pp.Total)
+		pOff = pp.Total
+		cp, err := courses.List(ctx, port.ListParams{Offset: cOff, Limit: 1})
+		if err != nil {
+			t.Fatalf("courses list: %v", err)
+		}
+		check("courses", cOff, len(cp.Items), cp.Total)
+		cOff = cp.Total
 	}
 }
 
