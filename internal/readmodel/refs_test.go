@@ -37,6 +37,11 @@ func (r *countingPersons) GetBySourcedID(ctx context.Context, sid string) (domai
 	return r.PersonRepository.GetBySourcedID(ctx, sid)
 }
 
+func (r *countingPersons) GetBySourcedIDs(ctx context.Context, sids []string) ([]domain.Person, error) {
+	r.bulk++
+	return r.PersonRepository.GetBySourcedIDs(ctx, sids)
+}
+
 type countingDocs[T any, PT domain.EntityPtr[T]] struct {
 	port.Repository[T, PT]
 	bulk, single int
@@ -55,6 +60,11 @@ func (r *countingDocs[T, PT]) Get(ctx context.Context, id string) (PT, error) {
 func (r *countingDocs[T, PT]) GetBySourcedID(ctx context.Context, sid string) (PT, error) {
 	r.single++
 	return r.Repository.GetBySourcedID(ctx, sid)
+}
+
+func (r *countingDocs[T, PT]) GetBySourcedIDs(ctx context.Context, sids []string) ([]PT, error) {
+	r.bulk++
+	return r.Repository.GetBySourcedIDs(ctx, sids)
 }
 
 type fixture struct {
@@ -283,6 +293,18 @@ func TestPublishRefsProgramsAndResults(t *testing.T) {
 	}
 	if err := c.CheckRefs(ctx, &domain.Result{PersonID: "p", ProgramID: "BSc"}); err == nil {
 		t.Fatal("CheckRefs must refuse a program sourcedId")
+	}
+}
+
+// TestUnknownRefTypeIsAnError checks a reference type missing from the
+// lookup switches fails the request instead of panicking.
+func TestUnknownRefTypeIsAnError(t *testing.T) {
+	c := newFixture(t).c
+	if _, err := c.sourcedIDs(t.Context(), "nope", []string{"x"}); err == nil {
+		t.Fatal("sourcedIDs: expected an error")
+	}
+	if _, err := c.storedIDs(t.Context(), "nope", []string{"x"}); err == nil {
+		t.Fatal("storedIDs: expected an error")
 	}
 }
 

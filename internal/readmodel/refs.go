@@ -2,6 +2,7 @@ package readmodel
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/SUNET/sis/internal/core/domain"
 	"github.com/SUNET/sis/internal/core/service"
@@ -186,7 +187,7 @@ func (c *Client) sourcedIDs(ctx context.Context, typ string, ids []string) (map[
 	case "program":
 		return entitySourcedIDs(ctx, c.Programs, ids)
 	}
-	panic("readmodel: unknown reference type " + typ)
+	return nil, fmt.Errorf("readmodel: unknown reference type %q", typ)
 }
 
 // offeringSourcedIDs is entitySourcedIDs for offerings, except that an

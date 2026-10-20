@@ -2891,7 +2891,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "error": {
-                    "description": "Error is \"unauthorized\" (401: missing, invalid or expired token, or\none from an untrusted issuer) or \"forbidden\" (403: the token lacks the\nrequired scope).",
+                    "description": "Error is \"unauthorized\" (401: missing, invalid or expired token, or\none from an untrusted issuer), \"forbidden\" (403: the token lacks the\nrequired scope) or \"unavailable\" (503: the token's issuer could not be\nreached to check it; retry later).",
                     "type": "string",
                     "example": "unauthorized"
                 },

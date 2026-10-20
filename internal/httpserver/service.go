@@ -108,7 +108,7 @@ func New(ctx context.Context, cfg *model.Cfg, verifier *auth.Verifier, catalog *
 	if docLimit <= 0 {
 		docLimit = maxBodyBytes
 	}
-	engine.Use(requestLogger(log.New("request")), gin.Recovery(), bodyLimit(maxBodyBytes, map[string]int64{
+	engine.Use(requestLogger(log.New("request")), gin.Recovery(), securityHeaders(cfg.SIS.HTTPServer.TLS.Enabled()), bodyLimit(maxBodyBytes, map[string]int64{
 		parsePath:    docLimit,
 		populatePath: docLimit,
 	}))

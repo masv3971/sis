@@ -56,10 +56,18 @@ func (c *Claims) HasScope(scope string) bool { return slices.Contains(c.Scopes, 
 // saying why to the caller (the reason is in the wrapped error, for logs).
 var ErrInvalidToken = errors.New("invalid token")
 
+// ErrIssuerUnavailable is returned when the token's issuer could not be
+// reached (discovery or keys), so the token could not be checked at all.
+var ErrIssuerUnavailable = errors.New("token issuer unavailable")
+
 // httpTimeout bounds every request to an issuer (discovery and JWKS), so an
 // issuer that accepts the connection but never answers cannot hang a
 // request. A var so tests can shorten it.
 var httpTimeout = 10 * time.Second
+
+// retryDelay is how long a failed discovery is reused before the issuer is
+// asked again, so an outage costs one attempt per delay, not one per request.
+var retryDelay = 5 * time.Second
 
 // Verifier checks access tokens against the trusted issuers.
 //
@@ -81,6 +89,8 @@ type issuer struct {
 
 	mu       sync.Mutex
 	verifier *coreoidc.IDTokenVerifier
+	failErr  error
+	failedAt time.Time
 }
 
 // New builds the Verifier from sis.auth.issuers. It does not contact the
@@ -146,7 +156,8 @@ func newHTTPClient(caFiles []string, httpsOnly bool) (*http.Client, error) {
 
 // Verify checks raw was signed by a trusted issuer and is valid now
 // (signature, iss, exp, nbf and, when configured, aud), and returns its
-// claims. Any failure is ErrInvalidToken.
+// claims. A token that fails is ErrInvalidToken; one that cannot be checked
+// because its issuer is unreachable is ErrIssuerUnavailable.
 func (v *Verifier) Verify(ctx context.Context, raw string) (*Claims, error) {
 	var unverified struct {
 		Issuer string `json:"iss"`
@@ -164,19 +175,32 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (*Claims, error) {
 	tv, err := iss.tokenVerifier(ctx)
 	if err != nil {
 		v.log.Warn("token issuer unavailable", "issuer", iss.cfg.Issuer, "err", err)
-		return nil, fmt.Errorf("%w: %v", ErrInvalidToken, err)
+		return nil, fmt.Errorf("%w: %v", ErrIssuerUnavailable, err)
 	}
 	ctx, cancel := context.WithTimeout(coreoidc.ClientContext(ctx, iss.httpClient), httpTimeout)
 	defer cancel()
-	tok, err := tv.Verify(ctx, raw)
+	var fetchErr error
+	tok, err := tv.Verify(context.WithValue(ctx, fetchErrKey{}, &fetchErr), raw)
+	if fetchErr != nil {
+		v.log.Warn("token issuer keys unavailable", "issuer", iss.cfg.Issuer, "err", fetchErr)
+		return nil, fmt.Errorf("%w: %v", ErrIssuerUnavailable, fetchErr)
+	}
 	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidToken, err)
+	}
+	if err := checkAccessToken(raw); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidToken, err)
 	}
 	var c struct {
 		Scope json.RawMessage `json:"scope"`
+		Typ   string          `json:"typ"`
 	}
 	if err := tok.Claims(&c); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidToken, err)
+	}
+	// Keycloak marks its ID tokens with typ "ID" in the payload.
+	if strings.EqualFold(c.Typ, "ID") {
+		return nil, fmt.Errorf("%w: an ID token is not an access token", ErrInvalidToken)
 	}
 	scopes, err := parseScope(c.Scope)
 	if err != nil {
@@ -186,13 +210,27 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (*Claims, error) {
 }
 
 // tokenVerifier returns the issuer's verifier, building it on first success.
-// A failed discovery is not cached, so the next request retries.
+// A failed discovery is reused for retryDelay, then retried. Callers that
+// queue on mu meanwhile get that one attempt's result.
 func (i *issuer) tokenVerifier(ctx context.Context) (*coreoidc.IDTokenVerifier, error) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	if i.verifier != nil {
 		return i.verifier, nil
 	}
+	if i.failErr != nil && time.Since(i.failedAt) < retryDelay {
+		return nil, i.failErr
+	}
+	tv, err := i.newTokenVerifier(ctx)
+	if err != nil {
+		i.failErr, i.failedAt = err, time.Now()
+		return nil, err
+	}
+	i.verifier, i.failErr = tv, nil
+	return tv, nil
+}
+
+func (i *issuer) newTokenVerifier(ctx context.Context) (*coreoidc.IDTokenVerifier, error) {
 	// Key sets refresh in the background on an unknown key id, long after
 	// this request: they keep the HTTP client from ctx, so detach from its
 	// cancellation but keep the timeout-bound client.
@@ -209,7 +247,7 @@ func (i *issuer) tokenVerifier(ctx context.Context) (*coreoidc.IDTokenVerifier, 
 			return nil, fmt.Errorf("discovered jwks_uri %s: https is required in production", jwksURL)
 		}
 	}
-	i.verifier = coreoidc.NewVerifier(i.cfg.Issuer, coreoidc.NewRemoteKeySet(keyCtx, jwksURL), &coreoidc.Config{
+	return coreoidc.NewVerifier(i.cfg.Issuer, keySet{coreoidc.NewRemoteKeySet(keyCtx, jwksURL)}, &coreoidc.Config{
 		ClientID: i.cfg.Audience,
 		// Without an audience every token of the issuer is accepted;
 		// production config requires one.
@@ -221,8 +259,24 @@ func (i *issuer) tokenVerifier(ctx context.Context) (*coreoidc.IDTokenVerifier, 
 			coreoidc.ES256, coreoidc.ES384, coreoidc.ES512,
 			coreoidc.PS256, coreoidc.PS384, coreoidc.PS512, coreoidc.EdDSA,
 		},
-	})
-	return i.verifier, nil
+	}), nil
+}
+
+type fetchErrKey struct{}
+
+// keySet reports a failed key fetch into the *error stored under
+// fetchErrKey, because go-oidc flattens KeySet errors into a string.
+type keySet struct{ remote *coreoidc.RemoteKeySet }
+
+func (k keySet) VerifySignature(ctx context.Context, jwt string) ([]byte, error) {
+	payload, err := k.remote.VerifySignature(ctx, jwt)
+	// RemoteKeySet prefixes exactly its fetch failures this way.
+	if err != nil && strings.HasPrefix(err.Error(), "fetching keys") {
+		if p, ok := ctx.Value(fetchErrKey{}).(*error); ok {
+			*p = err
+		}
+	}
+	return payload, err
 }
 
 // discoverJWKS reads jwks_uri from the issuer's discovery document. It does
@@ -276,6 +330,28 @@ func parseScope(raw json.RawMessage) ([]string, error) {
 		return nil, errors.New("scope claim is neither a string nor a list of strings")
 	}
 	return list, nil
+}
+
+// checkAccessToken rejects a JWT whose JOSE typ header names another kind of
+// token (e.g. logout+jwt). RFC 9068 access tokens say at+jwt; many issuers
+// send JWT or nothing, so those pass too. Call it after the signature check.
+func checkAccessToken(raw string) error {
+	head, _, _ := strings.Cut(raw, ".")
+	b, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(head, "="))
+	if err != nil {
+		return fmt.Errorf("header: %w", err)
+	}
+	var h struct {
+		Typ string `json:"typ"`
+	}
+	if err := json.Unmarshal(b, &h); err != nil {
+		return fmt.Errorf("header: %w", err)
+	}
+	switch strings.TrimPrefix(strings.ToLower(h.Typ), "application/") {
+	case "", "jwt", "at+jwt":
+		return nil
+	}
+	return fmt.Errorf("typ %q is not an access token", h.Typ)
 }
 
 // unverifiedPayload decodes a compact JWS payload without checking the

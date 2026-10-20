@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
@@ -14,12 +15,18 @@ func (v *Verifier) RequireAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		raw, ok := bearerToken(c.GetHeader("Authorization"))
 		if !ok {
+			challenge(c, "")
 			abort(c, http.StatusUnauthorized, "missing bearer token")
 			return
 		}
 		claims, err := v.Verify(c.Request.Context(), raw)
+		if errors.Is(err, ErrIssuerUnavailable) {
+			abort(c, http.StatusServiceUnavailable, "token issuer unavailable")
+			return
+		}
 		if err != nil {
 			v.log.Debug("token rejected", "err", err)
+			challenge(c, `error="invalid_token"`)
 			abort(c, http.StatusUnauthorized, "invalid token")
 			return
 		}
@@ -48,15 +55,27 @@ func RequireScope(scope string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		claims := ClaimsFrom(c)
 		if claims == nil {
+			challenge(c, "")
 			abort(c, http.StatusUnauthorized, "unauthenticated")
 			return
 		}
 		if !claims.HasScope(scope) {
+			challenge(c, `error="insufficient_scope", scope="`+scope+`"`)
 			abort(c, http.StatusForbidden, "token lacks scope "+scope)
 			return
 		}
 		c.Next()
 	}
+}
+
+// challenge sets the RFC 6750 §3 WWW-Authenticate header, with optional
+// auth-params.
+func challenge(c *gin.Context, params string) {
+	v := "Bearer"
+	if params != "" {
+		v += " " + params
+	}
+	c.Header("WWW-Authenticate", v)
 }
 
 // ClaimsFrom returns the verified claims, or nil if unauthenticated.
@@ -73,19 +92,23 @@ func ClaimsFrom(c *gin.Context) *Claims {
 // request.
 type ErrorResponse struct {
 	// Error is "unauthorized" (401: missing, invalid or expired token, or
-	// one from an untrusted issuer) or "forbidden" (403: the token lacks the
-	// required scope).
+	// one from an untrusted issuer), "forbidden" (403: the token lacks the
+	// required scope) or "unavailable" (503: the token's issuer could not be
+	// reached to check it; retry later).
 	Error   string `json:"error" example:"unauthorized"`
 	Message string `json:"message" example:"missing bearer token"`
 }
 
 // abort ends the request with a JSON error whose code follows the status, so
 // clients can tell a failed authentication (401 unauthorized) from missing
-// permissions (403 forbidden).
+// permissions (403 forbidden) and an issuer outage (503 unavailable).
 func abort(c *gin.Context, status int, msg string) {
 	code := "unauthorized"
-	if status == http.StatusForbidden {
+	switch status {
+	case http.StatusForbidden:
 		code = "forbidden"
+	case http.StatusServiceUnavailable:
+		code = "unavailable"
 	}
 	c.AbortWithStatusJSON(status, ErrorResponse{Error: code, Message: msg})
 }

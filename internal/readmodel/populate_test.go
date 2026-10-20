@@ -2,6 +2,7 @@ package readmodel
 
 import (
 	"errors"
+	"strconv"
 	"testing"
 	"time"
 
@@ -98,6 +99,39 @@ func TestPopulateResolvesStoredRefs(t *testing.T) {
 	must(t, err)
 	if r.CourseID != "c-id" || r.ExpiresAt != nil {
 		t.Fatalf("result = %+v", r)
+	}
+}
+
+// TestPopulateBatchesStoredRefs checks references to stored records cost one
+// lookup per type, however many records hold them.
+func TestPopulateBatchesStoredRefs(t *testing.T) {
+	ctx := t.Context()
+	f := newFixture(t)
+	c := f.c
+	_, err := c.Offerings.Create(ctx, &domain.Offering{Base: domain.Base{ID: "f-id", SourcedID: "DA101-ht26"}, CourseID: "c-id"})
+	must(t, err)
+	b := &domain.Bundle{}
+	for i := range 5 {
+		sid := "stu" + strconv.Itoa(i)
+		_, err := c.Persons.CreatePerson(ctx, domain.Person{ID: "p" + sid, SourcedID: sid, GivenName: "A", FamilyName: "B", Status: domain.StatusActive})
+		must(t, err)
+		b.Enrollments = append(b.Enrollments, &domain.Enrollment{
+			Base:     domain.Base{SourcedID: "enr" + strconv.Itoa(i), Status: domain.StatusActive},
+			PersonID: sid, OfferingID: "DA101-ht26", Role: domain.RoleStudent,
+		})
+	}
+	f.persons.bulk, f.persons.single, f.offering.bulk, f.offering.single = 0, 0, 0, 0
+
+	_, err = c.Populate(ctx, b, nil)
+	must(t, err)
+	if f.persons.bulk != 1 || f.persons.single != 0 || f.offering.bulk != 1 || f.offering.single != 0 {
+		t.Fatalf("lookups: persons bulk=%d single=%d, offerings bulk=%d single=%d",
+			f.persons.bulk, f.persons.single, f.offering.bulk, f.offering.single)
+	}
+	e, err := c.Enrollments.GetBySourcedID(ctx, "enr3")
+	must(t, err)
+	if e.PersonID != "pstu3" || e.OfferingID != "f-id" {
+		t.Fatalf("enrollment = %+v", e)
 	}
 }
 

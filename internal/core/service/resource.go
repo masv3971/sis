@@ -172,6 +172,11 @@ func (s *Resource[T, PT]) GetBySourcedID(ctx context.Context, sourcedID string) 
 	return s.repo.GetBySourcedID(ctx, sourcedID)
 }
 
+// GetBySourcedIDs is GetByIDs by sourcedId.
+func (s *Resource[T, PT]) GetBySourcedIDs(ctx context.Context, sourcedIDs []string) ([]PT, error) {
+	return s.repo.GetBySourcedIDs(ctx, sourcedIDs)
+}
+
 // List returns a page of entities.
 func (s *Resource[T, PT]) List(ctx context.Context, params port.ListParams) (port.Page[PT], error) {
 	return s.repo.List(ctx, params)

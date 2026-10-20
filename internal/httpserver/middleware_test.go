@@ -43,3 +43,23 @@ func TestRequestLoggerRecordsRedactedCause(t *testing.T) {
 		t.Fatalf("successful request should log at info without err: %s", out)
 	}
 }
+
+// TestSecurityHeaders checks every response, including a 404, carries the
+// security headers, and HSTS only over TLS.
+func TestSecurityHeaders(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, tls := range []bool{false, true} {
+		r := gin.New()
+		r.Use(securityHeaders(tls))
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/missing", nil))
+		h := w.Header()
+		if h.Get("X-Content-Type-Options") != "nosniff" || h.Get("X-Frame-Options") != "DENY" ||
+			h.Get("Content-Security-Policy") != "frame-ancestors 'none'" || h.Get("Referrer-Policy") != "no-referrer" {
+			t.Fatalf("tls=%v: headers %v", tls, h)
+		}
+		if got := h.Get("Strict-Transport-Security") != ""; got != tls {
+			t.Fatalf("tls=%v: HSTS present = %v", tls, got)
+		}
+	}
+}

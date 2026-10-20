@@ -155,6 +155,11 @@ func (s *Service) GetPersonBySourcedID(ctx context.Context, sourcedID string) (d
 	return s.persons.GetBySourcedID(ctx, sourcedID)
 }
 
+// GetPersonsBySourcedIDs is GetPersons by sourcedId.
+func (s *Service) GetPersonsBySourcedIDs(ctx context.Context, sourcedIDs []string) ([]domain.Person, error) {
+	return s.persons.GetBySourcedIDs(ctx, sourcedIDs)
+}
+
 // ListPersons returns a page of persons.
 func (s *Service) ListPersons(ctx context.Context, params port.ListParams) (port.Page[domain.Person], error) {
 	return s.persons.List(ctx, params)

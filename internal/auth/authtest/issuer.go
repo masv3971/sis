@@ -125,7 +125,17 @@ func (i *Issuer) Token(t testing.TB, sub, scope string) string {
 // Sign signs arbitrary claims with this issuer's key (RS256).
 func (i *Issuer) Sign(t testing.TB, claims map[string]any) string {
 	t.Helper()
-	return sign(t, i.key, map[string]string{"alg": "RS256", "typ": "JWT", "kid": i.kid}, claims)
+	return i.SignTyp(t, "JWT", claims)
+}
+
+// SignTyp is Sign with the given JOSE typ header ("" omits it).
+func (i *Issuer) SignTyp(t testing.TB, typ string, claims map[string]any) string {
+	t.Helper()
+	h := map[string]string{"alg": "RS256", "kid": i.kid}
+	if typ != "" {
+		h["typ"] = typ
+	}
+	return sign(t, i.key, h, claims)
 }
 
 // SignWith signs claims with an unrelated key under this issuer's key id, so
