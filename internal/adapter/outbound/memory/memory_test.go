@@ -26,6 +26,36 @@ func TestPersonUpdateRejectsForeignSourcedID(t *testing.T) {
 	}
 }
 
+// TestPersonSourcedIDIndex checks the sourcedId index follows renames,
+// deletes and sweeps, so a freed sourcedId resolves to nothing and can be
+// reused.
+func TestPersonSourcedIDIndex(t *testing.T) {
+	ctx := context.Background()
+	r := NewPersonRepository()
+	mustNoErr(t, r.Create(ctx, domain.Person{ID: "1", SourcedID: "a"}))
+	mustNoErr(t, r.Update(ctx, domain.Person{ID: "1", SourcedID: "b"}, nil))
+	if _, err := r.GetBySourcedID(ctx, "a"); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("old sourcedId after rename: %v", err)
+	}
+	if ps, _ := r.GetBySourcedIDs(ctx, []string{"a", "b"}); len(ps) != 1 || ps[0].ID != "1" {
+		t.Fatalf("GetBySourcedIDs = %+v", ps)
+	}
+	mustNoErr(t, r.Create(ctx, domain.Person{ID: "2", SourcedID: "a"}))
+
+	mustNoErr(t, r.Delete(ctx, "1"))
+	if _, ok := r.sourcedToID["b"]; ok {
+		t.Fatal("Delete must clean the index")
+	}
+	exp := time.Now().Add(-time.Minute)
+	mustNoErr(t, r.Update(ctx, domain.Person{ID: "2", SourcedID: "a", ExpiresAt: &exp}, nil))
+	if _, err := r.DeleteExpired(ctx, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.sourcedToID) != 0 || len(r.byID) != 0 {
+		t.Fatalf("DeleteExpired must clean the index: %v %v", r.sourcedToID, r.byID)
+	}
+}
+
 func TestPersonListLimitDoesNotOverflow(t *testing.T) {
 	ctx := context.Background()
 	r := NewPersonRepository()

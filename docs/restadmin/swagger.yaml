@@ -5,8 +5,9 @@ definitions:
       error:
         description: |-
           Error is "unauthorized" (401: missing, invalid or expired token, or
-          one from an untrusted issuer) or "forbidden" (403: the token lacks the
-          required scope).
+          one from an untrusted issuer), "forbidden" (403: the token lacks the
+          required scope) or "unavailable" (503: the token's issuer could not be
+          reached to check it; retry later).
         example: unauthorized
         type: string
       message:

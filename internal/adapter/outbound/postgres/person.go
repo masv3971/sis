@@ -116,16 +116,28 @@ func (r *PersonRepository) Get(ctx context.Context, id string) (domain.Person, e
 
 // GetByIDs returns the persons whose id is in ids in one query.
 func (r *PersonRepository) GetByIDs(ctx context.Context, ids []string) ([]domain.Person, error) {
-	if len(ids) == 0 {
+	return r.getAny(ctx, "id", ids)
+}
+
+// GetBySourcedIDs returns the persons whose sourcedId is in sids in one
+// query.
+func (r *PersonRepository) GetBySourcedIDs(ctx context.Context, sids []string) ([]domain.Person, error) {
+	return r.getAny(ctx, "sourced_id", sids)
+}
+
+// getAny returns the live persons whose column (a constant, never input) is
+// in keys.
+func (r *PersonRepository) getAny(ctx context.Context, column string, keys []string) ([]domain.Person, error) {
+	if len(keys) == 0 {
 		return nil, nil
 	}
-	rows, err := r.pool.Query(ctx, `SELECT `+personColumns+` FROM persons WHERE id = ANY($1) AND `+liveFilter, ids)
+	rows, err := r.pool.Query(ctx, `SELECT `+personColumns+` FROM persons WHERE `+column+` = ANY($1) AND `+liveFilter, keys)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	items := make([]domain.Person, 0, preallocCap(len(ids)))
+	items := make([]domain.Person, 0, preallocCap(len(keys)))
 	for rows.Next() {
 		p, err := scanPerson(rows)
 		if err != nil {
@@ -143,29 +155,36 @@ func (r *PersonRepository) GetBySourcedID(ctx context.Context, sourcedID string)
 
 // List returns a page of persons ordered by family name, given name, then id.
 // The unique id tie-breaker makes the order total so rows cannot move between
-// pages for people who share a name.
+// pages for people who share a name. The total comes from the same statement
+// as the page, so the two always agree; a page past the end is one row of
+// NULL person columns that carries only the total.
 func (r *PersonRepository) List(ctx context.Context, params port.ListParams) (port.Page[domain.Person], error) {
-	var total int
-	if err := r.pool.QueryRow(ctx, `SELECT count(*) FROM persons WHERE `+liveFilter).Scan(&total); err != nil {
-		return port.Page[domain.Person]{}, err
-	}
-
-	query := `SELECT ` + personColumns + ` FROM persons WHERE ` + liveFilter + ` ORDER BY family_name, given_name, id OFFSET $1`
-	args := []any{params.Offset}
+	var limit any // nil: LIMIT NULL, no limit
 	if params.Limit > 0 {
-		query += ` LIMIT $2`
-		args = append(args, params.Limit)
+		limit = params.Limit
 	}
-
-	rows, err := r.pool.Query(ctx, query, args...)
+	rows, err := r.pool.Query(ctx, `SELECT p.*, t.n
+		FROM (SELECT count(*) AS n FROM persons WHERE `+liveFilter+`) t
+		LEFT JOIN LATERAL (SELECT `+personColumns+` FROM persons WHERE `+liveFilter+`
+			ORDER BY family_name, given_name, id OFFSET $1 LIMIT $2) p ON true
+		ORDER BY p.family_name, p.given_name, p.id`, params.Offset, limit)
 	if err != nil {
 		return port.Page[domain.Person]{}, err
 	}
 	defer rows.Close()
 
+	var total int
 	items := make([]domain.Person, 0, preallocCap(params.Limit))
 	for rows.Next() {
-		p, err := scanPerson(rows)
+		if rows.RawValues()[0] == nil { // NULL id: only the total
+			dest := make([]any, len(rows.FieldDescriptions())) // nil skips a column
+			dest[len(dest)-1] = &total
+			if err := rows.Scan(dest...); err != nil {
+				return port.Page[domain.Person]{}, err
+			}
+			continue
+		}
+		p, err := scanPerson(rows, &total)
 		if err != nil {
 			return port.Page[domain.Person]{}, err
 		}
@@ -207,14 +226,16 @@ type row interface {
 	Scan(dest ...any) error
 }
 
-func scanPerson(r row) (domain.Person, error) {
+// scanPerson scans one personColumns row, then any extra trailing columns.
+func scanPerson(r row, extra ...any) (domain.Person, error) {
 	var (
 		p                          domain.Person
 		roles, ids, emails, phones []byte
 	)
-	if err := r.Scan(&p.ID, &p.SourcedID, &p.Status, &p.GivenName, &p.FamilyName,
+	dest := append([]any{&p.ID, &p.SourcedID, &p.Status, &p.GivenName, &p.FamilyName,
 		&p.MiddleName, &p.DateOfBirth, &roles, &ids, &emails, &phones,
-		&p.CreatedAt, &p.UpdatedAt, &p.ExpiresAt); err != nil {
+		&p.CreatedAt, &p.UpdatedAt, &p.ExpiresAt}, extra...)
+	if err := r.Scan(dest...); err != nil {
 		return domain.Person{}, err
 	}
 	if err := unmarshalInto(roles, &p.Roles); err != nil {

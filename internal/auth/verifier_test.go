@@ -54,6 +54,16 @@ func TestVerifyAcceptsTrustedTokens(t *testing.T) {
 	if err != nil || !c.HasScope(auth.ScopeWrite) {
 		t.Fatalf("array scope: %+v %v", c, err)
 	}
+
+	// Access token typ headers in use (RFC 9068 at+jwt, plain JWT, none).
+	for _, typ := range []string{"at+jwt", "application/at+jwt", "AT+JWT", "JWT", ""} {
+		tok := iss.SignTyp(t, typ, map[string]any{
+			"iss": iss.URL, "sub": "x", "aud": "sis", "exp": now.Add(time.Hour).Unix(), "scope": "sis.read", "typ": "Bearer",
+		})
+		if _, err := v.Verify(context.Background(), tok); err != nil {
+			t.Fatalf("typ %q: %v", typ, err)
+		}
+	}
 }
 
 // TestVerifyRejects covers every way a token must fail. Removing the
@@ -89,6 +99,8 @@ func TestVerifyRejects(t *testing.T) {
 		"scope wrong type":  iss.Sign(t, claims(map[string]any{"scope": 42})),
 		"iss trailing /":    iss.Sign(t, claims(map[string]any{"iss": iss.URL + "/"})),
 		"iss case mismatch": iss.Sign(t, claims(map[string]any{"iss": iss.URL + "X"})),
+		"keycloak id token": iss.Sign(t, claims(map[string]any{"typ": "ID"})),
+		"logout token":      iss.SignTyp(t, "logout+jwt", claims(nil)),
 	}
 	for name, tok := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -134,17 +146,23 @@ func TestVerifyTrustsSeveralIssuers(t *testing.T) {
 }
 
 // TestVerifyRecoversWhenIssuerComesUp checks a down issuer only rejects its
-// tokens until it is reachable, without a restart, and that keys are cached.
+// tokens until it is reachable, without a restart, that a failed discovery
+// is reused for the retry delay, and that keys are cached.
 func TestVerifyRecoversWhenIssuerComesUp(t *testing.T) {
 	iss := authtest.NewIssuer(t)
 	v := newVerifier(t, iss.Config())
 	tok := iss.Token(t, "x", "sis.read")
 
+	auth.SetRetryDelay(t, time.Hour)
 	iss.Down.Store(true)
-	if _, err := v.Verify(context.Background(), tok); !errors.Is(err, auth.ErrInvalidToken) {
-		t.Fatalf("down issuer: expected ErrInvalidToken, got %v", err)
+	if _, err := v.Verify(context.Background(), tok); !errors.Is(err, auth.ErrIssuerUnavailable) {
+		t.Fatalf("down issuer: expected ErrIssuerUnavailable, got %v", err)
 	}
 	iss.Down.Store(false)
+	if _, err := v.Verify(context.Background(), tok); !errors.Is(err, auth.ErrIssuerUnavailable) {
+		t.Fatalf("within retry delay: expected the cached failure, got %v", err)
+	}
+	auth.SetRetryDelay(t, 0)
 	for range 3 {
 		if _, err := v.Verify(context.Background(), tok); err != nil {
 			t.Fatalf("after recovery: %v", err)
@@ -152,6 +170,19 @@ func TestVerifyRecoversWhenIssuerComesUp(t *testing.T) {
 	}
 	if hits := iss.JWKSHits.Load(); hits != 1 {
 		t.Fatalf("JWKS fetched %d times, want 1 (cached)", hits)
+	}
+}
+
+// TestVerifyKeysUnavailable checks a JWKS endpoint that fails is reported as
+// an issuer outage, not as a bad token.
+func TestVerifyKeysUnavailable(t *testing.T) {
+	iss := authtest.NewIssuer(t)
+	cfg := iss.Config()
+	cfg.JWKSURL = iss.URL + "/certs"
+	v := newVerifier(t, cfg)
+	iss.Down.Store(true)
+	if _, err := v.Verify(context.Background(), iss.Token(t, "x", "sis.read")); !errors.Is(err, auth.ErrIssuerUnavailable) {
+		t.Fatalf("expected ErrIssuerUnavailable, got %v", err)
 	}
 }
 
@@ -237,8 +268,8 @@ func TestVerifyProductionRequiresHTTPSKeys(t *testing.T) {
 		if err := verify(t, false, iss.Config(), ca, tok); err != nil {
 			t.Fatalf("development: %v", err)
 		}
-		if err := verify(t, true, iss.Config(), ca, tok); !errors.Is(err, auth.ErrInvalidToken) {
-			t.Fatalf("production: expected ErrInvalidToken, got %v", err)
+		if err := verify(t, true, iss.Config(), ca, tok); !errors.Is(err, auth.ErrIssuerUnavailable) {
+			t.Fatalf("production: expected ErrIssuerUnavailable, got %v", err)
 		}
 	})
 
@@ -255,8 +286,8 @@ func TestVerifyProductionRequiresHTTPSKeys(t *testing.T) {
 		if err := verify(t, false, ic, ca, tok); err != nil {
 			t.Fatalf("development: %v", err)
 		}
-		if err := verify(t, true, ic, ca, tok); !errors.Is(err, auth.ErrInvalidToken) {
-			t.Fatalf("production: expected ErrInvalidToken, got %v", err)
+		if err := verify(t, true, ic, ca, tok); !errors.Is(err, auth.ErrIssuerUnavailable) {
+			t.Fatalf("production: expected ErrIssuerUnavailable, got %v", err)
 		}
 	})
 }

@@ -37,7 +37,8 @@ import (
 
 const maxBodyBytes = 1 << 20 // 1 MiB
 
-// Routes with their own body cap (sis.adapter.inbound.convertapi.max_body_bytes).
+// Routes with their own body cap and write timeout
+// (sis.adapter.inbound.convertapi.{max_body_bytes,write_timeout}).
 const (
 	parsePath    = "/api/v1/parse"
 	populatePath = "/api/v1/populate"
@@ -108,10 +109,16 @@ func New(ctx context.Context, cfg *model.Cfg, verifier *auth.Verifier, catalog *
 	if docLimit <= 0 {
 		docLimit = maxBodyBytes
 	}
-	engine.Use(requestLogger(log.New("request")), gin.Recovery(), bodyLimit(maxBodyBytes, map[string]int64{
+	docTimeout := cfg.SIS.Adapter.Inbound.ConvertAPI.WriteTimeout
+	if docTimeout <= 0 {
+		docTimeout = cfg.SIS.HTTPServer.WriteTimeout
+	}
+	reqLog := log.New("request")
+	engine.Use(requestLogger(reqLog), gin.Recovery(), securityHeaders(cfg.SIS.HTTPServer.TLS.Enabled()), bodyLimit(maxBodyBytes, map[string]int64{
 		parsePath:    docLimit,
 		populatePath: docLimit,
 	}))
+	docDeadline := writeDeadline(docTimeout, reqLog)
 
 	engine.GET("/healthz", func(gc *gin.Context) {
 		gc.JSON(http.StatusOK, gin.H{"status": "ok"})
@@ -142,8 +149,8 @@ func New(ctx context.Context, cfg *model.Cfg, verifier *auth.Verifier, catalog *
 	registerResource(api, guards, "results", adminH, catalog.Results)
 
 	// Document conversion: parse is pure (read guard), populate stores.
-	api.POST("/parse", guards.Read, convH.Parse)
-	api.POST("/populate", guards.Write, convH.Populate)
+	api.POST("/parse", docDeadline, guards.Read, convH.Parse)
+	api.POST("/populate", docDeadline, guards.Write, convH.Populate)
 
 	// Open Education API v6.0 read provider, behind the read scope.
 	oe := engine.Group("/oeapi", requireAuth, guards.Read)

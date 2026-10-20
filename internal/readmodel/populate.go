@@ -124,12 +124,8 @@ func (p *populator) plan(ctx context.Context, b *domain.Bundle) ([]*domain.Organ
 		}
 	}
 
-	for _, e := range all {
-		for _, r := range refsOf(e) {
-			if err := p.resolveStored(ctx, e, r); err != nil {
-				return nil, err
-			}
-		}
+	if err := p.resolveStored(ctx, all); err != nil {
+		return nil, err
 	}
 	return orderOrgs(b.Organizations)
 }
@@ -154,58 +150,88 @@ func (p *populator) member(typ, sid string, validateErr error) error {
 	return nil
 }
 
-// resolveStored checks a reference of e names a record in the bundle or a
-// stored one, recording the stored record's canonical id.
-func (p *populator) resolveStored(ctx context.Context, e domain.Entity, r ref) error {
-	sid := *r.ptr
-	k := refKey{r.typ, sid}
-	if sid == "" || p.inBundle[k] {
-		return nil
+// resolveStored checks every reference of es names a record in the bundle or
+// a stored one, recording the stored records' canonical ids. Stored records
+// are looked up in one batched call per type.
+func (p *populator) resolveStored(ctx context.Context, es []domain.Entity) error {
+	type use struct {
+		e domain.Entity
+		r ref
 	}
-	if _, done := p.ids[k]; done {
-		return nil
-	}
-	id, err := p.c.storedID(ctx, r.typ, sid)
-	if errors.Is(err, domain.ErrNotFound) {
-		return &domain.ValidationError{
-			Field: e.EntityType() + "[" + e.GetSourcedID() + "]." + r.field,
-			Msg:   "no " + r.typ + " with sourcedId " + sid + " in the document or stored",
+	var uses []use
+	byType := map[string][]string{}
+	seen := map[refKey]bool{}
+	for _, e := range es {
+		for _, r := range refsOf(e) {
+			k := refKey{r.typ, *r.ptr}
+			if k.id == "" || p.inBundle[k] {
+				continue
+			}
+			uses = append(uses, use{e, r})
+			if !seen[k] {
+				seen[k] = true
+				byType[r.typ] = append(byType[r.typ], k.id)
+			}
 		}
 	}
-	if err != nil {
-		return err
+	for typ, sids := range byType {
+		ids, err := p.c.storedIDs(ctx, typ, sids)
+		if err != nil {
+			return err
+		}
+		for sid, id := range ids {
+			p.ids[refKey{typ, sid}] = id
+		}
 	}
-	p.ids[k] = id
+	for _, u := range uses {
+		if _, ok := p.ids[refKey{u.r.typ, *u.r.ptr}]; !ok {
+			return &domain.ValidationError{
+				Field: u.e.EntityType() + "[" + u.e.GetSourcedID() + "]." + u.r.field,
+				Msg:   "no " + u.r.typ + " with sourcedId " + *u.r.ptr + " in the document or stored",
+			}
+		}
+	}
 	return nil
 }
 
-// storedID returns the canonical id of the stored typ record with sourcedId.
-func (c *Client) storedID(ctx context.Context, typ, sid string) (string, error) {
-	var (
-		e   domain.Entity
-		err error
-	)
+// storedIDs maps each sourcedId in sids that names a stored typ record to
+// that record's canonical id, in a single repository call.
+func (c *Client) storedIDs(ctx context.Context, typ string, sids []string) (map[string]string, error) {
 	switch typ {
 	case "person":
-		p, err := c.Persons.GetPersonBySourcedID(ctx, sid)
-		return p.ID, err
+		ps, err := c.Persons.GetPersonsBySourcedIDs(ctx, sids)
+		if err != nil {
+			return nil, err
+		}
+		out := make(map[string]string, len(ps))
+		for _, p := range ps {
+			out[p.SourcedID] = p.ID
+		}
+		return out, nil
 	case "organization":
-		e, err = c.Organizations.GetBySourcedID(ctx, sid)
+		return entityIDs(ctx, c.Organizations, sids)
 	case "academicSession":
-		e, err = c.AcademicSessions.GetBySourcedID(ctx, sid)
+		return entityIDs(ctx, c.AcademicSessions, sids)
 	case "course":
-		e, err = c.Courses.GetBySourcedID(ctx, sid)
+		return entityIDs(ctx, c.Courses, sids)
 	case "program":
-		e, err = c.Programs.GetBySourcedID(ctx, sid)
+		return entityIDs(ctx, c.Programs, sids)
 	case "offering":
-		e, err = c.Offerings.GetBySourcedID(ctx, sid)
-	default:
-		panic("readmodel: unknown reference type " + typ)
+		return entityIDs(ctx, c.Offerings, sids)
 	}
+	return nil, fmt.Errorf("readmodel: unknown reference type %q", typ)
+}
+
+func entityIDs[T any, PT domain.EntityPtr[T]](ctx context.Context, svc *service.Resource[T, PT], sids []string) (map[string]string, error) {
+	es, err := svc.GetBySourcedIDs(ctx, sids)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return e.GetID(), nil
+	out := make(map[string]string, len(es))
+	for _, e := range es {
+		out[e.GetSourcedID()] = e.GetID()
+	}
+	return out, nil
 }
 
 // orderOrgs orders organizations so every parent in the slice precedes its

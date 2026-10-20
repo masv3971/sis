@@ -16,14 +16,15 @@ import (
 // PersonRepository is an in-memory port.PersonRepository. Expired persons
 // are invisible except to DeleteExpired (see port.Repository).
 type PersonRepository struct {
-	mu   sync.RWMutex
-	byID map[string]domain.Person
-	now  func() time.Time
+	mu          sync.RWMutex
+	byID        map[string]domain.Person
+	sourcedToID map[string]string
+	now         func() time.Time
 }
 
 // NewPersonRepository returns an empty in-memory person repository.
 func NewPersonRepository() *PersonRepository {
-	return &PersonRepository{byID: make(map[string]domain.Person), now: time.Now}
+	return &PersonRepository{byID: map[string]domain.Person{}, sourcedToID: map[string]string{}, now: time.Now}
 }
 
 // WithClock replaces the clock the expiry filter reads (tests only) and
@@ -48,12 +49,33 @@ func (r *PersonRepository) sourcedOwner(sourcedID string) (string, bool) {
 	if sourcedID == "" {
 		return "", false
 	}
-	for id, p := range r.byID {
-		if p.SourcedID == sourcedID {
-			return id, true
-		}
+	id, ok := r.sourcedToID[sourcedID]
+	return id, ok
+}
+
+// put stores p and indexes its sourcedId. Caller holds the write lock.
+func (r *PersonRepository) put(p domain.Person) {
+	if old, ok := r.byID[p.ID]; ok && old.SourcedID != p.SourcedID {
+		r.unindex(old)
 	}
-	return "", false
+	r.byID[p.ID] = clonePerson(p)
+	if p.SourcedID != "" {
+		r.sourcedToID[p.SourcedID] = p.ID
+	}
+}
+
+// remove drops id and its sourcedId index entry. Caller holds the write lock.
+func (r *PersonRepository) remove(id string) {
+	if p, ok := r.byID[id]; ok {
+		r.unindex(p)
+		delete(r.byID, id)
+	}
+}
+
+func (r *PersonRepository) unindex(p domain.Person) {
+	if r.sourcedToID[p.SourcedID] == p.ID {
+		delete(r.sourcedToID, p.SourcedID)
+	}
 }
 
 // clonePerson returns a copy of p that shares no slice backing arrays with
@@ -84,9 +106,10 @@ func (r *PersonRepository) Create(_ context.Context, p domain.Person) error {
 		if _, ok := r.live(owner, now); ok {
 			return domain.ErrConflict
 		}
-		delete(r.byID, owner)
+		r.remove(owner)
 	}
-	r.byID[p.ID] = clonePerson(p)
+	r.remove(p.ID)
+	r.put(p)
 	return nil
 }
 
@@ -110,9 +133,9 @@ func (r *PersonRepository) Update(_ context.Context, p domain.Person, prevExpire
 		if _, ok := r.live(owner, now); ok {
 			return domain.ErrConflict
 		}
-		delete(r.byID, owner)
+		r.remove(owner)
 	}
-	r.byID[p.ID] = clonePerson(p)
+	r.put(p)
 	return nil
 }
 
@@ -145,13 +168,33 @@ func (r *PersonRepository) GetByIDs(_ context.Context, ids []string) ([]domain.P
 func (r *PersonRepository) GetBySourcedID(_ context.Context, sourcedID string) (domain.Person, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	id, ok := r.sourcedOwner(sourcedID)
+	if !ok {
+		return domain.Person{}, domain.ErrNotFound
+	}
+	p, ok := r.live(id, r.now())
+	if !ok {
+		return domain.Person{}, domain.ErrNotFound
+	}
+	return clonePerson(p), nil
+}
+
+// GetBySourcedIDs returns the live persons whose sourcedId is in sids.
+func (r *PersonRepository) GetBySourcedIDs(_ context.Context, sids []string) ([]domain.Person, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	now := r.now()
-	for _, p := range r.byID {
-		if p.SourcedID == sourcedID && !domain.Expired(p.ExpiresAt, now) {
-			return clonePerson(p), nil
+	items := make([]domain.Person, 0, len(sids))
+	for _, sid := range sids {
+		id, ok := r.sourcedOwner(sid)
+		if !ok {
+			continue
+		}
+		if p, ok := r.live(id, now); ok {
+			items = append(items, clonePerson(p))
 		}
 	}
-	return domain.Person{}, domain.ErrNotFound
+	return items, nil
 }
 
 // List returns a page of persons sorted by family name, given name, then id.
@@ -201,7 +244,7 @@ func (r *PersonRepository) Delete(_ context.Context, id string) error {
 	if _, ok := r.live(id, r.now()); !ok {
 		return domain.ErrNotFound
 	}
-	delete(r.byID, id)
+	r.remove(id)
 	return nil
 }
 
@@ -216,7 +259,7 @@ func (r *PersonRepository) DeleteExpired(_ context.Context, now time.Time) ([]st
 		}
 	}
 	for _, id := range ids {
-		delete(r.byID, id)
+		r.remove(id)
 	}
 	return ids, nil
 }

@@ -23,17 +23,18 @@ func TestRequireScope(t *testing.T) {
 	r.GET("/write", v.RequireAuth(), auth.RequireScope(auth.ScopeWrite), func(c *gin.Context) { c.Status(http.StatusOK) })
 
 	cases := []struct {
-		name   string
-		auth   string
-		status int
-		code   string
+		name      string
+		auth      string
+		status    int
+		code      string
+		challenge string
 	}{
-		{"no token", "", http.StatusUnauthorized, "unauthorized"},
-		{"garbage", "Bearer x.y.z", http.StatusUnauthorized, "unauthorized"},
-		{"untrusted issuer", authtest.Bearer(authtest.NewIssuer(t).Token(t, "x", "sis.write")), http.StatusUnauthorized, "unauthorized"},
-		{"read only", authtest.Bearer(iss.Token(t, "sunet-vc", "sis.read")), http.StatusForbidden, "forbidden"},
-		{"write", authtest.Bearer(iss.Token(t, "liu", "sis.write")), http.StatusOK, ""},
-		{"read and write", authtest.Bearer(iss.Token(t, "alice", "openid sis.read sis.write")), http.StatusOK, ""},
+		{"no token", "", http.StatusUnauthorized, "unauthorized", "Bearer"},
+		{"garbage", "Bearer x.y.z", http.StatusUnauthorized, "unauthorized", `Bearer error="invalid_token"`},
+		{"untrusted issuer", authtest.Bearer(authtest.NewIssuer(t).Token(t, "x", "sis.write")), http.StatusUnauthorized, "unauthorized", `Bearer error="invalid_token"`},
+		{"read only", authtest.Bearer(iss.Token(t, "sunet-vc", "sis.read")), http.StatusForbidden, "forbidden", `Bearer error="insufficient_scope", scope="sis.write"`},
+		{"write", authtest.Bearer(iss.Token(t, "liu", "sis.write")), http.StatusOK, "", ""},
+		{"read and write", authtest.Bearer(iss.Token(t, "alice", "openid sis.read sis.write")), http.StatusOK, "", ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -48,7 +49,31 @@ func TestRequireScope(t *testing.T) {
 			if w.Code != c.status || body.Error != c.code {
 				t.Fatalf("got %d %q, want %d %q", w.Code, body.Error, c.status, c.code)
 			}
+			if got := w.Header().Get("WWW-Authenticate"); got != c.challenge {
+				t.Fatalf("WWW-Authenticate = %q, want %q", got, c.challenge)
+			}
 		})
+	}
+}
+
+// TestRequireAuthIssuerDown checks an unreachable issuer is a 503, so clients
+// retry instead of discarding a good token.
+func TestRequireAuthIssuerDown(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	iss := authtest.NewIssuer(t)
+	v := newVerifier(t, iss.Config())
+	iss.Down.Store(true)
+
+	r := gin.New()
+	r.GET("/x", v.RequireAuth(), func(c *gin.Context) { c.Status(http.StatusOK) })
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req.Header.Set("Authorization", authtest.Bearer(iss.Token(t, "x", "sis.read")))
+	r.ServeHTTP(w, req)
+	var body struct{ Error string }
+	_ = json.Unmarshal(w.Body.Bytes(), &body)
+	if w.Code != http.StatusServiceUnavailable || body.Error != "unavailable" {
+		t.Fatalf("got %d %q, want 503 \"unavailable\"", w.Code, body.Error)
 	}
 }
 

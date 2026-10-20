@@ -3,6 +3,7 @@ package postgres_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"sync"
@@ -35,7 +36,8 @@ func newStore(t *testing.T) *postgres.Service {
 
 func TestPersonRepository_CRUD(t *testing.T) {
 	ctx := context.Background()
-	repo := newStore(t).Persons()
+	svc := newStore(t)
+	repo := svc.Persons()
 
 	p := domain.Person{
 		ID: "test-" + time.Now().Format("150405.000000"), SourcedID: "src-" + time.Now().Format("150405.000000"),
@@ -80,6 +82,19 @@ func TestPersonRepository_CRUD(t *testing.T) {
 	}
 	if page.Total < 1 {
 		t.Fatalf("expected at least one person, got total=%d", page.Total)
+	}
+	// Past the last page: no rows carry the window count, the total must remain.
+	past, err := repo.List(ctx, port.ListParams{Offset: page.Total, Limit: 10})
+	if err != nil || len(past.Items) != 0 || past.Total != page.Total {
+		t.Fatalf("list past the end = %d items, total %d, %v; want 0, %d", len(past.Items), past.Total, err, page.Total)
+	}
+	courses := postgres.NewDocRepo[domain.Course](svc)
+	cpage, err := courses.List(ctx, port.ListParams{Limit: 10})
+	if err != nil {
+		t.Fatalf("courses list: %v", err)
+	}
+	if cpast, err := courses.List(ctx, port.ListParams{Offset: cpage.Total + 1, Limit: 10}); err != nil || cpast.Total != cpage.Total {
+		t.Fatalf("courses list past the end: total %d, %v; want %d", cpast.Total, err, cpage.Total)
 	}
 
 	if err := repo.Delete(ctx, p.ID); err != nil {
@@ -128,8 +143,8 @@ func TestUpdateSourcedIDCollisionIsConflict(t *testing.T) {
 }
 
 // TestGetByIDs checks the bulk lookups used for reference resolution return
-// exactly the matching rows, skip unknown ids, and match by id only (never
-// by sourcedId).
+// exactly the matching rows, skip unknown keys, and match by id or sourcedId
+// only as asked.
 func TestGetByIDs(t *testing.T) {
 	ctx := context.Background()
 	svc := newStore(t)
@@ -155,6 +170,10 @@ func TestGetByIDs(t *testing.T) {
 	if empty, err := persons.GetByIDs(ctx, nil); err != nil || len(empty) != 0 {
 		t.Fatalf("persons GetByIDs(nil) = %v, %v", empty, err)
 	}
+	bySID, err := persons.GetBySourcedIDs(ctx, []string{a.SourcedID, "missing", b.ID})
+	if err != nil || len(bySID) != 1 || bySID[0].ID != a.ID {
+		t.Fatalf("persons GetBySourcedIDs = %+v, %v; want only %s", bySID, err, a.ID)
+	}
 
 	courses := postgres.NewDocRepo[domain.Course](svc)
 	ca := &domain.Course{Base: domain.Base{ID: "gca-" + suffix, SourcedID: "gcsa-" + suffix, CreatedAt: now, UpdatedAt: now}, Title: "A"}
@@ -168,6 +187,69 @@ func TestGetByIDs(t *testing.T) {
 	}
 	if len(cs) != 1 || cs[0].ID != ca.ID {
 		t.Fatalf("courses GetByIDs: got %+v, want only %s", cs, ca.ID)
+	}
+	cs, err = courses.GetBySourcedIDs(ctx, []string{ca.SourcedID, ca.ID, "missing"})
+	if err != nil || len(cs) != 1 || cs[0].ID != ca.ID {
+		t.Fatalf("courses GetBySourcedIDs = %+v, %v; want only %s", cs, err, ca.ID)
+	}
+}
+
+// TestListTotalMatchesPageUnderInserts lists just past the end while rows
+// are inserted: an empty page must never report a total beyond its offset,
+// and a non-empty one never a total at or below it.
+func TestListTotalMatchesPageUnderInserts(t *testing.T) {
+	ctx := context.Background()
+	svc := newStore(t)
+	suffix := time.Now().Format("150405.000000")
+	persons := svc.Persons()
+	courses := postgres.NewDocRepo[domain.Course](svc)
+
+	const inserts = 100
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := range inserts {
+			now := time.Now().UTC()
+			id := fmt.Sprintf("lt-%s-%03d", suffix, i)
+			p := domain.Person{ID: id, SourcedID: "s" + id, Status: domain.StatusActive, GivenName: "L", FamilyName: "L", CreatedAt: now, UpdatedAt: now}
+			c := &domain.Course{Base: domain.Base{ID: id, SourcedID: "s" + id, CreatedAt: now, UpdatedAt: now}, Title: "L"}
+			_ = persons.Create(ctx, p)
+			_ = courses.Create(ctx, c)
+		}
+	}()
+	t.Cleanup(func() {
+		for i := range inserts {
+			id := fmt.Sprintf("lt-%s-%03d", suffix, i)
+			_ = persons.Delete(ctx, id)
+			_ = courses.Delete(ctx, id)
+		}
+	})
+
+	check := func(name string, offset, items, total int) {
+		t.Helper()
+		if (items == 0) != (total <= offset) {
+			t.Fatalf("%s at offset %d: %d items with total %d", name, offset, items, total)
+		}
+	}
+	var pOff, cOff int
+	for running := true; running; {
+		select {
+		case <-done:
+			running = false
+		default:
+		}
+		pp, err := persons.List(ctx, port.ListParams{Offset: pOff, Limit: 1})
+		if err != nil {
+			t.Fatalf("persons list: %v", err)
+		}
+		check("persons", pOff, len(pp.Items), pp.Total)
+		pOff = pp.Total
+		cp, err := courses.List(ctx, port.ListParams{Offset: cOff, Limit: 1})
+		if err != nil {
+			t.Fatalf("courses list: %v", err)
+		}
+		check("courses", cOff, len(cp.Items), cp.Total)
+		cOff = cp.Total
 	}
 }
 

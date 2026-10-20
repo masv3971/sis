@@ -112,16 +112,28 @@ func (r *DocRepo[T, PT]) Get(ctx context.Context, id string) (PT, error) {
 
 // GetByIDs returns the live entities whose id is in ids in one query.
 func (r *DocRepo[T, PT]) GetByIDs(ctx context.Context, ids []string) ([]PT, error) {
-	if len(ids) == 0 {
+	return r.getAny(ctx, "id", ids)
+}
+
+// GetBySourcedIDs returns the live entities whose sourcedId is in sids in
+// one query.
+func (r *DocRepo[T, PT]) GetBySourcedIDs(ctx context.Context, sids []string) ([]PT, error) {
+	return r.getAny(ctx, "sourced_id", sids)
+}
+
+// getAny returns the live entities whose column (a constant, never input)
+// is in keys.
+func (r *DocRepo[T, PT]) getAny(ctx context.Context, column string, keys []string) ([]PT, error) {
+	if len(keys) == 0 {
 		return nil, nil
 	}
-	rows, err := r.pool.Query(ctx, `SELECT data FROM entities WHERE type=$1 AND id = ANY($2) AND `+liveFilter, r.typeName, ids)
+	rows, err := r.pool.Query(ctx, `SELECT data FROM entities WHERE type=$1 AND `+column+` = ANY($2) AND `+liveFilter, r.typeName, keys)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	items := make([]PT, 0, preallocCap(len(ids)))
+	items := make([]PT, 0, preallocCap(len(keys)))
 	for rows.Next() {
 		var data []byte
 		if err := rows.Scan(&data); err != nil {
@@ -141,31 +153,33 @@ func (r *DocRepo[T, PT]) GetBySourcedID(ctx context.Context, sourcedID string) (
 	return r.scanOne(ctx, `SELECT data FROM entities WHERE type=$1 AND sourced_id=$2 AND `+liveFilter, sourcedID)
 }
 
-// List returns a page of live entities ordered by sourcedId.
+// List returns a page of live entities ordered by sourcedId. The total comes
+// from the same statement as the page, so the two always agree; a page past
+// the end is one row with NULL data that carries only the total.
 func (r *DocRepo[T, PT]) List(ctx context.Context, params port.ListParams) (port.Page[PT], error) {
-	var total int
-	if err := r.pool.QueryRow(ctx, `SELECT count(*) FROM entities WHERE type=$1 AND `+liveFilter, r.typeName).Scan(&total); err != nil {
-		return port.Page[PT]{}, err
-	}
-
-	query := `SELECT data FROM entities WHERE type=$1 AND ` + liveFilter + ` ORDER BY sourced_id OFFSET $2`
-	args := []any{r.typeName, params.Offset}
+	var limit any // nil: LIMIT NULL, no limit
 	if params.Limit > 0 {
-		query += ` LIMIT $3`
-		args = append(args, params.Limit)
+		limit = params.Limit
 	}
-
-	rows, err := r.pool.Query(ctx, query, args...)
+	rows, err := r.pool.Query(ctx, `SELECT p.data, t.n
+		FROM (SELECT count(*) AS n FROM entities WHERE type=$1 AND `+liveFilter+`) t
+		LEFT JOIN LATERAL (SELECT data, sourced_id FROM entities WHERE type=$1 AND `+liveFilter+`
+			ORDER BY sourced_id OFFSET $2 LIMIT $3) p ON true
+		ORDER BY p.sourced_id`, r.typeName, params.Offset, limit)
 	if err != nil {
 		return port.Page[PT]{}, err
 	}
 	defer rows.Close()
 
+	var total int
 	items := make([]PT, 0, preallocCap(params.Limit))
 	for rows.Next() {
 		var data []byte
-		if err := rows.Scan(&data); err != nil {
+		if err := rows.Scan(&data, &total); err != nil {
 			return port.Page[PT]{}, err
+		}
+		if data == nil {
+			continue
 		}
 		e, err := unmarshalDoc[T, PT](data)
 		if err != nil {

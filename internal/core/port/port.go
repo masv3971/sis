@@ -41,6 +41,8 @@ type PersonRepository interface {
 	// order. Ids that match nothing are skipped, not an error.
 	GetByIDs(ctx context.Context, ids []string) ([]domain.Person, error)
 	GetBySourcedID(ctx context.Context, sourcedID string) (domain.Person, error)
+	// GetBySourcedIDs is GetByIDs by sourcedId.
+	GetBySourcedIDs(ctx context.Context, sourcedIDs []string) ([]domain.Person, error)
 	List(ctx context.Context, params ListParams) (Page[domain.Person], error)
 	Delete(ctx context.Context, id string) error
 	// DeleteExpired removes every person expired at now and returns their

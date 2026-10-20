@@ -199,6 +199,30 @@ func (r *DocRepo[T, PT]) GetBySourcedID(_ context.Context, sourcedID string) (PT
 	return unmarshalDoc[T, PT](d.data)
 }
 
+// GetBySourcedIDs returns the live entities whose sourcedId is in sids.
+func (r *DocRepo[T, PT]) GetBySourcedIDs(_ context.Context, sids []string) ([]PT, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	now := r.now()
+	items := make([]PT, 0, len(sids))
+	for _, sid := range sids {
+		id, ok := r.sourcedToID[sid]
+		if !ok {
+			continue
+		}
+		d, ok := r.live(id, now)
+		if !ok {
+			continue
+		}
+		e, err := unmarshalDoc[T, PT](d.data)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, e)
+	}
+	return items, nil
+}
+
 // List returns a page of live entities ordered by sourcedId.
 func (r *DocRepo[T, PT]) List(_ context.Context, params port.ListParams) (port.Page[PT], error) {
 	r.mu.RLock()

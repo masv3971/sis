@@ -27,6 +27,8 @@ type Repository[T any, PT domain.EntityPtr[T]] interface {
 	// particular order. Ids that match nothing are skipped, not an error.
 	GetByIDs(ctx context.Context, ids []string) ([]PT, error)
 	GetBySourcedID(ctx context.Context, sourcedID string) (PT, error)
+	// GetBySourcedIDs is GetByIDs by sourcedId.
+	GetBySourcedIDs(ctx context.Context, sourcedIDs []string) ([]PT, error)
 	List(ctx context.Context, params ListParams) (Page[PT], error)
 	Delete(ctx context.Context, id string) error
 	// DeleteExpired removes every record expired at now and returns their
