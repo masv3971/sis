@@ -8,9 +8,10 @@
 # folder uses it:
 #
 #   sis.httpserver                  -> internal/httpserver
-#   sis.auth.oidcrp                 -> internal/auth/oidcrp
+#   sis.auth                        -> internal/auth
 #   sis.adapter.inbound.oeapi       -> internal/adapter/inbound/oeapi
 #   sis.adapter.outbound.postgres   -> internal/adapter/outbound/postgres
+#   sis.file_import                 -> internal/fileimport
 #
 # Every key is documented in pkg/model/config.go. Rules:
 #   - Keys you leave out take the default shown here.
@@ -18,9 +19,8 @@
 #   - Durations use Go syntax: 500ms, 15s, 10m, 1h.
 
 common:
-  # true enforces production rules: sis.auth.jwt_secret must be set (>= 32
-  # bytes) and sis.auth.oidcrp.issuer_url and redirect_url must be https. Set
-  # true on every shared deployment.
+  # true enforces production rules: every sis.auth.issuers entry must use
+  # https and have an audience. Set true on every shared deployment.
   production: false
   log:
     level: info   # debug | info | warn | error
@@ -42,33 +42,36 @@ sis:
       # Serve the /api/v1 API docs (Swagger UI) at /swagger/index.html. The
       # page is public; requests sent from it still need a Bearer token.
       enabled: true
+    tls:
+      # Serve https from these PEM files (paths relative to this file). Empty
+      # serves plain http, e.g. behind a TLS-terminating proxy. The web UI's
+      # sign-in needs https, or http on localhost. `make pki` creates dev
+      # files in developer_tools/pki.
+      cert_file: ""
+      key_file: ""
 
   # -- internal/auth -----------------------------------------------------------
+  # SIS issues no tokens and stores no passwords. Every API call needs an
+  # access token (JWT) from one of these issuers, and the token's scope claim
+  # decides what the caller may do:
+  #   sis.read   GET /api/v1/*, POST /api/v1/parse, all of /oeapi and /eduapi
+  #   sis.write  POST/PUT/DELETE /api/v1/*, POST /api/v1/populate
+  # sis.write does not include sis.read. People and machine clients are
+  # treated the same. Grant, change and revoke access at the issuer; SIS
+  # needs no restart. Adding or removing an issuer does need one.
   auth:
-    # Signs access tokens. Generate with `openssl rand -hex 32` and use the
-    # same value on every replica. Required when common.production is true,
-    # and must then be at least 32 bytes of random data: anyone who recovers
-    # it can forge admin tokens. Never use a passphrase.
-    jwt_secret: "change-me-to-a-long-random-value"
-    token_ttl: 1h           # lifetime of an issued access token
-
-    # Created or updated at every start. Leave admin_username / client_id
-    # empty to skip. Rotate or remove once real accounts exist.
-    bootstrap:
-      admin_username: "admin"
-      admin_password: "change-me"
-      client_id: "svc1"
-      client_secret: "change-me"
-      client_scopes: ["sis.read", "sis.write"]   # empty grants both
-
-    # -- internal/auth/oidcrp --------------------------------------------------
-    # Single sign-on via an OpenID Connect provider. Empty issuer_url
-    # disables SSO and hides the "Sign in with SSO" button.
-    oidcrp:
-      issuer_url: ""        # e.g. https://idp.example.org/realms/sis
-      client_id: ""
-      client_secret: ""
-      redirect_url: ""      # e.g. https://sis.example.org/auth/oidc/callback (https in production)
+    issuers:
+      - issuer: "https://idp.example.org/realms/sis"   # must equal the tokens' iss claim
+        # Must be in the tokens' aud claim, so tokens the issuer mints for
+        # other services are refused. Required when common.production is true.
+        audience: "sis"
+        # Optional. Where to fetch the signing keys; empty finds them through
+        # the issuer's discovery document. Set it when SIS reaches the
+        # issuer under another address than iss (e.g. a container name).
+        jwks_url: ""
+    # Extra CA certificates (PEM) for the issuers' https certificates, on top
+    # of the system roots, e.g. developer_tools/pki/rootCA.crt in development.
+    ca_files: []
 
   # -- internal/adapter --------------------------------------------------------
   adapter:
@@ -76,11 +79,15 @@ sis:
     # maximum; larger requests are lowered to the maximum, which must be at
     # least the default.
     inbound:
-      authapi:              # /auth, /oauth/token
-        post_login_redirect_url: "/"   # where the browser lands after SSO (no #fragment)
-        # Password checks allowed at once (each uses ~64 MiB); extra login
-        # requests get 429.
-        max_concurrent_logins: 8
+      authapi:              # GET /auth/config: how the web UI signs in
+        # The browser signs in here (authorization code + PKCE) and sends
+        # the token to the APIs. Must be one of sis.auth.issuers, and must
+        # allow CORS from the web UI's origin. Empty disables web sign-in.
+        issuer: "https://idp.example.org/realms/sis"
+        # The web UI's public client at the issuer; redirect URI = the web
+        # UI's root, e.g. https://sis.example.org/
+        client_id: "sis-web"
+        scope: "openid sis.read sis.write"   # requested; the issuer decides what is granted
       restadmin:            # /api/v1 (read/write)   ?limit=&offset=
         default_limit: 50
         max_limit: 500
@@ -116,3 +123,13 @@ sis:
     # moment they expire; the sweeper then deletes them on this interval.
     sweeper:
       interval: 1m
+
+  # -- internal/fileimport -----------------------------------------------------
+  # Records loaded from JSON files at every start, in order, e.g. fake
+  # students for development. Paths are relative to this file. Records are
+  # upserted by sourcedId, so each start resets them to the file's content.
+  # Any error stops startup. Format: see internal/fileimport.
+  file_import:
+    files: []
+    # files:
+    #   - testdata/fake_students.json

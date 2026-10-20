@@ -13,11 +13,11 @@ package restadmin
 //	@version		1.0
 //	@description	Native REST API of the Student Information System (/api/v1).
 //	@description
-//	@description				Every endpoint needs a Bearer token. Machine clients get one from
-//	@description				POST /oauth/token (client_credentials grant, scopes sis.read and
-//	@description				sis.write); humans get one from POST /auth/login. Reads accept
-//	@description				scope sis.read or role admin, registrar or readonly; writes accept
-//	@description				scope sis.write or role admin or registrar.
+//	@description				Every endpoint needs a Bearer access token from one of the token
+//	@description				issuers SIS trusts (sis.auth.issuers); SIS issues no tokens itself.
+//	@description				Reads need scope sis.read and writes need scope sis.write, for
+//	@description				people and machine clients alike. sis.write does not include
+//	@description				sis.read.
 //	@license.name				BSD-2-Clause
 //	@license.url				https://opensource.org/license/bsd-2-clause
 //	@BasePath					/api/v1
@@ -56,8 +56,8 @@ package restadmin
 //	@Param			offset	query		int											false	"Number of items to skip"											minimum(0)
 //	@Success		200		{object}	restadmin.ListReply[domain.Organization]	"Success"
 //	@Failure		400		{object}	helpers.ErrorResponse						"Invalid paging parameters"
-//	@Failure		401		{object}	auth.ErrorResponse							"Missing or invalid token"
-//	@Failure		403		{object}	auth.ErrorResponse							"Insufficient scope or role"
+//	@Failure		401		{object}	auth.ErrorResponse							"Missing, invalid or untrusted token"
+//	@Failure		403		{object}	auth.ErrorResponse							"Token lacks the required scope"
 //	@Failure		500		{object}	helpers.ErrorResponse						"Internal Server Error"
 //	@Router			/organizations [get]
 
@@ -71,8 +71,8 @@ package restadmin
 //	@Param			organization	body		domain.Organization		true	"Organization to create"
 //	@Success		201				{object}	domain.Organization		"Created"
 //	@Failure		400				{object}	helpers.ErrorResponse	"Malformed body or validation error"
-//	@Failure		401				{object}	auth.ErrorResponse		"Missing or invalid token"
-//	@Failure		403				{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		401				{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403				{object}	auth.ErrorResponse		"Token lacks the required scope"
 //	@Failure		409				{object}	helpers.ErrorResponse	"id or sourcedId already in use"
 //	@Failure		413				{object}	helpers.ErrorResponse	"Request body too large"
 //	@Failure		500				{object}	helpers.ErrorResponse	"Internal Server Error"
@@ -86,8 +86,8 @@ package restadmin
 //	@Security		BearerAuth
 //	@Param			id	path		string					true	"Organization id"
 //	@Success		200	{object}	domain.Organization		"Success"
-//	@Failure		401	{object}	auth.ErrorResponse		"Missing or invalid token"
-//	@Failure		403	{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		401	{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403	{object}	auth.ErrorResponse		"Token lacks the required scope"
 //	@Failure		404	{object}	helpers.ErrorResponse	"Not Found"
 //	@Failure		500	{object}	helpers.ErrorResponse	"Internal Server Error"
 //	@Router			/organizations/{id} [get]
@@ -103,8 +103,8 @@ package restadmin
 //	@Param			organization	body		domain.Organization		true	"Replacement organization"
 //	@Success		200				{object}	domain.Organization		"Success"
 //	@Failure		400				{object}	helpers.ErrorResponse	"Malformed body or validation error"
-//	@Failure		401				{object}	auth.ErrorResponse		"Missing or invalid token"
-//	@Failure		403				{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		401				{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403				{object}	auth.ErrorResponse		"Token lacks the required scope"
 //	@Failure		404				{object}	helpers.ErrorResponse	"Not Found"
 //	@Failure		409				{object}	helpers.ErrorResponse	"sourcedId already in use"
 //	@Failure		413				{object}	helpers.ErrorResponse	"Request body too large"
@@ -119,8 +119,8 @@ package restadmin
 //	@Security		BearerAuth
 //	@Param			id	path	string	true	"Organization id"
 //	@Success		204	"No Content"
-//	@Failure		401	{object}	auth.ErrorResponse		"Missing or invalid token"
-//	@Failure		403	{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		401	{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403	{object}	auth.ErrorResponse		"Token lacks the required scope"
 //	@Failure		404	{object}	helpers.ErrorResponse	"Not Found"
 //	@Failure		500	{object}	helpers.ErrorResponse	"Internal Server Error"
 //	@Router			/organizations/{id} [delete]
@@ -137,8 +137,8 @@ package restadmin
 //	@Param			offset	query		int											false	"Number of items to skip"											minimum(0)
 //	@Success		200		{object}	restadmin.ListReply[domain.AcademicSession]	"Success"
 //	@Failure		400		{object}	helpers.ErrorResponse						"Invalid paging parameters"
-//	@Failure		401		{object}	auth.ErrorResponse							"Missing or invalid token"
-//	@Failure		403		{object}	auth.ErrorResponse							"Insufficient scope or role"
+//	@Failure		401		{object}	auth.ErrorResponse							"Missing, invalid or untrusted token"
+//	@Failure		403		{object}	auth.ErrorResponse							"Token lacks the required scope"
 //	@Failure		500		{object}	helpers.ErrorResponse						"Internal Server Error"
 //	@Router			/academic-sessions [get]
 
@@ -152,8 +152,8 @@ package restadmin
 //	@Param			session	body		domain.AcademicSession	true	"Academic session to create"
 //	@Success		201		{object}	domain.AcademicSession	"Created"
 //	@Failure		400		{object}	helpers.ErrorResponse	"Malformed body or validation error"
-//	@Failure		401		{object}	auth.ErrorResponse		"Missing or invalid token"
-//	@Failure		403		{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		401		{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403		{object}	auth.ErrorResponse		"Token lacks the required scope"
 //	@Failure		409		{object}	helpers.ErrorResponse	"id or sourcedId already in use"
 //	@Failure		413		{object}	helpers.ErrorResponse	"Request body too large"
 //	@Failure		500		{object}	helpers.ErrorResponse	"Internal Server Error"
@@ -167,8 +167,8 @@ package restadmin
 //	@Security		BearerAuth
 //	@Param			id	path		string					true	"Academic session id"
 //	@Success		200	{object}	domain.AcademicSession	"Success"
-//	@Failure		401	{object}	auth.ErrorResponse		"Missing or invalid token"
-//	@Failure		403	{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		401	{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403	{object}	auth.ErrorResponse		"Token lacks the required scope"
 //	@Failure		404	{object}	helpers.ErrorResponse	"Not Found"
 //	@Failure		500	{object}	helpers.ErrorResponse	"Internal Server Error"
 //	@Router			/academic-sessions/{id} [get]
@@ -184,8 +184,8 @@ package restadmin
 //	@Param			session	body		domain.AcademicSession	true	"Replacement academic session"
 //	@Success		200		{object}	domain.AcademicSession	"Success"
 //	@Failure		400		{object}	helpers.ErrorResponse	"Malformed body or validation error"
-//	@Failure		401		{object}	auth.ErrorResponse		"Missing or invalid token"
-//	@Failure		403		{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		401		{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403		{object}	auth.ErrorResponse		"Token lacks the required scope"
 //	@Failure		404		{object}	helpers.ErrorResponse	"Not Found"
 //	@Failure		409		{object}	helpers.ErrorResponse	"sourcedId already in use"
 //	@Failure		413		{object}	helpers.ErrorResponse	"Request body too large"
@@ -200,8 +200,8 @@ package restadmin
 //	@Security		BearerAuth
 //	@Param			id	path	string	true	"Academic session id"
 //	@Success		204	"No Content"
-//	@Failure		401	{object}	auth.ErrorResponse		"Missing or invalid token"
-//	@Failure		403	{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		401	{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403	{object}	auth.ErrorResponse		"Token lacks the required scope"
 //	@Failure		404	{object}	helpers.ErrorResponse	"Not Found"
 //	@Failure		500	{object}	helpers.ErrorResponse	"Internal Server Error"
 //	@Router			/academic-sessions/{id} [delete]
@@ -218,8 +218,8 @@ package restadmin
 //	@Param			offset	query		int									false	"Number of items to skip"											minimum(0)
 //	@Success		200		{object}	restadmin.ListReply[domain.Course]	"Success"
 //	@Failure		400		{object}	helpers.ErrorResponse				"Invalid paging parameters"
-//	@Failure		401		{object}	auth.ErrorResponse					"Missing or invalid token"
-//	@Failure		403		{object}	auth.ErrorResponse					"Insufficient scope or role"
+//	@Failure		401		{object}	auth.ErrorResponse					"Missing, invalid or untrusted token"
+//	@Failure		403		{object}	auth.ErrorResponse					"Token lacks the required scope"
 //	@Failure		500		{object}	helpers.ErrorResponse				"Internal Server Error"
 //	@Router			/courses [get]
 
@@ -233,8 +233,8 @@ package restadmin
 //	@Param			course	body		domain.Course			true	"Course to create"
 //	@Success		201		{object}	domain.Course			"Created"
 //	@Failure		400		{object}	helpers.ErrorResponse	"Malformed body or validation error"
-//	@Failure		401		{object}	auth.ErrorResponse		"Missing or invalid token"
-//	@Failure		403		{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		401		{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403		{object}	auth.ErrorResponse		"Token lacks the required scope"
 //	@Failure		409		{object}	helpers.ErrorResponse	"id or sourcedId already in use"
 //	@Failure		413		{object}	helpers.ErrorResponse	"Request body too large"
 //	@Failure		500		{object}	helpers.ErrorResponse	"Internal Server Error"
@@ -248,8 +248,8 @@ package restadmin
 //	@Security		BearerAuth
 //	@Param			id	path		string					true	"Course id"
 //	@Success		200	{object}	domain.Course			"Success"
-//	@Failure		401	{object}	auth.ErrorResponse		"Missing or invalid token"
-//	@Failure		403	{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		401	{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403	{object}	auth.ErrorResponse		"Token lacks the required scope"
 //	@Failure		404	{object}	helpers.ErrorResponse	"Not Found"
 //	@Failure		500	{object}	helpers.ErrorResponse	"Internal Server Error"
 //	@Router			/courses/{id} [get]
@@ -265,8 +265,8 @@ package restadmin
 //	@Param			course	body		domain.Course			true	"Replacement course"
 //	@Success		200		{object}	domain.Course			"Success"
 //	@Failure		400		{object}	helpers.ErrorResponse	"Malformed body or validation error"
-//	@Failure		401		{object}	auth.ErrorResponse		"Missing or invalid token"
-//	@Failure		403		{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		401		{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403		{object}	auth.ErrorResponse		"Token lacks the required scope"
 //	@Failure		404		{object}	helpers.ErrorResponse	"Not Found"
 //	@Failure		409		{object}	helpers.ErrorResponse	"sourcedId already in use"
 //	@Failure		413		{object}	helpers.ErrorResponse	"Request body too large"
@@ -281,8 +281,8 @@ package restadmin
 //	@Security		BearerAuth
 //	@Param			id	path	string	true	"Course id"
 //	@Success		204	"No Content"
-//	@Failure		401	{object}	auth.ErrorResponse		"Missing or invalid token"
-//	@Failure		403	{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		401	{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403	{object}	auth.ErrorResponse		"Token lacks the required scope"
 //	@Failure		404	{object}	helpers.ErrorResponse	"Not Found"
 //	@Failure		500	{object}	helpers.ErrorResponse	"Internal Server Error"
 //	@Router			/courses/{id} [delete]
@@ -299,8 +299,8 @@ package restadmin
 //	@Param			offset	query		int										false	"Number of items to skip"											minimum(0)
 //	@Success		200		{object}	restadmin.ListReply[domain.Offering]	"Success"
 //	@Failure		400		{object}	helpers.ErrorResponse					"Invalid paging parameters"
-//	@Failure		401		{object}	auth.ErrorResponse						"Missing or invalid token"
-//	@Failure		403		{object}	auth.ErrorResponse						"Insufficient scope or role"
+//	@Failure		401		{object}	auth.ErrorResponse						"Missing, invalid or untrusted token"
+//	@Failure		403		{object}	auth.ErrorResponse						"Token lacks the required scope"
 //	@Failure		500		{object}	helpers.ErrorResponse					"Internal Server Error"
 //	@Router			/offerings [get]
 
@@ -314,8 +314,8 @@ package restadmin
 //	@Param			offering	body		domain.Offering			true	"Offering to create"
 //	@Success		201			{object}	domain.Offering			"Created"
 //	@Failure		400			{object}	helpers.ErrorResponse	"Malformed body or validation error"
-//	@Failure		401			{object}	auth.ErrorResponse		"Missing or invalid token"
-//	@Failure		403			{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		401			{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403			{object}	auth.ErrorResponse		"Token lacks the required scope"
 //	@Failure		409			{object}	helpers.ErrorResponse	"id or sourcedId already in use"
 //	@Failure		413			{object}	helpers.ErrorResponse	"Request body too large"
 //	@Failure		500			{object}	helpers.ErrorResponse	"Internal Server Error"
@@ -329,8 +329,8 @@ package restadmin
 //	@Security		BearerAuth
 //	@Param			id	path		string					true	"Offering id"
 //	@Success		200	{object}	domain.Offering			"Success"
-//	@Failure		401	{object}	auth.ErrorResponse		"Missing or invalid token"
-//	@Failure		403	{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		401	{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403	{object}	auth.ErrorResponse		"Token lacks the required scope"
 //	@Failure		404	{object}	helpers.ErrorResponse	"Not Found"
 //	@Failure		500	{object}	helpers.ErrorResponse	"Internal Server Error"
 //	@Router			/offerings/{id} [get]
@@ -346,8 +346,8 @@ package restadmin
 //	@Param			offering	body		domain.Offering			true	"Replacement offering"
 //	@Success		200			{object}	domain.Offering			"Success"
 //	@Failure		400			{object}	helpers.ErrorResponse	"Malformed body or validation error"
-//	@Failure		401			{object}	auth.ErrorResponse		"Missing or invalid token"
-//	@Failure		403			{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		401			{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403			{object}	auth.ErrorResponse		"Token lacks the required scope"
 //	@Failure		404			{object}	helpers.ErrorResponse	"Not Found"
 //	@Failure		409			{object}	helpers.ErrorResponse	"sourcedId already in use"
 //	@Failure		413			{object}	helpers.ErrorResponse	"Request body too large"
@@ -362,8 +362,8 @@ package restadmin
 //	@Security		BearerAuth
 //	@Param			id	path	string	true	"Offering id"
 //	@Success		204	"No Content"
-//	@Failure		401	{object}	auth.ErrorResponse		"Missing or invalid token"
-//	@Failure		403	{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		401	{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403	{object}	auth.ErrorResponse		"Token lacks the required scope"
 //	@Failure		404	{object}	helpers.ErrorResponse	"Not Found"
 //	@Failure		500	{object}	helpers.ErrorResponse	"Internal Server Error"
 //	@Router			/offerings/{id} [delete]
@@ -380,8 +380,8 @@ package restadmin
 //	@Param			offset	query		int										false	"Number of items to skip"											minimum(0)
 //	@Success		200		{object}	restadmin.ListReply[domain.Enrollment]	"Success"
 //	@Failure		400		{object}	helpers.ErrorResponse					"Invalid paging parameters"
-//	@Failure		401		{object}	auth.ErrorResponse						"Missing or invalid token"
-//	@Failure		403		{object}	auth.ErrorResponse						"Insufficient scope or role"
+//	@Failure		401		{object}	auth.ErrorResponse						"Missing, invalid or untrusted token"
+//	@Failure		403		{object}	auth.ErrorResponse						"Token lacks the required scope"
 //	@Failure		500		{object}	helpers.ErrorResponse					"Internal Server Error"
 //	@Router			/enrollments [get]
 
@@ -395,8 +395,8 @@ package restadmin
 //	@Param			enrollment	body		domain.Enrollment		true	"Enrollment to create"
 //	@Success		201			{object}	domain.Enrollment		"Created"
 //	@Failure		400			{object}	helpers.ErrorResponse	"Malformed body or validation error"
-//	@Failure		401			{object}	auth.ErrorResponse		"Missing or invalid token"
-//	@Failure		403			{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		401			{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403			{object}	auth.ErrorResponse		"Token lacks the required scope"
 //	@Failure		409			{object}	helpers.ErrorResponse	"id or sourcedId already in use"
 //	@Failure		413			{object}	helpers.ErrorResponse	"Request body too large"
 //	@Failure		500			{object}	helpers.ErrorResponse	"Internal Server Error"
@@ -410,8 +410,8 @@ package restadmin
 //	@Security		BearerAuth
 //	@Param			id	path		string					true	"Enrollment id"
 //	@Success		200	{object}	domain.Enrollment		"Success"
-//	@Failure		401	{object}	auth.ErrorResponse		"Missing or invalid token"
-//	@Failure		403	{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		401	{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403	{object}	auth.ErrorResponse		"Token lacks the required scope"
 //	@Failure		404	{object}	helpers.ErrorResponse	"Not Found"
 //	@Failure		500	{object}	helpers.ErrorResponse	"Internal Server Error"
 //	@Router			/enrollments/{id} [get]
@@ -427,8 +427,8 @@ package restadmin
 //	@Param			enrollment	body		domain.Enrollment		true	"Replacement enrollment"
 //	@Success		200			{object}	domain.Enrollment		"Success"
 //	@Failure		400			{object}	helpers.ErrorResponse	"Malformed body or validation error"
-//	@Failure		401			{object}	auth.ErrorResponse		"Missing or invalid token"
-//	@Failure		403			{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		401			{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403			{object}	auth.ErrorResponse		"Token lacks the required scope"
 //	@Failure		404			{object}	helpers.ErrorResponse	"Not Found"
 //	@Failure		409			{object}	helpers.ErrorResponse	"sourcedId already in use"
 //	@Failure		413			{object}	helpers.ErrorResponse	"Request body too large"
@@ -443,8 +443,8 @@ package restadmin
 //	@Security		BearerAuth
 //	@Param			id	path	string	true	"Enrollment id"
 //	@Success		204	"No Content"
-//	@Failure		401	{object}	auth.ErrorResponse		"Missing or invalid token"
-//	@Failure		403	{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		401	{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403	{object}	auth.ErrorResponse		"Token lacks the required scope"
 //	@Failure		404	{object}	helpers.ErrorResponse	"Not Found"
 //	@Failure		500	{object}	helpers.ErrorResponse	"Internal Server Error"
 //	@Router			/enrollments/{id} [delete]
@@ -461,8 +461,8 @@ package restadmin
 //	@Param			offset	query		int									false	"Number of items to skip"											minimum(0)
 //	@Success		200		{object}	restadmin.ListReply[domain.Program]	"Success"
 //	@Failure		400		{object}	helpers.ErrorResponse				"Invalid paging parameters"
-//	@Failure		401		{object}	auth.ErrorResponse					"Missing or invalid token"
-//	@Failure		403		{object}	auth.ErrorResponse					"Insufficient scope or role"
+//	@Failure		401		{object}	auth.ErrorResponse					"Missing, invalid or untrusted token"
+//	@Failure		403		{object}	auth.ErrorResponse					"Token lacks the required scope"
 //	@Failure		500		{object}	helpers.ErrorResponse				"Internal Server Error"
 //	@Router			/programs [get]
 
@@ -476,8 +476,8 @@ package restadmin
 //	@Param			program	body		domain.Program			true	"Program to create"
 //	@Success		201		{object}	domain.Program			"Created"
 //	@Failure		400		{object}	helpers.ErrorResponse	"Malformed body or validation error"
-//	@Failure		401		{object}	auth.ErrorResponse		"Missing or invalid token"
-//	@Failure		403		{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		401		{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403		{object}	auth.ErrorResponse		"Token lacks the required scope"
 //	@Failure		409		{object}	helpers.ErrorResponse	"id or sourcedId already in use"
 //	@Failure		413		{object}	helpers.ErrorResponse	"Request body too large"
 //	@Failure		500		{object}	helpers.ErrorResponse	"Internal Server Error"
@@ -491,8 +491,8 @@ package restadmin
 //	@Security		BearerAuth
 //	@Param			id	path		string					true	"Program id"
 //	@Success		200	{object}	domain.Program			"Success"
-//	@Failure		401	{object}	auth.ErrorResponse		"Missing or invalid token"
-//	@Failure		403	{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		401	{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403	{object}	auth.ErrorResponse		"Token lacks the required scope"
 //	@Failure		404	{object}	helpers.ErrorResponse	"Not Found"
 //	@Failure		500	{object}	helpers.ErrorResponse	"Internal Server Error"
 //	@Router			/programs/{id} [get]
@@ -508,8 +508,8 @@ package restadmin
 //	@Param			program	body		domain.Program			true	"Replacement program"
 //	@Success		200		{object}	domain.Program			"Success"
 //	@Failure		400		{object}	helpers.ErrorResponse	"Malformed body or validation error"
-//	@Failure		401		{object}	auth.ErrorResponse		"Missing or invalid token"
-//	@Failure		403		{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		401		{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403		{object}	auth.ErrorResponse		"Token lacks the required scope"
 //	@Failure		404		{object}	helpers.ErrorResponse	"Not Found"
 //	@Failure		409		{object}	helpers.ErrorResponse	"sourcedId already in use"
 //	@Failure		413		{object}	helpers.ErrorResponse	"Request body too large"
@@ -524,8 +524,8 @@ package restadmin
 //	@Security		BearerAuth
 //	@Param			id	path	string	true	"Program id"
 //	@Success		204	"No Content"
-//	@Failure		401	{object}	auth.ErrorResponse		"Missing or invalid token"
-//	@Failure		403	{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		401	{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403	{object}	auth.ErrorResponse		"Token lacks the required scope"
 //	@Failure		404	{object}	helpers.ErrorResponse	"Not Found"
 //	@Failure		500	{object}	helpers.ErrorResponse	"Internal Server Error"
 //	@Router			/programs/{id} [delete]
@@ -542,8 +542,8 @@ package restadmin
 //	@Param			offset	query		int									false	"Number of items to skip"											minimum(0)
 //	@Success		200		{object}	restadmin.ListReply[domain.Result]	"Success"
 //	@Failure		400		{object}	helpers.ErrorResponse				"Invalid paging parameters"
-//	@Failure		401		{object}	auth.ErrorResponse					"Missing or invalid token"
-//	@Failure		403		{object}	auth.ErrorResponse					"Insufficient scope or role"
+//	@Failure		401		{object}	auth.ErrorResponse					"Missing, invalid or untrusted token"
+//	@Failure		403		{object}	auth.ErrorResponse					"Token lacks the required scope"
 //	@Failure		500		{object}	helpers.ErrorResponse				"Internal Server Error"
 //	@Router			/results [get]
 
@@ -557,8 +557,8 @@ package restadmin
 //	@Param			result	body		domain.Result			true	"Result to create"
 //	@Success		201		{object}	domain.Result			"Created"
 //	@Failure		400		{object}	helpers.ErrorResponse	"Malformed body or validation error"
-//	@Failure		401		{object}	auth.ErrorResponse		"Missing or invalid token"
-//	@Failure		403		{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		401		{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403		{object}	auth.ErrorResponse		"Token lacks the required scope"
 //	@Failure		409		{object}	helpers.ErrorResponse	"id or sourcedId already in use"
 //	@Failure		413		{object}	helpers.ErrorResponse	"Request body too large"
 //	@Failure		500		{object}	helpers.ErrorResponse	"Internal Server Error"
@@ -572,8 +572,8 @@ package restadmin
 //	@Security		BearerAuth
 //	@Param			id	path		string					true	"Result id"
 //	@Success		200	{object}	domain.Result			"Success"
-//	@Failure		401	{object}	auth.ErrorResponse		"Missing or invalid token"
-//	@Failure		403	{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		401	{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403	{object}	auth.ErrorResponse		"Token lacks the required scope"
 //	@Failure		404	{object}	helpers.ErrorResponse	"Not Found"
 //	@Failure		500	{object}	helpers.ErrorResponse	"Internal Server Error"
 //	@Router			/results/{id} [get]
@@ -589,8 +589,8 @@ package restadmin
 //	@Param			result	body		domain.Result			true	"Replacement result"
 //	@Success		200		{object}	domain.Result			"Success"
 //	@Failure		400		{object}	helpers.ErrorResponse	"Malformed body or validation error"
-//	@Failure		401		{object}	auth.ErrorResponse		"Missing or invalid token"
-//	@Failure		403		{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		401		{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403		{object}	auth.ErrorResponse		"Token lacks the required scope"
 //	@Failure		404		{object}	helpers.ErrorResponse	"Not Found"
 //	@Failure		409		{object}	helpers.ErrorResponse	"sourcedId already in use"
 //	@Failure		413		{object}	helpers.ErrorResponse	"Request body too large"
@@ -605,8 +605,8 @@ package restadmin
 //	@Security		BearerAuth
 //	@Param			id	path	string	true	"Result id"
 //	@Success		204	"No Content"
-//	@Failure		401	{object}	auth.ErrorResponse		"Missing or invalid token"
-//	@Failure		403	{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		401	{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403	{object}	auth.ErrorResponse		"Token lacks the required scope"
 //	@Failure		404	{object}	helpers.ErrorResponse	"Not Found"
 //	@Failure		500	{object}	helpers.ErrorResponse	"Internal Server Error"
 //	@Router			/results/{id} [delete]

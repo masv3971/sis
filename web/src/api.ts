@@ -1,5 +1,6 @@
-// Thin client for the native /api/v1 surface plus /auth. The JWT is kept in
-// localStorage and attached as a Bearer token to API calls.
+// Thin client for the native /api/v1 surface. The access token comes from
+// the token issuer (see oidc.ts), is kept in localStorage, and is attached
+// as a Bearer token to API calls.
 
 const TOKEN_KEY = "sis_token";
 
@@ -15,74 +16,7 @@ export function clearToken(): void {
   localStorage.removeItem(TOKEN_KEY);
 }
 
-// OIDC_LOGIN_MARKER is the fragment the OIDC callback appends to the
-// post-login URL. It carries no token: it only says a handoff may be waiting.
-const OIDC_LOGIN_MARKER = "#oidc_login";
-
-// completeOIDCLogin collects the token the OIDC callback parked in an
-// HttpOnly cookie bound to this browser, then cleans the URL. The token is
-// never read from the URL, so a crafted link cannot replace the current
-// session with someone else's (login CSRF). It runs before the UI mounts, so
-// it must never throw: on any failure the existing session (if any) is kept
-// and the user sees whatever page they would have seen anyway.
-export async function completeOIDCLogin(): Promise<void> {
-  if (location.hash !== OIDC_LOGIN_MARKER) return;
-  history.replaceState(null, "", location.pathname + location.search);
-  try {
-    const res = await fetch("/auth/oidc/session", { method: "POST", credentials: "same-origin" });
-    if (!res.ok) return;
-    const data = (await res.json()) as { access_token?: unknown };
-    if (typeof data.access_token === "string" && data.access_token) setToken(data.access_token);
-  } catch {
-    // Network error or malformed body: keep the current state.
-  }
-}
-
 export class UnauthorizedError extends Error {}
-
-// InvalidCredentialsError is a 401 from /auth/login: wrong username or
-// password. Any other failure (network, 5xx) is a plain Error so the UI can
-// tell the user to retry instead of blaming their password.
-export class InvalidCredentialsError extends Error {}
-
-// LoginValidationError is a 400 from /auth/login: the request itself is
-// incomplete (an empty username or password). Retrying cannot fix it, so the
-// UI asks the user to fill in the fields instead of reporting a server error.
-export class LoginValidationError extends Error {}
-
-export async function login(username: string, password: string): Promise<void> {
-  let res: Response;
-  try {
-    res = await fetch("/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
-    });
-  } catch {
-    throw new Error("Cannot reach the server. Check your connection and try again.");
-  }
-  if (res.status === 401) throw new InvalidCredentialsError("Invalid username or password");
-  if (res.status === 400) throw new LoginValidationError("Enter both a username and a password.");
-  if (!res.ok) throw new Error(`Sign-in failed (server error ${res.status}). Try again later.`);
-  const data = (await res.json()) as { access_token: string };
-  setToken(data.access_token);
-}
-
-export interface AuthConfig {
-  oidc: boolean;
-}
-
-// authConfig reports which login methods the server offers. On failure it
-// assumes none beyond local login, so the UI never shows a dead SSO link.
-export async function authConfig(): Promise<AuthConfig> {
-  try {
-    const res = await fetch("/auth/config");
-    if (!res.ok) return { oidc: false };
-    return (await res.json()) as AuthConfig;
-  } catch {
-    return { oidc: false };
-  }
-}
 
 async function authFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const token = getToken();
@@ -116,7 +50,7 @@ async function errorMessage(res: Response, fallback: string): Promise<string> {
     };
     const e = body.error;
     // The auth middleware answers 401/403 with a flat string envelope:
-    // {"error": "forbidden", "message": "insufficient permissions"}.
+    // {"error": "forbidden", "message": "token lacks scope sis.write"}.
     if (typeof e === "string") {
       if (typeof body.message === "string" && body.message) return body.message;
       return e;

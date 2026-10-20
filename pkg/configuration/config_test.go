@@ -4,15 +4,12 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"reflect"
 	"slices"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/SUNET/sis/pkg/configuration"
-	"github.com/SUNET/sis/pkg/model"
 )
 
 func writeConfig(t *testing.T, body string) string {
@@ -49,11 +46,11 @@ func TestNewLoadsFileAndDefaults(t *testing.T) {
 	if in.OEAPI.DefaultPageSize != 10 || in.OEAPI.MaxPageSize != 500 {
 		t.Fatalf("unexpected oeapi paging defaults: %+v", in.OEAPI)
 	}
-	if in.AuthAPI.PostLoginRedirectURL != "/" {
-		t.Fatalf("expected default post_login_redirect_url /, got %q", in.AuthAPI.PostLoginRedirectURL)
+	if in.AuthAPI.Scope != "openid sis.read sis.write" {
+		t.Fatalf("expected default authapi scope, got %q", in.AuthAPI.Scope)
 	}
-	if cfg.SIS.Auth.TokenTTL != time.Hour {
-		t.Fatalf("expected default token_ttl 1h, got %s", cfg.SIS.Auth.TokenTTL)
+	if cfg.SIS.Adapter.Sweeper.Interval != time.Minute {
+		t.Fatalf("expected default sweeper interval 1m, got %s", cfg.SIS.Adapter.Sweeper.Interval)
 	}
 	if cfg.SIS.Adapter.Outbound.Events.URL != "nats://localhost:4222" {
 		t.Fatalf("expected default events url, got %q", cfg.SIS.Adapter.Outbound.Events.URL)
@@ -72,11 +69,11 @@ func TestMaxBelowDefaultRejected(t *testing.T) {
 }
 
 func TestNewRejectsUnknownKeys(t *testing.T) {
-	path := writeConfig(t, "sis:\n  auth:\n    jwt_secert: \"typo-typo\"\n")
+	path := writeConfig(t, "sis:\n  auth:\n    issuer: \"https://idp.example\"\n")
 	t.Setenv("SIS_CONFIG_YAML", path)
 	_, err := configuration.New(context.Background(), "sis")
-	if err == nil || !strings.Contains(err.Error(), "jwt_secert") {
-		t.Fatalf("expected unknown-key error naming jwt_secert, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "issuer") {
+		t.Fatalf("expected unknown-key error naming issuer, got %v", err)
 	}
 }
 
@@ -136,27 +133,42 @@ func TestNewRejectsMultipleDocuments(t *testing.T) {
 	}
 }
 
-func TestNewProductionRules(t *testing.T) {
+func TestNewAuthRules(t *testing.T) {
+	issuers := func(entries ...string) string {
+		return "  auth:\n    issuers:\n" + strings.Join(entries, "")
+	}
+	issuer := func(url, aud, jwks string) string {
+		s := "      - issuer: \"" + url + "\"\n"
+		if aud != "" {
+			s += "        audience: \"" + aud + "\"\n"
+		}
+		if jwks != "" {
+			s += "        jwks_url: \"" + jwks + "\"\n"
+		}
+		return s
+	}
+	const prod = "common:\n  production: true\nsis:\n"
+	const dev = "sis:\n"
+	web := func(iss string) string {
+		return "  adapter:\n    inbound:\n      authapi:\n        issuer: \"" + iss + "\"\n        client_id: sis-web\n"
+	}
 	cases := []struct {
 		name    string
 		body    string
 		wantErr string
 	}{
-		{"missing jwt_secret", "common:\n  production: true\nsis: {}\n", "jwt_secret"},
-		{"short jwt_secret", "common:\n  production: true\nsis:\n  auth:\n    jwt_secret: \"0123456789\"\n", "jwt_secret_production_min"},
-		{"31-byte jwt_secret", "common:\n  production: true\nsis:\n  auth:\n    jwt_secret: \"" + strings.Repeat("a", 31) + "\"\n", "jwt_secret_production_min"},
-		{"32-byte jwt_secret", "common:\n  production: true\nsis:\n  auth:\n    jwt_secret: \"" + strings.Repeat("a", 32) + "\"\n", ""},
-		{"dev allows short jwt_secret", "sis:\n  auth:\n    jwt_secret: \"0123456789\"\n", ""},
-		{"http issuer", "common:\n  production: true\nsis:\n  auth:\n    jwt_secret: \"0123456789abcdef0123456789abcdef\"\n    oidcrp:\n      issuer_url: \"http://idp.example\"\n      client_id: c\n      client_secret: s\n      redirect_url: \"https://sis.example/cb\"\n", "https"},
-		{"http redirect_url", "common:\n  production: true\nsis:\n  auth:\n    jwt_secret: \"0123456789abcdef0123456789abcdef\"\n    oidcrp:\n      issuer_url: \"https://idp.example\"\n      client_id: c\n      client_secret: s\n      redirect_url: \"http://sis.example/cb\"\n", "redirect_url must use https"},
-		{"ok", "common:\n  production: true\nsis:\n  auth:\n    jwt_secret: \"0123456789abcdef0123456789abcdef\"\n    oidcrp:\n      issuer_url: \"https://idp.example\"\n      client_id: c\n      client_secret: s\n      redirect_url: \"https://sis.example/cb\"\n", ""},
-		{"http post_login_redirect_url", "common:\n  production: true\nsis:\n  auth:\n    jwt_secret: \"0123456789abcdef0123456789abcdef\"\n    oidcrp:\n      issuer_url: \"https://idp.example\"\n      client_id: c\n      client_secret: s\n      redirect_url: \"https://sis.example/cb\"\n  adapter:\n    inbound:\n      authapi:\n        post_login_redirect_url: \"http://sis.example/\"\n", "post_login_redirect_url must be relative or use https"},
-		{"https post_login_redirect_url", "common:\n  production: true\nsis:\n  auth:\n    jwt_secret: \"0123456789abcdef0123456789abcdef\"\n    oidcrp:\n      issuer_url: \"https://idp.example\"\n      client_id: c\n      client_secret: s\n      redirect_url: \"https://sis.example/cb\"\n  adapter:\n    inbound:\n      authapi:\n        post_login_redirect_url: \"https://sis.example/app\"\n", ""},
-		{"relative post_login_redirect_url", "common:\n  production: true\nsis:\n  auth:\n    jwt_secret: \"0123456789abcdef0123456789abcdef\"\n    oidcrp:\n      issuer_url: \"https://idp.example\"\n      client_id: c\n      client_secret: s\n      redirect_url: \"https://sis.example/cb\"\n  adapter:\n    inbound:\n      authapi:\n        post_login_redirect_url: \"/app\"\n", ""},
-		{"fragment post_login_redirect_url (production)", "common:\n  production: true\nsis:\n  auth:\n    jwt_secret: \"0123456789abcdef0123456789abcdef\"\n    oidcrp:\n      issuer_url: \"https://idp.example\"\n      client_id: c\n      client_secret: s\n      redirect_url: \"https://sis.example/cb\"\n  adapter:\n    inbound:\n      authapi:\n        post_login_redirect_url: \"/#people\"\n", "post_login_redirect_url"},
-		{"fragment post_login_redirect_url (dev)", "sis:\n  adapter:\n    inbound:\n      authapi:\n        post_login_redirect_url: \"https://sis.example/app#x\"\n", "post_login_redirect_url"},
-		{"empty fragment post_login_redirect_url (dev)", "sis:\n  adapter:\n    inbound:\n      authapi:\n        post_login_redirect_url: \"/#\"\n", "post_login_redirect_url"},
-		{"dev allows http + no secret", "sis:\n  auth:\n    oidcrp:\n      issuer_url: \"http://localhost:9080/realms/x\"\n      client_id: c\n      client_secret: s\n      redirect_url: \"http://localhost:8080/cb\"\n", ""},
+		{"no issuers", prod + "  auth: {}\n", ""},
+		{"prod ok", prod + issuers(issuer("https://idp.example/realms/sis", "sis", "")), ""},
+		{"prod http issuer", prod + issuers(issuer("http://idp.example", "sis", "")), "must use https"},
+		{"prod http jwks_url", prod + issuers(issuer("https://idp.example", "sis", "http://idp/certs")), "jwks_url must use https"},
+		{"prod no audience", prod + issuers(issuer("https://idp.example", "", "")), "audience is required"},
+		{"dev allows http, no audience", dev + issuers(issuer("http://localhost:9080/realms/sis", "", "http://mellon:8080/certs")), ""},
+		{"several issuers", prod + issuers(issuer("https://a.example", "sis", ""), issuer("https://b.example", "sis", "")), ""},
+		{"duplicate issuer", dev + issuers(issuer("https://a.example", "", ""), issuer("https://a.example", "", "")), "unique"},
+		{"issuer not a url", dev + issuers(issuer("idp", "", "")), "httpurl"},
+		{"web login trusted", dev + issuers(issuer("https://a.example", "", "")) + web("https://a.example"), ""},
+		{"web login untrusted", dev + issuers(issuer("https://a.example", "", "")) + web("https://b.example"), "not in sis.auth.issuers"},
+		{"web login without client_id", dev + issuers(issuer("https://a.example", "", "")) + "  adapter:\n    inbound:\n      authapi:\n        issuer: \"https://a.example\"\n", "client_id"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -172,26 +184,42 @@ func TestNewProductionRules(t *testing.T) {
 	}
 }
 
-// TestJWTSecretTagMatchesConstant keeps the jwt_secret_production_min tag on
-// model.Auth.JWTSecret in step with model.MinProductionJWTSecretLen, which
-// auth.New uses for its own check. A struct tag cannot reference a constant.
-func TestJWTSecretTagMatchesConstant(t *testing.T) {
-	f, ok := reflect.TypeFor[model.Auth]().FieldByName("JWTSecret")
-	if !ok {
-		t.Fatal("model.Auth.JWTSecret not found")
+// TestFileImportPathsAreRelativeToConfig checks relative file_import paths
+// resolve against the config file's directory, not the working directory.
+func TestFileImportPathsAreRelativeToConfig(t *testing.T) {
+	path := writeConfig(t, "sis:\n  file_import:\n    files:\n      - testdata/students.json\n      - /abs/other.json\n")
+	t.Setenv("SIS_CONFIG_YAML", path)
+	cfg, err := configuration.New(context.Background(), "sis")
+	if err != nil {
+		t.Fatal(err)
 	}
-	want := "jwt_secret_production_min=" + strconv.Itoa(model.MinProductionJWTSecretLen)
-	if !slices.Contains(strings.Split(f.Tag.Get("validate"), ","), want) {
-		t.Fatalf("JWTSecret validate tag %q must contain %q", f.Tag.Get("validate"), want)
+	want := []string{filepath.Join(filepath.Dir(path), "testdata/students.json"), "/abs/other.json"}
+	if !slices.Equal(cfg.SIS.FileImport.Files, want) {
+		t.Fatalf("files = %v, want %v", cfg.SIS.FileImport.Files, want)
 	}
 }
 
-// TestSampleConfigLoads keeps config.yaml.sample in step with pkg/model: with
-// unknown keys rejected, any key renamed or removed in the model breaks this.
-func TestSampleConfigLoads(t *testing.T) {
-	t.Setenv("SIS_CONFIG_YAML", filepath.Join("..", "..", "config.yaml.sample"))
-	if _, err := configuration.New(context.Background(), "sis"); err != nil {
-		t.Fatalf("config.yaml.sample no longer matches pkg/model: %v", err)
+// TestShippedConfigsLoad keeps config.yaml.sample and the dev config.yaml
+// (when present) in step with pkg/model: with unknown keys rejected, any key
+// renamed or removed in the model breaks this. Their import files must exist.
+func TestShippedConfigsLoad(t *testing.T) {
+	for _, name := range []string{"config.yaml.sample", "config.yaml"} {
+		path := filepath.Join("..", "..", name)
+		if _, err := os.Stat(path); err != nil {
+			continue // config.yaml is local and may be absent
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("SIS_CONFIG_YAML", path)
+			cfg, err := configuration.New(context.Background(), "sis")
+			if err != nil {
+				t.Fatalf("%s no longer matches pkg/model: %v", name, err)
+			}
+			for _, f := range cfg.SIS.FileImport.Files {
+				if _, err := os.Stat(f); err != nil {
+					t.Errorf("file_import: %v", err)
+				}
+			}
+		})
 	}
 }
 

@@ -9,8 +9,8 @@ type Cfg struct {
 }
 
 type Common struct {
-	// Production requires a jwt_secret of at least
-	// MinProductionJWTSecretLen bytes and https OIDC issuer and redirect URLs.
+	// Production requires every trusted token issuer (and jwks_url) to use
+	// https and to have an audience.
 	Production bool `yaml:"production"`
 	Log        Log  `yaml:"log"`
 }
@@ -25,6 +25,17 @@ type SIS struct {
 	HTTPServer HTTPServer `yaml:"httpserver"`
 	Auth       Auth       `yaml:"auth"`
 	Adapter    Adapter    `yaml:"adapter"`
+	FileImport FileImport `yaml:"file_import"`
+}
+
+// FileImport loads records from files at every startup, e.g. fake students
+// for development.
+type FileImport struct {
+	// Files are imported in order. A relative path is relative to the
+	// directory of the config file. See internal/fileimport for the format.
+	// Every record is upserted by sourcedId, so on each start the file wins
+	// over changes made through the API. Any error stops startup.
+	Files []string `yaml:"files" validate:"dive,required"`
 }
 
 type HTTPServer struct {
@@ -35,7 +46,22 @@ type HTTPServer struct {
 	ShutdownTimeout time.Duration `yaml:"shutdown_timeout" default:"10s" validate:"gt=0"`
 	Web             Web           `yaml:"web"`
 	Swagger         Swagger       `yaml:"swagger"`
+	TLS             TLS           `yaml:"tls"`
 }
+
+// TLS makes the listener serve https from a certificate and key file. Both
+// empty serves plain http (e.g. behind a TLS-terminating proxy). The web
+// UI's sign-in needs https, or http on localhost: browsers only offer the
+// crypto it uses on secure pages.
+type TLS struct {
+	// CertFile is the PEM certificate, optionally followed by its chain.
+	CertFile string `yaml:"cert_file" validate:"required_with=KeyFile"`
+	// KeyFile is the PEM private key.
+	KeyFile string `yaml:"key_file" validate:"required_with=CertFile"`
+}
+
+// Enabled reports whether TLS is configured.
+func (t TLS) Enabled() bool { return t.CertFile != "" }
 
 type Web struct {
 	// Root is the directory with the built admin UI (index.html, assets/).
@@ -50,50 +76,33 @@ type Swagger struct {
 	Enabled bool `yaml:"enabled" default:"true"`
 }
 
-// MinProductionJWTSecretLen is the minimum jwt_secret length in bytes when
-// common.production is true: 256 bits, matching the HS256 output size.
-// Config validation enforces it through the jwt_secret_production_min tag on JWTSecret
-// (a tag cannot reference a constant, so a test keeps the two in sync);
-// auth.New uses the constant for its own defence-in-depth check.
-const MinProductionJWTSecretLen = 32
-
+// Auth configures how SIS checks access tokens. SIS issues no tokens and
+// stores no credentials: callers get a token from a trusted issuer, and the
+// token's scope claim says what they may do (sis.read, sis.write). Access is
+// granted and revoked at the issuer, without restarting SIS.
 type Auth struct {
-	// JWTSecret signs access tokens (HS256). Must be the same on all
-	// replicas. If empty outside production, a random secret is generated at
-	// startup and tokens do not survive a restart.
-	//
-	// In production it must be at least MinProductionJWTSecretLen bytes and
-	// randomly generated (e.g. `openssl rand -hex 32`). Anyone who recovers
-	// it can forge admin tokens, and a short or human-chosen secret can be
-	// brute-forced offline from a single captured token. Length is checked;
-	// randomness cannot be, so never use a passphrase.
-	JWTSecret string        `yaml:"jwt_secret" validate:"omitempty,min=8,jwt_secret_production_min=32"`
-	TokenTTL  time.Duration `yaml:"token_ttl" default:"1h" validate:"gt=0"`
-	Bootstrap Bootstrap     `yaml:"bootstrap"`
-	OIDCRP    OIDCRP        `yaml:"oidcrp"`
+	// Issuers are the token issuers SIS trusts. A token from any other
+	// issuer is rejected; with none, every API request is rejected.
+	Issuers []Issuer `yaml:"issuers" validate:"unique=Issuer,dive"`
+	// CAFiles are extra PEM CA certificates, added to the system roots, for
+	// verifying the issuers' https certificates, e.g. a development CA.
+	CAFiles []string `yaml:"ca_files" validate:"dive,required"`
 }
 
-// Bootstrap is an admin account and an OAuth2 client upserted at every
-// startup. An empty username or client_id skips that entry.
-type Bootstrap struct {
-	AdminUsername string `yaml:"admin_username"`
-	AdminPassword string `yaml:"admin_password" validate:"required_with=AdminUsername"`
-	ClientID      string `yaml:"client_id"`
-	ClientSecret  string `yaml:"client_secret" validate:"required_with=ClientID"`
-	// ClientScopes defaults to sis.read and sis.write when empty.
-	ClientScopes []string `yaml:"client_scopes"`
-}
-
-// OIDCRP configures OIDC login. An empty IssuerURL disables it.
-type OIDCRP struct {
-	// IssuerURL is fetched for discovery at startup. Must be https in
-	// production.
-	IssuerURL    string `yaml:"issuer_url" validate:"omitempty,httpurl"`
-	ClientID     string `yaml:"client_id" validate:"required_with=IssuerURL"`
-	ClientSecret string `yaml:"client_secret" validate:"required_with=IssuerURL"`
-	// RedirectURL is this service's /auth/oidc/callback as the browser sees
-	// it. Must be https in production (the state/nonce cookies are Secure).
-	RedirectURL string `yaml:"redirect_url" validate:"required_with=IssuerURL,omitempty,redirect_uri"`
+// Issuer is one trusted token issuer, e.g. an OIDC provider or a Keycloak
+// realm.
+type Issuer struct {
+	// Issuer must equal the iss claim of its tokens exactly, e.g.
+	// https://idp.example.org/realms/sis. Must be https in production.
+	Issuer string `yaml:"issuer" validate:"required,httpurl"`
+	// Audience, when set, must be in the aud claim of every token. Set it so
+	// SIS only accepts tokens meant for SIS. Required in production.
+	Audience string `yaml:"audience"`
+	// JWKSURL is where the issuer's signing keys are fetched. Empty finds it
+	// through the issuer's discovery document. Set it when SIS reaches the
+	// issuer under another address than the one in iss (e.g. a container
+	// name). Must be https in production.
+	JWKSURL string `yaml:"jwks_url" validate:"omitempty,httpurl"`
 }
 
 type Adapter struct {
@@ -128,18 +137,20 @@ type ConvertAPI struct {
 	MaxBodyBytes int64 `yaml:"max_body_bytes" default:"5242880" validate:"gt=0"`
 }
 
+// AuthAPI configures sign-in for the web UI, served at GET /auth/config.
+// The browser signs in at Issuer (authorization code flow with PKCE) and
+// sends the access token it gets to SIS; SIS never sees a password. Empty
+// Issuer disables sign-in in the web UI.
 type AuthAPI struct {
-	// PostLoginRedirectURL is where the browser goes after OIDC login. The
-	// token itself travels in an HttpOnly cookie that the web UI collects
-	// from /auth/oidc/session; only a "#oidc_login" marker is appended here.
-	// It must not have a fragment of its own (e.g. "/#people"): the web UI
-	// only acts on a fragment that is exactly #oidc_login. The web UI must be
-	// served from this service's origin for the cookie to reach it.
-	PostLoginRedirectURL string `yaml:"post_login_redirect_url" default:"/" validate:"required,post_login_redirect_url"`
-	// MaxConcurrentLogins caps password checks running at once across
-	// /auth/login and /oauth/token. Each check uses about 64 MiB; requests
-	// over the cap get 429.
-	MaxConcurrentLogins int `yaml:"max_concurrent_logins" default:"8" validate:"gt=0"`
+	// Issuer must be one of sis.auth.issuers, so SIS accepts its tokens. It
+	// must allow CORS from the web UI's origin on its discovery and token
+	// endpoints.
+	Issuer string `yaml:"issuer" validate:"omitempty,httpurl"`
+	// ClientID is the web UI's public client at the issuer. Its redirect
+	// URI is the web UI's root, e.g. https://sis.example.org/.
+	ClientID string `yaml:"client_id" validate:"required_with=Issuer"`
+	// Scope is requested at sign-in. The issuer decides what is granted.
+	Scope string `yaml:"scope" default:"openid sis.read sis.write"`
 }
 
 type RestAdmin struct {

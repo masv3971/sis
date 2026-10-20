@@ -6,11 +6,8 @@ import (
 	"io"
 	"net/http"
 	"testing"
-	"time"
 
 	"github.com/SUNET/sis/internal/adapter/outbound/memory"
-	"github.com/SUNET/sis/internal/auth"
-	"github.com/SUNET/sis/internal/auth/token"
 	"github.com/SUNET/sis/internal/core/domain"
 	"github.com/SUNET/sis/internal/core/service"
 	"github.com/SUNET/sis/internal/readmodel"
@@ -47,22 +44,10 @@ func TestProvidersPublishReferencesAsSourcedIDs(t *testing.T) {
 	must(catalog.Enrollments.Create(ctx, &domain.Enrollment{Base: domain.Base{ID: "e-internal", SourcedID: "enr-1"}, PersonID: "p-internal", OfferingID: "f-internal", Role: domain.RoleStudent}))
 
 	cfg := testCfg("127.0.0.1:0")
-	cfg.SIS.Auth.TokenTTL = time.Hour
 	cfg.SIS.Adapter.Inbound.OEAPI.DefaultPageSize, cfg.SIS.Adapter.Inbound.OEAPI.MaxPageSize = 10, 10
 	cfg.SIS.Adapter.Inbound.EduAPI.DefaultLimit, cfg.SIS.Adapter.Inbound.EduAPI.MaxLimit = 10, 10
-	a, err := auth.New(ctx, cfg, memory.NewAccountRepository(), memory.NewClientRepository(), log)
-	if err != nil {
-		t.Fatalf("auth.New: %v", err)
-	}
-	s, err := New(ctx, cfg, a, catalog, log)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	t.Cleanup(func() { _ = s.Close(context.Background()) })
-	tok, _, err := a.Issuer().Issue("reader", token.KindClient, nil, []string{domain.ScopeRead})
-	if err != nil {
-		t.Fatal(err)
-	}
+	s, iss := startWithIssuer(t, cfg, catalog)
+	tok := iss.Token(t, "reader", "sis.read")
 	base := "http://" + s.Addr().String()
 
 	get := func(t *testing.T, path string, out any) {

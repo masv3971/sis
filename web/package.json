@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "NODE_EXTRA_CA_CERTS=../developer_tools/pki/rootCA.crt vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview"
   },

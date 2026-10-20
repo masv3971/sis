@@ -11,7 +11,5 @@ package port
 // a private generic helper to build per-entity doc repos; everything else
 // goes through Store's fixed fields.
 type Store struct {
-	Persons  PersonRepository
-	Accounts AccountRepository
-	Clients  ClientRepository
+	Persons PersonRepository
 }

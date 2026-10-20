@@ -1,63 +1,43 @@
-import { useEffect, useState, type FormEvent } from "react";
-import { authConfig, InvalidCredentialsError, login } from "./api";
+import { useEffect, useState } from "react";
+import { authConfig, signIn, type AuthConfig } from "./oidc";
 
-export function Login({ onLogin }: { onLogin: () => void }) {
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+// Login offers sign-in at the configured token issuer. SIS never sees a
+// password: the issuer authenticates the user and decides the scopes.
+export function Login({ error: initialError }: { error: string }) {
+  const [cfg, setCfg] = useState<AuthConfig | null>(null);
+  const [error, setError] = useState(initialError);
   const [busy, setBusy] = useState(false);
-  const [oidc, setOidc] = useState(false);
 
   useEffect(() => {
-    authConfig().then((c) => setOidc(c.oidc));
+    authConfig().then(setCfg);
   }, []);
 
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    // The server requires both fields; say so up front rather than round-trip
-    // to a 400. login() still maps a 400 to the same message as a backstop.
-    if (!username || !password) {
-      setError("Enter both a username and a password.");
-      return;
-    }
+  async function start() {
+    if (!cfg) return;
     setError("");
     setBusy(true);
     try {
-      await login(username, password);
-      onLogin();
-    } catch (err) {
-      setError(err instanceof InvalidCredentialsError ? "Invalid username or password" : (err as Error).message);
-    } finally {
+      await signIn(cfg); // navigates away on success
+    } catch (e) {
+      setError((e as Error).message);
       setBusy(false);
     }
   }
 
   return (
-    <form className="card login" onSubmit={submit}>
+    <div className="card login">
       <h2>Sign in</h2>
-      <label>
-        Username
-        <input value={username} onChange={(e) => setUsername(e.target.value)} autoFocus />
-      </label>
-      <label>
-        Password
-        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-      </label>
+      {cfg && !cfg.enabled && <p className="muted">Sign-in is not configured for this SIS.</p>}
       {/* role="alert" is an assertive live region: screen readers announce
-          the message when it appears, since focus stays on the button. */}
+          the message when it appears. */}
       {error && (
         <p className="error" role="alert">
           {error}
         </p>
       )}
-      <button type="submit" disabled={busy}>
-        {busy ? "Signing in…" : "Sign in"}
+      <button type="button" onClick={start} disabled={!cfg?.enabled || busy}>
+        {busy ? "Redirecting…" : "Sign in"}
       </button>
-      {oidc && (
-        <button type="button" className="ghost" onClick={() => (window.location.href = "/auth/oidc/login")}>
-          Sign in with SSO
-        </button>
-      )}
-    </form>
+    </div>
   );
 }

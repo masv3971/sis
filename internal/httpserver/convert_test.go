@@ -1,7 +1,6 @@
 package httpserver
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -12,8 +11,6 @@ import (
 	"time"
 
 	"github.com/SUNET/sis/internal/adapter/outbound/memory"
-	"github.com/SUNET/sis/internal/auth"
-	"github.com/SUNET/sis/internal/auth/token"
 	"github.com/SUNET/sis/internal/core/domain"
 	"github.com/SUNET/sis/internal/core/service"
 	"github.com/SUNET/sis/internal/readmodel"
@@ -50,27 +47,11 @@ func TestParseAndPopulate(t *testing.T) {
 	catalog := memCatalog(clock.now, log)
 
 	cfg := testCfg("127.0.0.1:0")
-	cfg.SIS.Auth.TokenTTL = time.Hour
 	cfg.SIS.Adapter.Inbound.OEAPI.DefaultPageSize, cfg.SIS.Adapter.Inbound.OEAPI.MaxPageSize = 10, 10
 	cfg.SIS.Adapter.Inbound.EduAPI.DefaultLimit, cfg.SIS.Adapter.Inbound.EduAPI.MaxLimit = 10, 10
 	cfg.SIS.Adapter.Inbound.ConvertAPI.MaxBodyBytes = 64 << 10
-	a, err := auth.New(ctx, cfg, memory.NewAccountRepository(), memory.NewClientRepository(), log)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s, err := New(ctx, cfg, a, catalog, log)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = s.Close(context.Background()) })
-	issue := func(scopes ...string) string {
-		tok, _, err := a.Issuer().Issue("svc", token.KindClient, nil, scopes)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return tok
-	}
-	reader, writer := issue(domain.ScopeRead), issue(domain.ScopeRead, domain.ScopeWrite)
+	s, iss := startWithIssuer(t, cfg, catalog)
+	reader, writer := iss.Token(t, "svc", "sis.read"), iss.Token(t, "svc", "sis.read sis.write")
 	base := "http://" + s.Addr().String()
 
 	do := func(t *testing.T, tok, method, path, body string, want int) map[string]any {

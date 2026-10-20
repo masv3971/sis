@@ -1,0 +1,113 @@
+{
+  "organizations": [
+    { "sourcedId": "liu", "name": "Linköping University", "type": "institution", "status": "active" },
+    { "sourcedId": "liu-ida", "name": "Department of Computer and Information Science", "type": "department", "parentId": "liu", "status": "active" },
+    { "sourcedId": "kth", "name": "KTH Royal Institute of Technology", "type": "institution", "status": "active" },
+    { "sourcedId": "kth-eecs", "name": "School of Electrical Engineering and Computer Science", "type": "school", "parentId": "kth", "status": "active" }
+  ],
+  "academicSessions": [
+    { "sourcedId": "vt2026", "title": "Spring 2026", "type": "semester", "startDate": "2026-01-19", "endDate": "2026-06-07", "status": "active" },
+    { "sourcedId": "ht2026", "title": "Autumn 2026", "type": "semester", "startDate": "2026-08-31", "endDate": "2027-01-17", "status": "active" }
+  ],
+  "courses": [
+    { "sourcedId": "liu:TDDE01", "code": "TDDE01", "title": "Machine Learning", "orgId": "liu-ida", "status": "active" },
+    { "sourcedId": "liu:TDDD27", "code": "TDDD27", "title": "Advanced Web Programming", "orgId": "liu-ida", "status": "active" },
+    { "sourcedId": "liu:TDDE18", "code": "TDDE18", "title": "Programming in C++", "orgId": "liu-ida", "status": "active" },
+    { "sourcedId": "kth:DD1351", "code": "DD1351", "title": "Logic for Computer Scientists", "orgId": "kth-eecs", "status": "active" },
+    { "sourcedId": "kth:DD2380", "code": "DD2380", "title": "Artificial Intelligence", "orgId": "kth-eecs", "status": "active" }
+  ],
+  "programs": [
+    { "sourcedId": "liu:6CDDD", "code": "6CDDD", "title": "Master of Science in Computer Science and Engineering", "level": "7", "orgId": "liu", "status": "active" },
+    { "sourcedId": "kth:TCOMK", "code": "TCOMK", "title": "Degree Programme in Computer Science and Engineering", "level": "7", "orgId": "kth", "status": "active" }
+  ],
+  "offerings": [
+    { "sourcedId": "liu:TDDE01-vt2026", "title": "TDDE01 Spring 2026", "courseId": "liu:TDDE01", "academicSessionId": "vt2026", "orgId": "liu-ida", "status": "active" },
+    { "sourcedId": "liu:TDDD27-vt2026", "title": "TDDD27 Spring 2026", "courseId": "liu:TDDD27", "academicSessionId": "vt2026", "orgId": "liu-ida", "status": "active" },
+    { "sourcedId": "liu:TDDE18-ht2026", "title": "TDDE18 Autumn 2026", "courseId": "liu:TDDE18", "academicSessionId": "ht2026", "orgId": "liu-ida", "status": "active" },
+    { "sourcedId": "kth:DD1351-ht2026", "title": "DD1351 Autumn 2026", "courseId": "kth:DD1351", "academicSessionId": "ht2026", "orgId": "kth-eecs", "status": "active" },
+    { "sourcedId": "kth:DD2380-vt2026", "title": "DD2380 Spring 2026", "courseId": "kth:DD2380", "academicSessionId": "vt2026", "orgId": "kth-eecs", "status": "active" }
+  ],
+  "persons": [
+    {
+      "sourcedId": "liu:anna.andersson", "status": "active", "givenName": "Anna", "familyName": "Andersson",
+      "roles": ["student"], "dateOfBirth": "2001-03-14",
+      "identifiers": [{ "type": "studentNumber", "value": "annan001" }, { "type": "eppn", "value": "annan001@liu.se" }],
+      "emails": [{ "type": "work", "value": "annan001@student.liu.se" }]
+    },
+    {
+      "sourcedId": "liu:erik.lindqvist", "status": "active", "givenName": "Erik", "familyName": "Lindqvist",
+      "roles": ["student"], "dateOfBirth": "2000-11-02",
+      "identifiers": [{ "type": "studentNumber", "value": "erili002" }, { "type": "eppn", "value": "erili002@liu.se" }],
+      "emails": [{ "type": "work", "value": "erili002@student.liu.se" }]
+    },
+    {
+      "sourcedId": "liu:fatima.hassan", "status": "active", "givenName": "Fatima", "familyName": "Hassan",
+      "roles": ["student"], "dateOfBirth": "2002-06-21",
+      "identifiers": [{ "type": "studentNumber", "value": "fatha003" }, { "type": "eppn", "value": "fatha003@liu.se" }],
+      "emails": [{ "type": "work", "value": "fatha003@student.liu.se" }]
+    },
+    {
+      "sourcedId": "liu:johan.berg", "status": "active", "givenName": "Johan", "middleName": "Karl", "familyName": "Berg",
+      "roles": ["student"], "dateOfBirth": "1999-01-30",
+      "identifiers": [{ "type": "studentNumber", "value": "johbe004" }, { "type": "eppn", "value": "johbe004@liu.se" }],
+      "emails": [{ "type": "work", "value": "johbe004@student.liu.se" }]
+    },
+    {
+      "sourcedId": "liu:sara.nilsson", "status": "inactive", "givenName": "Sara", "familyName": "Nilsson",
+      "roles": ["student"], "dateOfBirth": "1998-09-09",
+      "identifiers": [{ "type": "studentNumber", "value": "sarni005" }],
+      "emails": [{ "type": "work", "value": "sarni005@student.liu.se" }]
+    },
+    {
+      "sourcedId": "liu:lars.ek", "status": "active", "givenName": "Lars", "familyName": "Ek",
+      "roles": ["faculty"],
+      "identifiers": [{ "type": "eppn", "value": "lars.ek@liu.se" }],
+      "emails": [{ "type": "work", "value": "lars.ek@liu.se" }]
+    },
+    {
+      "sourcedId": "kth:mikael.svensson", "status": "active", "givenName": "Mikael", "familyName": "Svensson",
+      "roles": ["student"], "dateOfBirth": "2001-12-05",
+      "identifiers": [{ "type": "studentNumber", "value": "misv" }, { "type": "eppn", "value": "misv@kth.se" }],
+      "emails": [{ "type": "work", "value": "misv@kth.se" }]
+    },
+    {
+      "sourcedId": "kth:li.wei", "status": "active", "givenName": "Li", "familyName": "Wei",
+      "roles": ["student"], "dateOfBirth": "2000-04-17",
+      "identifiers": [{ "type": "studentNumber", "value": "liwei" }, { "type": "eppn", "value": "liwei@kth.se" }],
+      "emails": [{ "type": "work", "value": "liwei@kth.se" }]
+    },
+    {
+      "sourcedId": "kth:emma.karlsson", "status": "active", "givenName": "Emma", "familyName": "Karlsson",
+      "roles": ["student"], "dateOfBirth": "2002-02-28",
+      "identifiers": [{ "type": "studentNumber", "value": "emkarl" }, { "type": "eppn", "value": "emkarl@kth.se" }],
+      "emails": [{ "type": "work", "value": "emkarl@kth.se" }]
+    },
+    {
+      "sourcedId": "kth:oskar.holm", "status": "tobedeleted", "givenName": "Oskar", "familyName": "Holm",
+      "roles": ["student"], "dateOfBirth": "1997-07-07",
+      "identifiers": [{ "type": "studentNumber", "value": "oholm" }],
+      "emails": [{ "type": "work", "value": "oholm@kth.se" }]
+    }
+  ],
+  "enrollments": [
+    { "sourcedId": "liu:anna.andersson:TDDE01-vt2026", "personId": "liu:anna.andersson", "offeringId": "liu:TDDE01-vt2026", "role": "student", "status": "active" },
+    { "sourcedId": "liu:anna.andersson:TDDD27-vt2026", "personId": "liu:anna.andersson", "offeringId": "liu:TDDD27-vt2026", "role": "student", "status": "active" },
+    { "sourcedId": "liu:erik.lindqvist:TDDE01-vt2026", "personId": "liu:erik.lindqvist", "offeringId": "liu:TDDE01-vt2026", "role": "student", "status": "active" },
+    { "sourcedId": "liu:fatima.hassan:TDDE18-ht2026", "personId": "liu:fatima.hassan", "offeringId": "liu:TDDE18-ht2026", "role": "student", "status": "active" },
+    { "sourcedId": "liu:johan.berg:TDDD27-vt2026", "personId": "liu:johan.berg", "offeringId": "liu:TDDD27-vt2026", "role": "student", "status": "active" },
+    { "sourcedId": "liu:lars.ek:TDDE01-vt2026", "personId": "liu:lars.ek", "offeringId": "liu:TDDE01-vt2026", "role": "faculty", "status": "active" },
+    { "sourcedId": "kth:mikael.svensson:DD2380-vt2026", "personId": "kth:mikael.svensson", "offeringId": "kth:DD2380-vt2026", "role": "student", "status": "active" },
+    { "sourcedId": "kth:li.wei:DD2380-vt2026", "personId": "kth:li.wei", "offeringId": "kth:DD2380-vt2026", "role": "student", "status": "active" },
+    { "sourcedId": "kth:emma.karlsson:DD1351-ht2026", "personId": "kth:emma.karlsson", "offeringId": "kth:DD1351-ht2026", "role": "student", "status": "active" }
+  ],
+  "results": [
+    { "sourcedId": "liu:anna.andersson:TDDE01", "personId": "liu:anna.andersson", "courseId": "liu:TDDE01", "offeringId": "liu:TDDE01-vt2026", "grade": "5", "credits": 6, "resultDate": "2026-06-05", "status": "active" },
+    { "sourcedId": "liu:anna.andersson:TDDD27", "personId": "liu:anna.andersson", "courseId": "liu:TDDD27", "offeringId": "liu:TDDD27-vt2026", "grade": "4", "credits": 6, "resultDate": "2026-06-03", "status": "active" },
+    { "sourcedId": "liu:erik.lindqvist:TDDE01", "personId": "liu:erik.lindqvist", "courseId": "liu:TDDE01", "offeringId": "liu:TDDE01-vt2026", "grade": "3", "credits": 6, "resultDate": "2026-06-05", "status": "active" },
+    { "sourcedId": "liu:johan.berg:TDDD27", "personId": "liu:johan.berg", "courseId": "liu:TDDD27", "offeringId": "liu:TDDD27-vt2026", "grade": "5", "credits": 6, "resultDate": "2026-06-03", "status": "active" },
+    { "sourcedId": "liu:sara.nilsson:6CDDD", "personId": "liu:sara.nilsson", "programId": "liu:6CDDD", "grade": "Pass", "credits": 300, "resultDate": "2025-06-13", "status": "active" },
+    { "sourcedId": "kth:mikael.svensson:DD2380", "personId": "kth:mikael.svensson", "courseId": "kth:DD2380", "offeringId": "kth:DD2380-vt2026", "grade": "A", "credits": 6, "resultDate": "2026-06-01", "status": "active" },
+    { "sourcedId": "kth:li.wei:DD2380", "personId": "kth:li.wei", "courseId": "kth:DD2380", "offeringId": "kth:DD2380-vt2026", "grade": "C", "credits": 6, "resultDate": "2026-06-01", "status": "active" },
+    { "sourcedId": "kth:oskar.holm:TCOMK", "personId": "kth:oskar.holm", "programId": "kth:TCOMK", "grade": "Pass", "credits": 300, "resultDate": "2024-06-14", "status": "active" }
+  ]
+}

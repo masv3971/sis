@@ -51,7 +51,47 @@ func New(_ context.Context, _ string) (*model.Cfg, error) {
 	if err := checkProduction(cfg); err != nil {
 		return nil, fmt.Errorf("validate config: %w", err)
 	}
+	if err := checkWebLogin(cfg); err != nil {
+		return nil, fmt.Errorf("validate config: %w", err)
+	}
+	resolveImportPaths(cfg, filepath.Dir(env.ConfigYAML))
 	return cfg, nil
+}
+
+// checkWebLogin requires the web UI's sign-in issuer to be a trusted one.
+// Otherwise the user signs in successfully and every API call then fails
+// with 401.
+func checkWebLogin(cfg *model.Cfg) error {
+	web := cfg.SIS.Adapter.Inbound.AuthAPI.Issuer
+	if web == "" {
+		return nil
+	}
+	for _, iss := range cfg.SIS.Auth.Issuers {
+		if iss.Issuer == web {
+			return nil
+		}
+	}
+	return fmt.Errorf("sis.adapter.inbound.authapi.issuer %q is not in sis.auth.issuers", web)
+}
+
+// resolveImportPaths makes relative file paths in the config (import files,
+// TLS certificate and key, CA files) relative to the config file's
+// directory, so they do not depend on the working directory SIS is started
+// from.
+func resolveImportPaths(cfg *model.Cfg, dir string) {
+	resolve := func(p *string) {
+		if *p != "" && !filepath.IsAbs(*p) {
+			*p = filepath.Join(dir, *p)
+		}
+	}
+	for i := range cfg.SIS.FileImport.Files {
+		resolve(&cfg.SIS.FileImport.Files[i])
+	}
+	resolve(&cfg.SIS.HTTPServer.TLS.CertFile)
+	resolve(&cfg.SIS.HTTPServer.TLS.KeyFile)
+	for i := range cfg.SIS.Auth.CAFiles {
+		resolve(&cfg.SIS.Auth.CAFiles[i])
+	}
 }
 
 func loadFile(path string, cfg *model.Cfg) error {
@@ -92,38 +132,30 @@ func loadFile(path string, cfg *model.Cfg) error {
 }
 
 // checkProduction enforces the settings that are only optional for local
-// development. With common.production set, an ephemeral JWT secret (random
-// per process, so tokens break across restarts and replicas), a plain-HTTP
-// OIDC issuer, a plain-HTTP OIDC redirect URL, and an absolute plain-HTTP
-// post-login redirect (which receives the access token) are refused. The redirect
-// must be https because production marks the OIDC state/nonce cookies
-// Secure: on an http callback the browser withholds them and every SSO
-// attempt fails with invalid_state. The minimum secret length is a validator rule
-// (jwt_secret_production_min on model.Auth.JWTSecret), so it runs in
-// helpers.Check.
+// development. With common.production set, every trusted issuer must be
+// reached over https (its keys decide who gets in, so they must not be
+// fetched over a tamperable channel) and must name an audience (otherwise a
+// token the issuer minted for any other service would be accepted here).
 func checkProduction(cfg *model.Cfg) error {
 	if !cfg.Common.Production {
 		return nil
 	}
-	if cfg.SIS.Auth.JWTSecret == "" {
-		return errors.New("sis.auth.jwt_secret is required when common.production is true")
-	}
-	if issuer := cfg.SIS.Auth.OIDCRP.IssuerURL; issuer != "" {
-		u, err := url.Parse(issuer)
-		if err != nil || !strings.EqualFold(u.Scheme, "https") {
-			return errors.New("sis.auth.oidcrp.issuer_url must use https when common.production is true")
+	for i, iss := range cfg.SIS.Auth.Issuers {
+		field := fmt.Sprintf("sis.auth.issuers[%d]", i)
+		if !isHTTPS(iss.Issuer) {
+			return fmt.Errorf("%s.issuer must use https when common.production is true", field)
 		}
-		u, err = url.Parse(cfg.SIS.Auth.OIDCRP.RedirectURL)
-		if err != nil || !strings.EqualFold(u.Scheme, "https") {
-			return errors.New("sis.auth.oidcrp.redirect_url must use https when common.production is true (the OIDC state/nonce cookies are Secure)")
+		if iss.JWKSURL != "" && !isHTTPS(iss.JWKSURL) {
+			return fmt.Errorf("%s.jwks_url must use https when common.production is true", field)
 		}
-		// The OIDC callback redirects here and the page then collects the
-		// access token, so an absolute destination must be https too.
-		// Relative destinations (e.g. "/") resolve against the https callback.
-		u, err = url.Parse(cfg.SIS.Adapter.Inbound.AuthAPI.PostLoginRedirectURL)
-		if err != nil || (u.Scheme != "" && !strings.EqualFold(u.Scheme, "https")) {
-			return errors.New("sis.adapter.inbound.authapi.post_login_redirect_url must be relative or use https when common.production is true (it receives the access token)")
+		if iss.Audience == "" {
+			return fmt.Errorf("%s.audience is required when common.production is true", field)
 		}
 	}
 	return nil
+}
+
+func isHTTPS(raw string) bool {
+	u, err := url.Parse(raw)
+	return err == nil && strings.EqualFold(u.Scheme, "https")
 }

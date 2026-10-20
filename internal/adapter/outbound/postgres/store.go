@@ -42,16 +42,6 @@ func (s *Service) Persons() *PersonRepository {
 	return &PersonRepository{pool: s.pool}
 }
 
-// Accounts returns the Account repository backed by this service.
-func (s *Service) Accounts() *AccountRepository {
-	return &AccountRepository{pool: s.pool}
-}
-
-// Clients returns the OAuth2 client repository backed by this service.
-func (s *Service) Clients() *ClientRepository {
-	return &ClientRepository{pool: s.pool}
-}
-
 // Close releases the connection pool. pgxpool.Close blocks until every
 // borrowed connection is returned and ignores contexts, so it runs in a
 // goroutine and Close returns when ctx is done even if a connection is still

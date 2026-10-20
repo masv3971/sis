@@ -6,6 +6,7 @@ package httpserver
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
@@ -67,13 +68,11 @@ func (s *Service) Addr() net.Addr { return s.addr }
 // background. It returns once the listener is accepting connections. Each
 // inbound package exposes a *Client built here (passing cfg + log so handlers
 // can log and read config); routes are wired to its methods.
-func New(ctx context.Context, cfg *model.Cfg, authSvc *auth.Client, catalog *readmodel.Client, log *logger.Log) (*Service, error) {
-	issuer := authSvc.Issuer()
-
+func New(ctx context.Context, cfg *model.Cfg, verifier *auth.Verifier, catalog *readmodel.Client, log *logger.Log) (*Service, error) {
 	// Inbound handler clients. Each New returns (*Client, error) and the
 	// handlers are methods on the returned Client, so routes read as
-	// `engine.POST(path, authH.Login)` rather than passing deps per route.
-	authH, err := authapi.New(ctx, cfg, authSvc, log)
+	// `engine.GET(path, authH.Config)` rather than passing deps per route.
+	authH, err := authapi.New(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -118,24 +117,17 @@ func New(ctx context.Context, cfg *model.Cfg, authSvc *auth.Client, catalog *rea
 		gc.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
-	// Unauthenticated auth endpoints: local login, client-credentials token,
-	// and (when configured) OIDC RP login.
+	// Public: where the web UI signs in. SIS issues no tokens.
 	engine.GET("/auth/config", authH.Config)
-	engine.POST("/auth/login", authH.Login)
-	engine.POST("/oauth/token", authH.Token)
-	if authSvc.OIDCEnabled() {
-		engine.GET("/auth/oidc/login", authH.OIDCLogin)
-		engine.GET("/auth/oidc/callback", authH.OIDCCallback)
-		engine.POST("/auth/oidc/session", authH.OIDCSession)
-	}
 
-	// Native /api/v1 requires a valid token; reads and writes gate on scope
-	// (machine clients) or role (human logins).
+	// Every API needs a token from a trusted issuer; reads need scope
+	// sis.read and writes sis.write, whoever holds the token.
 	guards := Guards{
-		Read:  auth.RequireScopeOrRole(domain.ScopeRead, string(domain.AuthRoleAdmin), string(domain.AuthRoleRegistrar), string(domain.AuthRoleReadOnly)),
-		Write: auth.RequireScopeOrRole(domain.ScopeWrite, string(domain.AuthRoleAdmin), string(domain.AuthRoleRegistrar)),
+		Read:  auth.RequireScope(auth.ScopeRead),
+		Write: auth.RequireScope(auth.ScopeWrite),
 	}
-	api := engine.Group("/api/v1", auth.RequireAuth(issuer))
+	requireAuth := verifier.RequireAuth()
+	api := engine.Group("/api/v1", requireAuth)
 	api.GET("/persons", guards.Read, adminH.ListPersons)
 	api.POST("/persons", guards.Write, adminH.CreatePerson)
 	api.GET("/persons/:id", guards.Read, adminH.GetPerson)
@@ -154,7 +146,7 @@ func New(ctx context.Context, cfg *model.Cfg, authSvc *auth.Client, catalog *rea
 	api.POST("/populate", guards.Write, convH.Populate)
 
 	// Open Education API v6.0 read provider, behind the read scope.
-	oe := engine.Group("/oeapi", auth.RequireAuth(issuer), guards.Read)
+	oe := engine.Group("/oeapi", requireAuth, guards.Read)
 	oe.GET("/persons", oeH.ListPersons)
 	oe.GET("/persons/:id", oeH.GetPerson)
 	oe.GET("/organizations", oeapi.List(oeH, catalog.Organizations, oedto.FromOrganization))
@@ -173,7 +165,7 @@ func New(ctx context.Context, cfg *model.Cfg, authSvc *auth.Client, catalog *rea
 	oe.GET("/results/:id", oeapi.Get(oeH, catalog.Results, oedto.FromResult))
 
 	// Edu-API v1.0 read provider, behind the read scope.
-	edu := engine.Group("/eduapi", auth.RequireAuth(issuer), guards.Read)
+	edu := engine.Group("/eduapi", requireAuth, guards.Read)
 	edu.GET("/persons", eduH.ListPersons)
 	edu.GET("/persons/:id", eduH.GetPerson)
 	edu.GET("/orgs", eduapi.List(eduH, catalog.Organizations, "orgs", edudto.FromOrg))
@@ -230,6 +222,16 @@ func start(ctx context.Context, hc model.HTTPServer, handler http.Handler, log *
 		},
 	}
 
+	// Load the certificate before binding, so a bad file fails startup.
+	if hc.TLS.Enabled() {
+		cert, err := tls.LoadX509KeyPair(hc.TLS.CertFile, hc.TLS.KeyFile)
+		if err != nil {
+			cancel()
+			return nil, fmt.Errorf("load tls certificate: %w", err)
+		}
+		s.server.TLSConfig = &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}
+	}
+
 	// Bind synchronously so an invalid or busy address fails New (and thus
 	// startup) instead of only being logged from the serve goroutine.
 	ln, err := (&net.ListenConfig{}).Listen(ctx, "tcp", hc.Addr)
@@ -238,7 +240,10 @@ func start(ctx context.Context, hc model.HTTPServer, handler http.Handler, log *
 		return nil, fmt.Errorf("listen %s: %w", hc.Addr, err)
 	}
 	s.addr = ln.Addr()
-	s.log.Info("sis listening", "addr", s.addr.String())
+	if s.server.TLSConfig != nil {
+		ln = tls.NewListener(ln, s.server.TLSConfig)
+	}
+	s.log.Info("sis listening", "addr", s.addr.String(), "tls", hc.TLS.Enabled())
 
 	go func() {
 		if err := s.server.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {

@@ -116,40 +116,6 @@ func TestPageBounds(t *testing.T) {
 	}
 }
 
-func TestAccountUpsertRejectsDuplicateIdentity(t *testing.T) {
-	ctx := context.Background()
-	r := NewAccountRepository()
-	base := domain.Account{ID: "1", Username: "oidc:a", OIDCIssuer: "https://idp", OIDCSubject: "sub"}
-	if err := r.Upsert(ctx, base); err != nil {
-		t.Fatalf("insert: %v", err)
-	}
-
-	sameIdentity := domain.Account{ID: "2", Username: "oidc:b", OIDCIssuer: "https://idp", OIDCSubject: "sub"}
-	if err := r.Upsert(ctx, sameIdentity); !errors.Is(err, domain.ErrConflict) {
-		t.Fatalf("duplicate OIDC identity: expected ErrConflict, got %v", err)
-	}
-	sameID := domain.Account{ID: "1", Username: "local"}
-	if err := r.Upsert(ctx, sameID); !errors.Is(err, domain.ErrConflict) {
-		t.Fatalf("duplicate id: expected ErrConflict, got %v", err)
-	}
-
-	// Updating the same username keeps its id and binding.
-	if err := r.Upsert(ctx, domain.Account{ID: "ignored", Username: "oidc:a", OIDCSubject: "other"}); err != nil {
-		t.Fatalf("update: %v", err)
-	}
-	got, err := r.GetByOIDC(ctx, "https://idp", "sub")
-	if err != nil || got.ID != "1" {
-		t.Fatalf("binding not preserved: %+v %v", got, err)
-	}
-	// Local accounts (no OIDC subject) never conflict with each other.
-	if err := r.Upsert(ctx, domain.Account{ID: "3", Username: "l1"}); err != nil {
-		t.Fatal(err)
-	}
-	if err := r.Upsert(ctx, domain.Account{ID: "4", Username: "l2"}); err != nil {
-		t.Fatal(err)
-	}
-}
-
 // TestPersonRepositoryIsolatesSlices checks that neither the value passed to
 // a write nor a value returned by a read shares slice storage with the
 // repository, so mutating them cannot change stored data.
@@ -200,42 +166,4 @@ func TestPersonRepositoryIsolatesSlices(t *testing.T) {
 	}
 	mutate(upd)
 	check("after mutating Update argument")
-}
-
-// TestAuthRepositoriesIsolateSlices checks Roles and Scopes are cloned on
-// Upsert and on every lookup, so callers cannot change stored authorization.
-func TestAuthRepositoriesIsolateSlices(t *testing.T) {
-	ctx := context.Background()
-	accounts := NewAccountRepository()
-	a := domain.Account{Username: "u", Roles: []domain.AuthRole{domain.AuthRoleReadOnly}, OIDCIssuer: "i", OIDCSubject: "s"}
-	if err := accounts.Upsert(ctx, a); err != nil {
-		t.Fatal(err)
-	}
-	a.Roles[0] = domain.AuthRoleAdmin
-	byName, _ := accounts.GetByUsername(ctx, "u")
-	byName.Roles[0] = domain.AuthRoleAdmin
-	byOIDC, _ := accounts.GetByOIDC(ctx, "i", "s")
-	if byOIDC.Roles[0] != domain.AuthRoleReadOnly {
-		t.Fatalf("stored roles changed: %v", byOIDC.Roles)
-	}
-	byOIDC.Roles[0] = domain.AuthRoleAdmin
-	if err := accounts.Upsert(ctx, byName); err != nil { // update path
-		t.Fatal(err)
-	}
-	byName.Roles[0] = domain.AuthRoleRegistrar
-	if got, _ := accounts.GetByUsername(ctx, "u"); got.Roles[0] != domain.AuthRoleAdmin {
-		t.Fatalf("roles after update path: %v", got.Roles)
-	}
-
-	clients := NewClientRepository()
-	c := domain.Client{ClientID: "c", Scopes: []string{domain.ScopeRead}}
-	if err := clients.Upsert(ctx, c); err != nil {
-		t.Fatal(err)
-	}
-	c.Scopes[0] = domain.ScopeWrite
-	got, _ := clients.GetByClientID(ctx, "c")
-	got.Scopes[0] = domain.ScopeWrite
-	if got, _ := clients.GetByClientID(ctx, "c"); got.Scopes[0] != domain.ScopeRead {
-		t.Fatalf("stored scopes changed: %v", got.Scopes)
-	}
 }

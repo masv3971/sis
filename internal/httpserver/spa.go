@@ -19,7 +19,6 @@ import (
 var apiRoots = []string{
 	"/api",
 	"/auth",
-	"/oauth",
 	"/oeapi",
 	"/eduapi",
 	"/healthz",

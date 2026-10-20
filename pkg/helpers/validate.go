@@ -10,7 +10,6 @@ import (
 	"net"
 	"net/url"
 	"reflect"
-	"strconv"
 	"strings"
 
 	"github.com/go-playground/validator/v10"
@@ -57,59 +56,6 @@ func NewValidator() (*validator.Validate, error) {
 		// Hostname(), not Host: Host keeps the port, so "https://:443/x" has a
 		// non-empty Host and no host at all.
 		return strings.EqualFold(u.Scheme, "https") && u.Hostname() != ""
-	}); err != nil {
-		return nil, err
-	}
-
-	// redirect_uri - an OAuth 2.0 redirect URI. Per RFC 6749 it must have a
-	// scheme and no fragment; per RFC 8252 custom (native app) schemes are
-	// allowed. Never fetched server-side, so no DNS/SSRF check.
-	if err := validate.RegisterValidation("redirect_uri", func(fl validator.FieldLevel) bool {
-		u, ok := parseURL(fl.Field().String())
-		if !ok || u.Scheme == "" || u.Fragment != "" {
-			return false
-		}
-		if u.Scheme == "http" || u.Scheme == "https" {
-			return u.Hostname() != ""
-		}
-		// Custom scheme: require content beyond the scheme.
-		return u.Host != "" || u.Path != "" || u.Opaque != ""
-	}); err != nil {
-		return nil, err
-	}
-
-	// post_login_redirect_url - a parseable URL, absolute or relative, with no
-	// fragment. The OIDC callback appends the "#oidc_login" marker, so a
-	// destination that already has a fragment (or a bare trailing "#") would
-	// bury the marker where the web UI never looks for it.
-	if err := validate.RegisterValidation("post_login_redirect_url", func(fl validator.FieldLevel) bool {
-		raw := fl.Field().String()
-		if strings.Contains(raw, "#") {
-			return false
-		}
-		_, ok := parseURL(raw)
-		return ok
-	}); err != nil {
-		return nil, err
-	}
-
-	// jwt_secret_production_min=N - the minimum JWT signing-secret length in
-	// bytes when the root struct's Common.Production is true; a no-op
-	// otherwise. Built-in conditional rules (required_if etc.) only see
-	// sibling fields, so they cannot reach common.production from sis.auth;
-	// Top() reads it from the root at any depth. A root without
-	// Common.Production counts as non-production.
-	if err := validate.RegisterValidation("jwt_secret_production_min", func(fl validator.FieldLevel) bool {
-		prod, kind, _, ok := fl.GetStructFieldOKAdvanced2(fl.Top(), "Common.Production")
-		if !ok || kind != reflect.Bool || !prod.Bool() {
-			return true
-		}
-		n, err := strconv.Atoi(fl.Param())
-		if err != nil {
-			// A bad tag is a programming error, as for the built-in rules.
-			panic(fmt.Sprintf("jwt_secret_production_min: bad param %q on %s", fl.Param(), fl.FieldName()))
-		}
-		return len(fl.Field().String()) >= n
 	}); err != nil {
 		return nil, err
 	}

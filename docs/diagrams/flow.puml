@@ -1,0 +1,30 @@
+@startuml flow
+left to right direction
+skinparam shadowing false
+skinparam defaultTextAlignment center
+skinparam backgroundColor white
+
+package "University" as UNI {
+  actor "Registrar / admin staff\n(web admin UI)" as STAFF
+  component "University business system\n(machine client, OAuth2)" as SYS
+}
+
+package "sis — Student Information System" as SIS {
+  component "/api/v1\nnative REST API (write)" as API
+  database "Canonical store\nPostgreSQL\npersons, orgs, courses,\nofferings, sessions, enrollments" as DB
+  component "OEAPI v6.0\n(read-only)" as OE
+  component "Edu-API v1.0\n(read-only)" as EDU
+}
+
+package "Consumer" as CONS {
+  component "SUNET/vc" as VC
+}
+
+STAFF --> API : 1. log in (password or SSO)\nand enter data
+SYS --> API : 1. push data
+API --> DB
+DB --> OE
+DB --> EDU
+OE --> VC : 2. fetch in standard format
+EDU --> VC : 2. fetch in standard format
+@enduml

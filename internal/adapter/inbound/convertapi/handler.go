@@ -103,7 +103,7 @@ type PopulateReply struct {
 //
 //	@Summary		Convert a document
 //	@ID				parse
-//	@Description	Converts data from metadata.input_format (elm: an ELM v3 / European Digital Credential JSON-LD document) to metadata.output_format (eduapi or oeapi) and returns it. Nothing is stored. Records keep the document's ids as sourcedIds; references between them are sourcedIds. Requires scope sis.read or role admin, registrar or readonly.
+//	@Description	Converts data from metadata.input_format (elm: an ELM v3 / European Digital Credential JSON-LD document) to metadata.output_format (eduapi or oeapi) and returns it. Nothing is stored. Records keep the document's ids as sourcedIds; references between them are sourcedIds. Requires scope sis.read.
 //	@Tags			convert
 //	@Accept			json
 //	@Produce		json
@@ -111,8 +111,8 @@ type PopulateReply struct {
 //	@Param			request	body		ParseRequest			true	"Document to convert"
 //	@Success		200		{object}	ParseReply				"Converted document"
 //	@Failure		400		{object}	helpers.ErrorResponse	"Malformed body, unsupported format, or a document that cannot be converted"
-//	@Failure		401		{object}	auth.ErrorResponse		"Missing or invalid token"
-//	@Failure		403		{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		401		{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403		{object}	auth.ErrorResponse		"Token lacks the required scope"
 //	@Failure		413		{object}	helpers.ErrorResponse	"Request body too large"
 //	@Failure		500		{object}	helpers.ErrorResponse	"Internal Server Error"
 //	@Router			/parse [post]
@@ -143,7 +143,7 @@ func (c *Client) Parse(gc *gin.Context) {
 //
 //	@Summary		Load a document
 //	@ID				populate
-//	@Description	Converts data from metadata.input_format (elm) and upserts every record by sourcedId, so /eduapi and /oeapi (and /api/v1) serve them. With ttl the records stop being served after that duration and are then deleted; re-populating refreshes the expiry, but a record that already existed without expiry keeps none. References in the document must resolve within it or to stored records. The document is checked completely before anything is stored; a storage failure part-way leaves earlier records stored, and retrying the same request converges. Requires scope sis.write or role admin or registrar.
+//	@Description	Converts data from metadata.input_format (elm) and upserts every record by sourcedId, so /eduapi and /oeapi (and /api/v1) serve them. With ttl the records stop being served after that duration and are then deleted; re-populating refreshes the expiry, but a record that already existed without expiry keeps none. References in the document must resolve within it or to stored records. The document is checked completely before anything is stored; a storage failure part-way leaves earlier records stored, and retrying the same request converges. Requires scope sis.write.
 //	@Tags			convert
 //	@Accept			json
 //	@Produce		json
@@ -151,8 +151,8 @@ func (c *Client) Parse(gc *gin.Context) {
 //	@Param			request	body		PopulateRequest			true	"Document to load"
 //	@Success		200		{object}	PopulateReply			"Stored records"
 //	@Failure		400		{object}	helpers.ErrorResponse	"Malformed body, unsupported format, invalid ttl, or a document that cannot be converted"
-//	@Failure		401		{object}	auth.ErrorResponse		"Missing or invalid token"
-//	@Failure		403		{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		401		{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403		{object}	auth.ErrorResponse		"Token lacks the required scope"
 //	@Failure		409		{object}	helpers.ErrorResponse	"A record id collides with an existing record"
 //	@Failure		413		{object}	helpers.ErrorResponse	"Request body too large"
 //	@Failure		500		{object}	helpers.ErrorResponse	"Internal Server Error"

@@ -18,7 +18,7 @@
       "id": "urn:epass:org:liu",
       "type": "Organisation",
       "legalName": {"en": "Linköping University", "sv": "Linköpings universitet"},
-      "registration": {"id": "urn:epass:legalIdentifier:1", "type": "LegalIdentifier", "notation": "202100-3096", "spatial": {"id": "http://publications.europa.eu/resource/authority/country/SWE", "type": "Concept"}}
+      "registration": {"id": "urn:epass:legalIdentifier:2", "type": "LegalIdentifier", "notation": "202100-3096", "spatial": {"id": "http://publications.europa.eu/resource/authority/country/SWE", "type": "Concept"}}
     }
   },
   "credentialSubject": {

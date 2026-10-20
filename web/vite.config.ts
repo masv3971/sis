@@ -7,12 +7,13 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/api": "http://localhost:8080",
-      "/auth": "http://localhost:8080",
-      "/oauth": "http://localhost:8080",
-      "/oeapi": "http://localhost:8080",
-      "/eduapi": "http://localhost:8080",
-      "/swagger": "http://localhost:8080",
+      // SIS serves https with the dev certificate (make pki). The proxy
+      // verifies it: `npm run dev` sets NODE_EXTRA_CA_CERTS to the dev CA.
+      "/api": "https://localhost:8080",
+      "/auth": "https://localhost:8080",
+      "/oeapi": "https://localhost:8080",
+      "/eduapi": "https://localhost:8080",
+      "/swagger": "https://localhost:8080",
     },
   },
 });

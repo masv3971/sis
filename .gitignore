@@ -31,3 +31,6 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Development PKI (developer_tools/scripts/create_pki.sh)
+developer_tools/pki/

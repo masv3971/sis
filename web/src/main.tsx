@@ -1,15 +1,22 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { App } from "./App";
-import { completeOIDCLogin } from "./api";
+import { setToken } from "./api";
+import { completeSignIn } from "./oidc";
 import "./styles.css";
 
-// Pick up a pending OIDC login before first render, so App starts signed in.
-// completeOIDCLogin never rejects.
-void completeOIDCLogin().then(() => {
-  ReactDOM.createRoot(document.getElementById("root")!).render(
-    <React.StrictMode>
-      <App />
-    </React.StrictMode>,
-  );
-});
+// Finish a sign-in the issuer redirected back from before first render, so
+// App starts signed in. A failure is shown on the sign-in page.
+void completeSignIn()
+  .then((token) => {
+    if (token) setToken(token);
+    return "";
+  })
+  .catch((e: unknown) => (e as Error).message)
+  .then((signInError) => {
+    ReactDOM.createRoot(document.getElementById("root")!).render(
+      <React.StrictMode>
+        <App signInError={signInError} />
+      </React.StrictMode>,
+    );
+  });

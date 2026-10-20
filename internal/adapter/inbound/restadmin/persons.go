@@ -50,7 +50,7 @@ type PersonListReply struct {
 //
 //	@Summary		List persons
 //	@ID				list-persons
-//	@Description	Lists persons with limit/offset paging. Requires scope sis.read or role admin, registrar or readonly.
+//	@Description	Lists persons with limit/offset paging. Requires scope sis.read.
 //	@Tags			persons
 //	@Produce		json
 //	@Security		BearerAuth
@@ -58,8 +58,8 @@ type PersonListReply struct {
 //	@Param			offset	query		int						false	"Number of items to skip"											minimum(0)
 //	@Success		200		{object}	PersonListReply			"Success"
 //	@Failure		400		{object}	helpers.ErrorResponse	"Invalid paging parameters"
-//	@Failure		401		{object}	auth.ErrorResponse		"Missing or invalid token"
-//	@Failure		403		{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		401		{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403		{object}	auth.ErrorResponse		"Token lacks the required scope"
 //	@Failure		500		{object}	helpers.ErrorResponse	"Internal Server Error"
 //	@Router			/persons [get]
 func (c *Client) ListPersons(gc *gin.Context) {
@@ -85,7 +85,7 @@ func (c *Client) ListPersons(gc *gin.Context) {
 //
 //	@Summary		Create person
 //	@ID				create-person
-//	@Description	Creates a person. givenName, familyName and status are required. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server. Requires scope sis.write or role admin or registrar.
+//	@Description	Creates a person. givenName, familyName and status are required. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server. Requires scope sis.write.
 //	@Tags			persons
 //	@Accept			json
 //	@Produce		json
@@ -93,8 +93,8 @@ func (c *Client) ListPersons(gc *gin.Context) {
 //	@Param			person	body		domain.Person			true	"Person to create"
 //	@Success		201		{object}	domain.Person			"Created"
 //	@Failure		400		{object}	helpers.ErrorResponse	"Malformed body or validation error"
-//	@Failure		401		{object}	auth.ErrorResponse		"Missing or invalid token"
-//	@Failure		403		{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		401		{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403		{object}	auth.ErrorResponse		"Token lacks the required scope"
 //	@Failure		409		{object}	helpers.ErrorResponse	"id or sourcedId already in use"
 //	@Failure		413		{object}	helpers.ErrorResponse	"Request body too large"
 //	@Failure		500		{object}	helpers.ErrorResponse	"Internal Server Error"
@@ -117,14 +117,14 @@ func (c *Client) CreatePerson(gc *gin.Context) {
 //
 //	@Summary		Get person
 //	@ID				get-person
-//	@Description	Returns one person by id. Requires scope sis.read or role admin, registrar or readonly.
+//	@Description	Returns one person by id. Requires scope sis.read.
 //	@Tags			persons
 //	@Produce		json
 //	@Security		BearerAuth
 //	@Param			id	path		string					true	"Person id"
 //	@Success		200	{object}	domain.Person			"Success"
-//	@Failure		401	{object}	auth.ErrorResponse		"Missing or invalid token"
-//	@Failure		403	{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		401	{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403	{object}	auth.ErrorResponse		"Token lacks the required scope"
 //	@Failure		404	{object}	helpers.ErrorResponse	"Not Found"
 //	@Failure		500	{object}	helpers.ErrorResponse	"Internal Server Error"
 //	@Router			/persons/{id} [get]
@@ -141,7 +141,7 @@ func (c *Client) GetPerson(gc *gin.Context) {
 //
 //	@Summary		Replace person
 //	@ID				update-person
-//	@Description	Replaces a person. The path id wins over any id in the body; createdAt is preserved and an empty sourcedId keeps the stored one. Requires scope sis.write or role admin or registrar.
+//	@Description	Replaces a person. The path id wins over any id in the body; createdAt is preserved and an empty sourcedId keeps the stored one. Requires scope sis.write.
 //	@Tags			persons
 //	@Accept			json
 //	@Produce		json
@@ -150,8 +150,8 @@ func (c *Client) GetPerson(gc *gin.Context) {
 //	@Param			person	body		domain.Person			true	"Replacement person"
 //	@Success		200		{object}	domain.Person			"Success"
 //	@Failure		400		{object}	helpers.ErrorResponse	"Malformed body or validation error"
-//	@Failure		401		{object}	auth.ErrorResponse		"Missing or invalid token"
-//	@Failure		403		{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		401		{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403		{object}	auth.ErrorResponse		"Token lacks the required scope"
 //	@Failure		404		{object}	helpers.ErrorResponse	"Not Found"
 //	@Failure		409		{object}	helpers.ErrorResponse	"sourcedId already in use"
 //	@Failure		413		{object}	helpers.ErrorResponse	"Request body too large"
@@ -176,14 +176,14 @@ func (c *Client) UpdatePerson(gc *gin.Context) {
 //
 //	@Summary		Delete person
 //	@ID				delete-person
-//	@Description	Deletes one person by id. Requires scope sis.write or role admin or registrar.
+//	@Description	Deletes one person by id. Requires scope sis.write.
 //	@Tags			persons
 //	@Produce		json
 //	@Security		BearerAuth
 //	@Param			id	path	string	true	"Person id"
 //	@Success		204	"No Content"
-//	@Failure		401	{object}	auth.ErrorResponse		"Missing or invalid token"
-//	@Failure		403	{object}	auth.ErrorResponse		"Insufficient scope or role"
+//	@Failure		401	{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403	{object}	auth.ErrorResponse		"Token lacks the required scope"
 //	@Failure		404	{object}	helpers.ErrorResponse	"Not Found"
 //	@Failure		500	{object}	helpers.ErrorResponse	"Internal Server Error"
 //	@Router			/persons/{id} [delete]

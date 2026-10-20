@@ -2,18 +2,24 @@ package httpserver
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/SUNET/sis/internal/adapter/outbound/memory"
 	"github.com/SUNET/sis/internal/auth"
-	"github.com/SUNET/sis/internal/auth/token"
+	"github.com/SUNET/sis/internal/auth/authtest"
 	"github.com/SUNET/sis/internal/core/domain"
 	"github.com/SUNET/sis/internal/core/service"
 	"github.com/SUNET/sis/internal/readmodel"
@@ -24,7 +30,6 @@ import (
 func testCfg(addr string) *model.Cfg {
 	return &model.Cfg{SIS: model.SIS{
 		HTTPServer: model.HTTPServer{Addr: addr, ReadTimeout: time.Second, WriteTimeout: time.Second},
-		Auth:       model.Auth{JWTSecret: "0123456789"},
 	}}
 }
 
@@ -35,13 +40,32 @@ func newTestServer(t *testing.T, addr string) (*Service, error) {
 
 func newTestServerWithCfg(t *testing.T, cfg *model.Cfg) (*Service, error) {
 	t.Helper()
-	ctx := context.Background()
 	log := logger.NewWithWriter("test", false, "error", io.Discard)
-	a, err := auth.New(ctx, cfg, memory.NewAccountRepository(), memory.NewClientRepository(), log)
+	return New(context.Background(), cfg, newVerifier(t, cfg), &readmodel.Client{}, log)
+}
+
+func newVerifier(t *testing.T, cfg *model.Cfg) *auth.Verifier {
+	t.Helper()
+	v, err := auth.New(context.Background(), cfg, logger.NewWithWriter("test", false, "error", io.Discard))
 	if err != nil {
 		t.Fatalf("auth.New: %v", err)
 	}
-	return New(ctx, cfg, a, &readmodel.Client{}, log)
+	return v
+}
+
+// startWithIssuer serves catalog behind a fresh local token issuer and
+// returns the server and the issuer to mint tokens with.
+func startWithIssuer(t *testing.T, cfg *model.Cfg, catalog *readmodel.Client) (*Service, *authtest.Issuer) {
+	t.Helper()
+	iss := authtest.NewIssuer(t)
+	cfg.SIS.Auth.Issuers = []model.Issuer{iss.Config()}
+	log := logger.NewWithWriter("test", false, "error", io.Discard)
+	s, err := New(context.Background(), cfg, newVerifier(t, cfg), catalog, log)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close(context.Background()) })
+	return s, iss
 }
 
 func TestNewServesOnceReturned(t *testing.T) {
@@ -62,7 +86,58 @@ func TestNewServesOnceReturned(t *testing.T) {
 	}
 }
 
-func TestAuthConfigReportsOIDCDisabled(t *testing.T) {
+// TestServesTLS checks a configured certificate makes the listener serve
+// https, and that a missing key file fails startup.
+func TestServesTLS(t *testing.T) {
+	srv := httptest.NewTLSServer(http.NotFoundHandler()) // only for its cert
+	srv.Close()
+	dir := t.TempDir()
+	certFile, keyFile := filepath.Join(dir, "tls.crt"), filepath.Join(dir, "tls.key")
+	c := srv.TLS.Certificates[0]
+	keyDER, err := x509.MarshalPKCS8PrivateKey(c.PrivateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, certFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: c.Certificate[0]}))
+	mustWrite(t, keyFile, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}))
+
+	cfg := testCfg("127.0.0.1:0")
+	cfg.SIS.HTTPServer.TLS = model.TLS{CertFile: certFile, KeyFile: keyFile}
+	s, err := newTestServerWithCfg(t, cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close(context.Background()) })
+
+	pool := x509.NewCertPool()
+	leaf, _ := x509.ParseCertificate(c.Certificate[0])
+	pool.AddCert(leaf)
+	client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool, ServerName: "example.com"}}}
+	resp, err := client.Get("https://" + s.Addr().String() + "/healthz")
+	if err != nil {
+		t.Fatalf("GET https: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || resp.TLS == nil {
+		t.Fatalf("https /healthz: %d tls=%v", resp.StatusCode, resp.TLS != nil)
+	}
+
+	cfg = testCfg("127.0.0.1:0")
+	cfg.SIS.HTTPServer.TLS = model.TLS{CertFile: certFile, KeyFile: filepath.Join(dir, "missing.key")}
+	if s, err := newTestServerWithCfg(t, cfg); err == nil {
+		_ = s.Close(context.Background())
+		t.Fatal("expected startup to fail with a missing key file")
+	}
+}
+
+func mustWrite(t *testing.T, path string, data []byte) {
+	t.Helper()
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAuthConfigIsPublic(t *testing.T) {
 	s, err := newTestServer(t, "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -75,13 +150,80 @@ func TestAuthConfigReportsOIDCDisabled(t *testing.T) {
 	}
 	defer resp.Body.Close()
 	var body struct {
-		OIDC *bool `json:"oidc"`
+		Enabled *bool `json:"enabled"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if resp.StatusCode != http.StatusOK || body.OIDC == nil || *body.OIDC {
-		t.Fatalf("expected 200 {\"oidc\":false}, got %d %+v", resp.StatusCode, body)
+	if resp.StatusCode != http.StatusOK || body.Enabled == nil || *body.Enabled {
+		t.Fatalf("expected 200 {\"enabled\":false}, got %d %+v", resp.StatusCode, body)
+	}
+}
+
+// TestTokenIssuingRoutesAreGone checks SIS no longer issues tokens: the old
+// login and token endpoints are plain 404s.
+func TestTokenIssuingRoutesAreGone(t *testing.T) {
+	s, err := newTestServer(t, "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close(context.Background()) })
+	for _, p := range []string{"/auth/login", "/oauth/token", "/auth/oidc/session"} {
+		resp, err := http.Post("http://"+s.Addr().String()+p, "application/x-www-form-urlencoded", strings.NewReader("grant_type=client_credentials"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusNotFound {
+			t.Errorf("POST %s: %d, want 404", p, resp.StatusCode)
+		}
+	}
+}
+
+// TestScopesGateAPIs checks reads need sis.read and writes sis.write on every
+// API surface, and that write does not include read.
+func TestScopesGateAPIs(t *testing.T) {
+	log := logger.NewWithWriter("test", false, "error", io.Discard)
+	catalog := &readmodel.Client{Persons: service.New(memory.NewPersonRepository(), nil, nil, log)}
+	cfg := testCfg("127.0.0.1:0")
+	cfg.SIS.Adapter.Inbound.RestAdmin.DefaultLimit, cfg.SIS.Adapter.Inbound.RestAdmin.MaxLimit = 10, 10
+	cfg.SIS.Adapter.Inbound.OEAPI.DefaultPageSize, cfg.SIS.Adapter.Inbound.OEAPI.MaxPageSize = 10, 10
+	cfg.SIS.Adapter.Inbound.EduAPI.DefaultLimit, cfg.SIS.Adapter.Inbound.EduAPI.MaxLimit = 10, 10
+	s, iss := startWithIssuer(t, cfg, catalog)
+	base := "http://" + s.Addr().String()
+
+	read, write, both := iss.Token(t, "sunet-vc", "sis.read"), iss.Token(t, "w", "sis.write"), iss.Token(t, "liu", "sis.read sis.write")
+	status := func(tok, method, path, body string) int {
+		req, _ := http.NewRequest(method, base+path, strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+tok)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		return resp.StatusCode
+	}
+	person := `{"sourcedId":"p1","givenName":"A","familyName":"B","status":"active"}`
+	cases := []struct {
+		name, tok, method, path, body string
+		want                          int
+	}{
+		{"read cannot create", read, http.MethodPost, "/api/v1/persons", person, http.StatusForbidden},
+		{"write creates", write, http.MethodPost, "/api/v1/persons", person, http.StatusCreated},
+		{"write cannot list", write, http.MethodGet, "/api/v1/persons", "", http.StatusForbidden},
+		{"write cannot use eduapi", write, http.MethodGet, "/eduapi/persons", "", http.StatusForbidden},
+		{"read lists", read, http.MethodGet, "/api/v1/persons", "", http.StatusOK},
+		{"read eduapi", read, http.MethodGet, "/eduapi/persons/p1", "", http.StatusOK},
+		{"read oeapi", read, http.MethodGet, "/oeapi/persons/p1", "", http.StatusOK},
+		{"both lists", both, http.MethodGet, "/api/v1/persons", "", http.StatusOK},
+		{"no token", "", http.MethodGet, "/eduapi/persons", "", http.StatusUnauthorized},
+		{"untrusted issuer", authtest.NewIssuer(t).Token(t, "x", "sis.read sis.write"), http.MethodGet, "/api/v1/persons", "", http.StatusUnauthorized},
+	}
+	for _, c := range cases {
+		if got := status(c.tok, c.method, c.path, c.body); got != c.want {
+			t.Errorf("%s: %s %s = %d, want %d", c.name, c.method, c.path, got, c.want)
+		}
 	}
 }
 
@@ -139,23 +281,12 @@ func TestIDsWithSlashesRoundTrip(t *testing.T) {
 		Persons:       service.New(memory.NewPersonRepository(), nil, nil, log),
 		Organizations: service.NewResource(memory.NewDocRepo[domain.Organization](), nil, nil, log),
 	}
+	_ = ctx
 	cfg := testCfg("127.0.0.1:0")
-	cfg.SIS.Auth.TokenTTL = time.Hour
 	cfg.SIS.Adapter.Inbound.OEAPI.DefaultPageSize, cfg.SIS.Adapter.Inbound.OEAPI.MaxPageSize = 10, 10
 	cfg.SIS.Adapter.Inbound.EduAPI.DefaultLimit, cfg.SIS.Adapter.Inbound.EduAPI.MaxLimit = 10, 10
-	a, err := auth.New(ctx, cfg, memory.NewAccountRepository(), memory.NewClientRepository(), log)
-	if err != nil {
-		t.Fatalf("auth.New: %v", err)
-	}
-	s, err := New(ctx, cfg, a, catalog, log)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	t.Cleanup(func() { _ = s.Close(context.Background()) })
-	tok, _, err := a.Issuer().Issue("writer", token.KindClient, nil, []string{domain.ScopeRead, domain.ScopeWrite})
-	if err != nil {
-		t.Fatal(err)
-	}
+	s, iss := startWithIssuer(t, cfg, catalog)
+	tok := iss.Token(t, "writer", "sis.read sis.write")
 	base := "http://" + s.Addr().String()
 
 	do := func(t *testing.T, method, path, body string, want int) map[string]any {

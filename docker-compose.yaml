@@ -13,10 +13,16 @@ services:
       - SIS_CONFIG_YAML=/etc/sis/config.yaml
     volumes:
       - ./config.yaml:/etc/sis/config.yaml:ro
-    # Loopback by default: with the sample bootstrap credentials anyone who
-    # can reach this port can sign in as admin. To expose SIS to other hosts
-    # deliberately, set SIS_PUBLISH_ADDR (e.g. SIS_PUBLISH_ADDR=0.0.0.0) and
-    # replace the bootstrap credentials first.
+      # sis.file_import paths are relative to the config file.
+      - ./testdata:/etc/sis/testdata:ro
+      # Dev TLS certificate and CA (make pki); used by sis.httpserver.tls.
+      - ./developer_tools/pki/tls_sis_chain.pem:/etc/sis/pki/tls.crt:ro
+      - ./developer_tools/pki/tls_sis.key:/etc/sis/pki/tls.key:ro
+      - ./developer_tools/pki/rootCA.crt:/etc/sis/pki/rootCA.crt:ro
+    # Loopback by default: config.yaml trusts the mellon test IdP, whose
+    # credentials are public. To expose SIS to other hosts deliberately, set
+    # SIS_PUBLISH_ADDR (e.g. SIS_PUBLISH_ADDR=0.0.0.0) and trust a real
+    # issuer first.
     ports:
       - "${SIS_PUBLISH_ADDR:-127.0.0.1}:8080:8080"
     networks:
@@ -49,7 +55,7 @@ services:
     image: docker.sunet.se/iam_vc/mellon:latest
     # Loopback only: realm.json ships publicly known test identities
     # (admin/password) and the sis-secret client credential, so this IdP
-    # must not be reachable from other hosts. SIS reaches it as mellon:8080
+    # must not be reachable from other hosts. SIS reaches it as mellon:8443
     # over sisnet regardless of these mappings.
     ports:
       - "127.0.0.1:9080:8080"
@@ -57,12 +63,22 @@ services:
     environment:
       - KC_HTTP_PORT=8080
       - KC_HTTP_ENABLED=true
-      - KC_HOSTNAME_URL=https://sunet-vc-oidc.fly.dev
+      # Tokens carry this as iss, so it must be how the browser reaches
+      # mellon (https, published on 127.0.0.1:9443), and equal
+      # sis.auth.issuers[].issuer in config.yaml.
+      - KC_HOSTNAME_URL=https://localhost:9443
       - KC_PROXY_HEADERS=xforwarded
+      # Dev TLS certificate (make pki) for https on 8443.
+      - KC_HTTPS_CERTIFICATE_FILE=/etc/mellon/pki/tls.crt
+      - KC_HTTPS_CERTIFICATE_KEY_FILE=/etc/mellon/pki/tls.key
     volumes:
       - ./realm.json:/opt/keycloak/data/import/realm.json:ro
+      - ./developer_tools/pki/tls_mellon_chain.pem:/etc/mellon/pki/tls.crt:ro
+      - ./developer_tools/pki/tls_mellon.key:/etc/mellon/pki/tls.key:ro
     networks:
-      - sisnet
+      sisnet:
+        # Must match IP.2 in its certificate (developer_tools/scripts/create_pki.sh).
+        ipv4_address: 172.28.0.11
 
 networks:
   sisnet:

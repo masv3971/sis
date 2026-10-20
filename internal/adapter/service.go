@@ -1,7 +1,7 @@
 // Package adapter is the composition root for every adapter in the system.
 // It owns the full wiring graph — outbound persistence (postgres or memory),
 // the event publisher, the support Clients that glue outbound to inbound
-// (readmodel, auth, oidcrp), and the inbound HTTP transport — and exposes it
+// (readmodel, the auth token verifier), and the inbound HTTP transport — and exposes it
 // as a single lifecycle Service so main's only job is to build it and close
 // it on signal.
 //
@@ -23,6 +23,7 @@ import (
 	"github.com/SUNET/sis/internal/core/domain"
 	"github.com/SUNET/sis/internal/core/port"
 	"github.com/SUNET/sis/internal/core/service"
+	"github.com/SUNET/sis/internal/fileimport"
 	"github.com/SUNET/sis/internal/httpserver"
 	"github.com/SUNET/sis/internal/readmodel"
 	"github.com/SUNET/sis/pkg/logger"
@@ -41,13 +42,13 @@ type Outbound struct {
 
 // Inbound bundles the driving adapters and the support Clients only inbound
 // consumers see. http is the HTTP transport Service; readmodel is the shared
-// catalog of per-entity services consumed by every HTTP handler; auth is the
-// composition root for authentication (holds the optional OIDC RP). These
-// three are grouped here because today only the HTTP transport reads them;
-// when a second inbound (e.g. gRPC) arrives it will share this bundle.
+// catalog of per-entity services consumed by every HTTP handler; auth checks
+// access tokens against the trusted issuers. These three are grouped here
+// because today only the HTTP transport reads them; when a second inbound
+// (e.g. gRPC) arrives it will share this bundle.
 type Inbound struct {
 	readmodel *readmodel.Client
-	auth      *auth.Client
+	auth      *auth.Verifier
 	http      *httpserver.Service
 }
 
@@ -111,11 +112,15 @@ func New(ctx context.Context, cfg *model.Cfg, log *logger.Log) (*Service, error)
 	}
 	s.log.Info("read-model catalog built")
 
-	// Auth Client: the composition root for authentication. Builds the
-	// token issuer, wires the OIDC Relying Party when configured, and
-	// seeds any bootstrap credentials. httpserver asks it OIDCEnabled() to
-	// decide whether to mount the OIDC routes.
-	if s.inbound.auth, err = auth.New(ctx, cfg, store.Accounts, store.Clients, log); err != nil {
+	// Records from sis.file_import (e.g. fake students), loaded before the
+	// HTTP server starts so the APIs never serve a partly imported state.
+	if err := fileimport.Run(ctx, cfg, s.inbound.readmodel, log); err != nil {
+		return nil, err
+	}
+
+	// Token verifier: checks every API request's token against the trusted
+	// issuers (sis.auth.issuers). SIS issues no tokens.
+	if s.inbound.auth, err = auth.New(ctx, cfg, log); err != nil {
 		return nil, err
 	}
 

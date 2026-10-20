@@ -4,40 +4,118 @@
   "accessTokenLifespan": 300,
   "accessCodeLifespan": 60,
   "defaultSignatureAlgorithm": "RS256",
+  "clientScopes": [
+    {
+      "name": "sis.read",
+      "description": "Read SIS: /api/v1 GET, /api/v1/parse, /oeapi, /eduapi",
+      "protocol": "openid-connect"
+    },
+    {
+      "name": "sis.write",
+      "description": "Write SIS: /api/v1 POST/PUT/DELETE, /api/v1/populate",
+      "protocol": "openid-connect"
+    }
+  ],
   "clients": [
     {
-      "clientId": "sis",
-      "name": "SIS Admin",
-      "secret": "sis-secret",
-      "redirectUris": ["http://localhost:8080/auth/oidc/callback"],
-      "webOrigins": ["http://localhost:8080"],
+      "clientId": "liu",
+      "name": "Linköping University (read/write integration)",
+      "secret": "liu-secret",
       "publicClient": false,
-      "standardFlowEnabled": true,
-      "implicitFlowEnabled": false,
-      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": false,
       "serviceAccountsEnabled": true,
-      "defaultClientScopes": ["openid", "profile", "email"],
-      "optionalClientScopes": ["offline_access"]
+      "defaultClientScopes": [
+        "sis.read",
+        "sis.write"
+      ],
+      "protocolMappers": [
+        {
+          "name": "aud-sis",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "sis",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "sunet-vc",
+      "name": "SUNET vc (read-only integration)",
+      "secret": "sunet-vc-secret",
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "serviceAccountsEnabled": true,
+      "defaultClientScopes": [
+        "sis.read"
+      ],
+      "protocolMappers": [
+        {
+          "name": "aud-sis",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "sis",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "sis-web",
+      "name": "SIS web UI",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "redirectUris": [
+        "https://localhost:8080/",
+        "https://172.28.0.10:8080/",
+        "http://localhost:5173/"
+      ],
+      "webOrigins": [
+        "https://localhost:8080",
+        "https://172.28.0.10:8080",
+        "http://localhost:5173"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
+      "defaultClientScopes": [
+        "openid",
+        "profile",
+        "email"
+      ],
+      "optionalClientScopes": [
+        "sis.read",
+        "sis.write"
+      ],
+      "protocolMappers": [
+        {
+          "name": "aud-sis",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "sis",
+            "access.token.claim": "true"
+          }
+        }
+      ]
     }
   ],
   "users": [
     {
-      "username": "admin",
-      "email": "admin@sis.local",
+      "username": "registrar",
+      "email": "registrar@sis.local",
       "emailVerified": true,
-      "firstName": "Admin",
-      "lastName": "User",
+      "firstName": "Rita",
+      "lastName": "Registrar",
       "enabled": true,
       "credentials": [
-        { "type": "password", "value": "password" }
-      ],
-      "realmRoles": ["admin"]
+        {
+          "type": "password",
+          "value": "password"
+        }
+      ]
     }
-  ],
-  "roles": {
-    "realm": [
-      { "name": "user", "description": "Default user role" },
-      { "name": "admin", "description": "Administrator role" }
-    ]
-  }
+  ]
 }

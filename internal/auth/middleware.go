@@ -2,26 +2,24 @@ package auth
 
 import (
 	"net/http"
-	"slices"
 	"strings"
 
 	"github.com/gin-gonic/gin"
-
-	"github.com/SUNET/sis/internal/auth/token"
 )
 
 const claimsKey = "authClaims"
 
-// RequireAuth validates the Bearer token and stores its claims in the context.
-func RequireAuth(issuer *token.Issuer) gin.HandlerFunc {
+// RequireAuth verifies the Bearer token and stores its claims in the context.
+func (v *Verifier) RequireAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		raw, ok := bearerToken(c.GetHeader("Authorization"))
 		if !ok {
 			abort(c, http.StatusUnauthorized, "missing bearer token")
 			return
 		}
-		claims, err := issuer.Parse(raw)
+		claims, err := v.Verify(c.Request.Context(), raw)
 		if err != nil {
+			v.log.Debug("token rejected", "err", err)
 			abort(c, http.StatusUnauthorized, "invalid token")
 			return
 		}
@@ -43,44 +41,40 @@ func bearerToken(header string) (string, bool) {
 	return credentials, credentials != ""
 }
 
-// RequireScopeOrRole allows the request when the principal holds the given
-// scope (machine clients) or any of the given roles (human logins).
-func RequireScopeOrRole(scope string, roles ...string) gin.HandlerFunc {
+// RequireScope allows the request when the verified token grants scope. It
+// must run after RequireAuth. People and machine clients are treated the
+// same: only the scope counts.
+func RequireScope(scope string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		claims := ClaimsFrom(c)
 		if claims == nil {
 			abort(c, http.StatusUnauthorized, "unauthenticated")
 			return
 		}
-		if slices.Contains(claims.Scopes, scope) {
-			c.Next()
+		if !claims.HasScope(scope) {
+			abort(c, http.StatusForbidden, "token lacks scope "+scope)
 			return
 		}
-		for _, r := range roles {
-			if slices.Contains(claims.Roles, r) {
-				c.Next()
-				return
-			}
-		}
-		abort(c, http.StatusForbidden, "insufficient permissions")
+		c.Next()
 	}
 }
 
-// ClaimsFrom returns the authenticated claims, or nil if unauthenticated.
-func ClaimsFrom(c *gin.Context) *token.Claims {
+// ClaimsFrom returns the verified claims, or nil if unauthenticated.
+func ClaimsFrom(c *gin.Context) *Claims {
 	v, ok := c.Get(claimsKey)
 	if !ok {
 		return nil
 	}
-	claims, _ := v.(*token.Claims)
+	claims, _ := v.(*Claims)
 	return claims
 }
 
 // ErrorResponse is the JSON body the auth middleware writes when it rejects a
 // request.
 type ErrorResponse struct {
-	// Error is "unauthorized" (401: missing or invalid token) or "forbidden"
-	// (403: the token lacks the required scope or role).
+	// Error is "unauthorized" (401: missing, invalid or expired token, or
+	// one from an untrusted issuer) or "forbidden" (403: the token lacks the
+	// required scope).
 	Error   string `json:"error" example:"unauthorized"`
 	Message string `json:"message" example:"missing bearer token"`
 }

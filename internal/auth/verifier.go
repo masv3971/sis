@@ -1,0 +1,265 @@
+// Package auth checks access tokens. SIS issues no tokens and stores no
+// credentials: a caller gets a JWT from a trusted issuer (an OIDC provider)
+// and sends it as a Bearer token. Verifier checks it was signed by one of
+// the issuers in sis.auth.issuers, and the middleware lets the request
+// through when the token's scope claim holds the scope the route needs
+// (sis.read or sis.write). Who may do what is decided at the issuer, so
+// access changes need no restart of SIS.
+package auth
+
+import (
+	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"slices"
+	"strings"
+	"sync"
+	"time"
+
+	coreoidc "github.com/coreos/go-oidc/v3/oidc"
+
+	"github.com/SUNET/sis/pkg/logger"
+	"github.com/SUNET/sis/pkg/model"
+)
+
+// Scopes the API routes require.
+const (
+	// ScopeRead allows every read: GET on /api/v1, POST /api/v1/parse, and
+	// all of /oeapi and /eduapi.
+	ScopeRead = "sis.read"
+	// ScopeWrite allows every write: POST, PUT and DELETE on /api/v1 and
+	// POST /api/v1/populate. It does not include ScopeRead.
+	ScopeWrite = "sis.write"
+)
+
+// Claims is what SIS uses from a verified access token.
+type Claims struct {
+	Issuer  string
+	Subject string
+	// Scopes from the scope claim (RFC 9068 §2.2.3: a space-separated
+	// string). A JSON array is accepted too.
+	Scopes []string
+}
+
+// HasScope reports whether the token grants scope.
+func (c *Claims) HasScope(scope string) bool { return slices.Contains(c.Scopes, scope) }
+
+// ErrInvalidToken is returned for any token that is not accepted, without
+// saying why to the caller (the reason is in the wrapped error, for logs).
+var ErrInvalidToken = errors.New("invalid token")
+
+// httpTimeout bounds every request to an issuer (discovery and JWKS), so an
+// issuer that accepts the connection but never answers cannot hang a
+// request. A var so tests can shorten it.
+var httpTimeout = 10 * time.Second
+
+// Verifier checks access tokens against the trusted issuers.
+//
+// It is a "Client" in all but name: it holds no runtime resources that need
+// closing (key sets are plain HTTP caches), so it has no Close.
+type Verifier struct {
+	issuers map[string]*issuer
+	log     *logger.Log
+}
+
+// issuer is one trusted issuer. Its key set is built on first use, so SIS
+// starts even when an issuer is down; until it is reachable its tokens are
+// rejected and the next request tries again.
+type issuer struct {
+	cfg        model.Issuer
+	httpClient *http.Client
+
+	mu       sync.Mutex
+	verifier *coreoidc.IDTokenVerifier
+}
+
+// New builds the Verifier from sis.auth.issuers. It does not contact the
+// issuers.
+func New(_ context.Context, cfg *model.Cfg, log *logger.Log) (*Verifier, error) {
+	log = log.New("auth")
+	v := &Verifier{issuers: map[string]*issuer{}, log: log}
+	hc, err := newHTTPClient(cfg.SIS.Auth.CAFiles)
+	if err != nil {
+		return nil, err
+	}
+	for _, ic := range cfg.SIS.Auth.Issuers {
+		if _, dup := v.issuers[ic.Issuer]; dup {
+			return nil, fmt.Errorf("auth: issuer %q listed twice", ic.Issuer)
+		}
+		v.issuers[ic.Issuer] = &issuer{cfg: ic, httpClient: hc}
+		log.Info("trusting token issuer", "issuer", ic.Issuer, "audience", ic.Audience)
+	}
+	if len(v.issuers) == 0 {
+		log.Warn("sis.auth.issuers is empty; every API request will be rejected")
+	}
+	return v, nil
+}
+
+// newHTTPClient returns the client for discovery and JWKS requests. caFiles
+// are trusted in addition to the system roots, e.g. a development CA.
+func newHTTPClient(caFiles []string) (*http.Client, error) {
+	if len(caFiles) == 0 {
+		return &http.Client{Timeout: httpTimeout}, nil
+	}
+	pool, err := x509.SystemCertPool()
+	if err != nil {
+		pool = x509.NewCertPool()
+	}
+	for _, f := range caFiles {
+		pemData, err := os.ReadFile(f) //nolint:gosec // path comes from operator config
+		if err != nil {
+			return nil, fmt.Errorf("auth: read ca file: %w", err)
+		}
+		if !pool.AppendCertsFromPEM(pemData) {
+			return nil, fmt.Errorf("auth: ca file %s holds no PEM certificate", f)
+		}
+	}
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.TLSClientConfig = &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}
+	return &http.Client{Timeout: httpTimeout, Transport: tr}, nil
+}
+
+// Verify checks raw was signed by a trusted issuer and is valid now
+// (signature, iss, exp, nbf and, when configured, aud), and returns its
+// claims. Any failure is ErrInvalidToken.
+func (v *Verifier) Verify(ctx context.Context, raw string) (*Claims, error) {
+	var unverified struct {
+		Issuer string `json:"iss"`
+	}
+	if err := unverifiedPayload(raw, &unverified); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidToken, err)
+	}
+	// Only the issuer is read before verification, to pick which keys to
+	// check the signature with. An unknown issuer is rejected without
+	// any network call.
+	iss, ok := v.issuers[unverified.Issuer]
+	if !ok {
+		return nil, fmt.Errorf("%w: untrusted issuer %q", ErrInvalidToken, unverified.Issuer)
+	}
+	tv, err := iss.tokenVerifier(ctx)
+	if err != nil {
+		v.log.Warn("token issuer unavailable", "issuer", iss.cfg.Issuer, "err", err)
+		return nil, fmt.Errorf("%w: %v", ErrInvalidToken, err)
+	}
+	ctx, cancel := context.WithTimeout(coreoidc.ClientContext(ctx, iss.httpClient), httpTimeout)
+	defer cancel()
+	tok, err := tv.Verify(ctx, raw)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidToken, err)
+	}
+	var c struct {
+		Scope json.RawMessage `json:"scope"`
+	}
+	if err := tok.Claims(&c); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidToken, err)
+	}
+	scopes, err := parseScope(c.Scope)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidToken, err)
+	}
+	return &Claims{Issuer: tok.Issuer, Subject: tok.Subject, Scopes: scopes}, nil
+}
+
+// tokenVerifier returns the issuer's verifier, building it on first success.
+// A failed discovery is not cached, so the next request retries.
+func (i *issuer) tokenVerifier(ctx context.Context) (*coreoidc.IDTokenVerifier, error) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	if i.verifier != nil {
+		return i.verifier, nil
+	}
+	// Key sets refresh in the background on an unknown key id, long after
+	// this request: they keep the HTTP client from ctx, so detach from its
+	// cancellation but keep the timeout-bound client.
+	keyCtx := coreoidc.ClientContext(context.WithoutCancel(ctx), i.httpClient)
+	jwksURL := i.cfg.JWKSURL
+	if jwksURL == "" {
+		var err error
+		if jwksURL, err = discoverJWKS(keyCtx, i.httpClient, i.cfg.Issuer); err != nil {
+			return nil, err
+		}
+	}
+	i.verifier = coreoidc.NewVerifier(i.cfg.Issuer, coreoidc.NewRemoteKeySet(keyCtx, jwksURL), &coreoidc.Config{
+		ClientID: i.cfg.Audience,
+		// Without an audience every token of the issuer is accepted;
+		// production config requires one.
+		SkipClientIDCheck: i.cfg.Audience == "",
+		// Asymmetric algorithms only: a shared-secret (HS*) token would
+		// mean the issuer's verification key is also a signing key.
+		SupportedSigningAlgs: []string{
+			coreoidc.RS256, coreoidc.RS384, coreoidc.RS512,
+			coreoidc.ES256, coreoidc.ES384, coreoidc.ES512,
+			coreoidc.PS256, coreoidc.PS384, coreoidc.PS512, coreoidc.EdDSA,
+		},
+	})
+	return i.verifier, nil
+}
+
+// discoverJWKS reads jwks_uri from the issuer's discovery document. It does
+// not require the document's issuer to match: the configured issuer is
+// checked against every token's iss claim instead.
+func discoverJWKS(ctx context.Context, hc *http.Client, issuerURL string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, httpTimeout)
+	defer cancel()
+	u := strings.TrimSuffix(issuerURL, "/") + "/.well-known/openid-configuration"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := hc.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("discovery %s: %w", u, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("discovery %s: status %d", u, resp.StatusCode)
+	}
+	var doc struct {
+		JWKSURI string `json:"jwks_uri"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&doc); err != nil {
+		return "", fmt.Errorf("discovery %s: %w", u, err)
+	}
+	if doc.JWKSURI == "" {
+		return "", fmt.Errorf("discovery %s: no jwks_uri", u)
+	}
+	return doc.JWKSURI, nil
+}
+
+// parseScope reads a scope claim: a space-separated string (RFC 9068), or a
+// JSON array of strings as some issuers send. A missing claim grants nothing.
+func parseScope(raw json.RawMessage) ([]string, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return strings.Fields(s), nil
+	}
+	var list []string
+	if err := json.Unmarshal(raw, &list); err != nil {
+		return nil, errors.New("scope claim is neither a string nor a list of strings")
+	}
+	return list, nil
+}
+
+// unverifiedPayload decodes a compact JWS payload without checking the
+// signature. Use it only to route a token to its verifier.
+func unverifiedPayload(raw string, v any) error {
+	parts := strings.Split(raw, ".")
+	if len(parts) != 3 {
+		return errors.New("not a compact JWT")
+	}
+	b, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(parts[1], "="))
+	if err != nil {
+		return fmt.Errorf("payload: %w", err)
+	}
+	return json.Unmarshal(b, v)
+}

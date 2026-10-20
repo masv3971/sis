@@ -16,7 +16,7 @@ CURRENT_BRANCH          = $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
 # ==============================================================================
 
 .PHONY: update gosec staticcheck vulncheck \
-	start stop restart \
+	pki start stop restart \
 	vscode gh-install gh-auth \
 	build test fmt docker-build docker-push \
 	swagger swagger-restadmin swagger-fmt swagger-check \
@@ -60,7 +60,11 @@ vulncheck: ## Run vulnerability checker
 # Docker Compose Operations
 # ==============================================================================
 
-start: ## Start services with docker-compose (rebuilds sis so code+SPA changes are picked up)
+pki: ## Create the development CA and TLS certificates in developer_tools/pki (keeps existing ones)
+	$(info Creating development PKI)
+	./developer_tools/scripts/create_pki.sh
+
+start: pki ## Start services with docker-compose (rebuilds sis so code+SPA changes are picked up)
 	$(info Starting services)
 	docker compose -f docker-compose.yaml up -d --build --remove-orphans
 
@@ -186,7 +190,7 @@ fmt: ## Format Go code with gofumpt
 web-install: ## Install web SPA dependencies
 	cd web && npm install
 
-web-dev: ## Run the SPA dev server
+web-dev: pki ## Run the SPA dev server (its proxy trusts the dev CA)
 	cd web && npm run dev
 
 web-build: ## Build the SPA for production

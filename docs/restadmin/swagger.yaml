@@ -1,0 +1,2448 @@
+basePath: /api/v1
+definitions:
+  auth.ErrorResponse:
+    properties:
+      error:
+        description: |-
+          Error is "unauthorized" (401: missing, invalid or expired token, or
+          one from an untrusted issuer) or "forbidden" (403: the token lacks the
+          required scope).
+        example: unauthorized
+        type: string
+      message:
+        example: missing bearer token
+        type: string
+    type: object
+  convertapi.Metadata:
+    properties:
+      input_format:
+        description: 'InputFormat is the format of data. Supported: elm.'
+        example: elm
+        type: string
+      output_format:
+        description: 'OutputFormat is the format to return (parse only). Supported:
+          eduapi, oeapi.'
+        example: eduapi
+        type: string
+    required:
+    - input_format
+    type: object
+  convertapi.ParseReply:
+    properties:
+      data:
+        description: |-
+          Data holds the converted records, one array per resource collection of
+          the output format (Edu-API: persons, orgs, academicSessions, courses,
+          programs, classes, enrollments, results; OEAPI: persons, organizations,
+          academicSessions, courses, programs, offerings, associations, results).
+          References between them are sourcedIds.
+        type: object
+      metadata:
+        $ref: '#/definitions/convertapi.Metadata'
+      warnings:
+        description: Warnings name the parts of the document that were not converted.
+        items:
+          type: string
+        type: array
+    type: object
+  convertapi.ParseRequest:
+    properties:
+      data:
+        description: Data is the document to convert, e.g. an ELM v3 credential (JSON-LD).
+        type: object
+      metadata:
+        $ref: '#/definitions/convertapi.Metadata'
+    required:
+    - data
+    type: object
+  convertapi.PopulateReply:
+    properties:
+      expiresAt:
+        description: |-
+          ExpiresAt is when the loaded records stop being served. Absent when no
+          ttl was given. A record that already existed without expiry keeps
+          none.
+        type: string
+      items:
+        description: Items lists every stored record, in the order written.
+        items:
+          $ref: '#/definitions/readmodel.PopulateItem'
+        type: array
+      metadata:
+        $ref: '#/definitions/convertapi.Metadata'
+      warnings:
+        items:
+          type: string
+        type: array
+    type: object
+  convertapi.PopulateRequest:
+    properties:
+      data:
+        description: Data is the document to load, e.g. an ELM v3 credential (JSON-LD).
+        type: object
+      metadata:
+        $ref: '#/definitions/convertapi.Metadata'
+      ttl:
+        description: |-
+          TTL is how long the records are served, as a Go duration ("24h",
+          "90m"). Omitted: they never expire.
+        example: 24h
+        type: string
+    required:
+    - data
+    type: object
+  domain.AcademicSession:
+    properties:
+      createdAt:
+        type: string
+      endDate:
+        type: string
+      expiresAt:
+        description: |-
+          ExpiresAt is when the record stops being served and becomes eligible
+          for deletion; nil means it never expires. Server-managed: only
+          POST /api/v1/populate with a ttl sets it, and /api/v1 writes ignore it.
+        type: string
+      id:
+        type: string
+      sourcedId:
+        type: string
+      startDate:
+        type: string
+      status:
+        $ref: '#/definitions/domain.Status'
+      title:
+        type: string
+      type:
+        description: e.g. term, semester, schoolYear
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  domain.Contact:
+    properties:
+      type:
+        type: string
+      value:
+        type: string
+    type: object
+  domain.Course:
+    properties:
+      code:
+        type: string
+      createdAt:
+        type: string
+      expiresAt:
+        description: |-
+          ExpiresAt is when the record stops being served and becomes eligible
+          for deletion; nil means it never expires. Server-managed: only
+          POST /api/v1/populate with a ttl sets it, and /api/v1 writes ignore it.
+        type: string
+      id:
+        type: string
+      orgId:
+        type: string
+      sourcedId:
+        type: string
+      status:
+        $ref: '#/definitions/domain.Status'
+      title:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  domain.Enrollment:
+    properties:
+      createdAt:
+        type: string
+      expiresAt:
+        description: |-
+          ExpiresAt is when the record stops being served and becomes eligible
+          for deletion; nil means it never expires. Server-managed: only
+          POST /api/v1/populate with a ttl sets it, and /api/v1 writes ignore it.
+        type: string
+      id:
+        type: string
+      offeringId:
+        type: string
+      personId:
+        type: string
+      role:
+        allOf:
+        - $ref: '#/definitions/domain.Role'
+        description: e.g. student, faculty
+      sourcedId:
+        type: string
+      status:
+        $ref: '#/definitions/domain.Status'
+      updatedAt:
+        type: string
+    type: object
+  domain.Identifier:
+    properties:
+      type:
+        type: string
+      value:
+        type: string
+    type: object
+  domain.Offering:
+    properties:
+      academicSessionId:
+        type: string
+      courseId:
+        type: string
+      createdAt:
+        type: string
+      expiresAt:
+        description: |-
+          ExpiresAt is when the record stops being served and becomes eligible
+          for deletion; nil means it never expires. Server-managed: only
+          POST /api/v1/populate with a ttl sets it, and /api/v1 writes ignore it.
+        type: string
+      id:
+        type: string
+      orgId:
+        type: string
+      sourcedId:
+        type: string
+      status:
+        $ref: '#/definitions/domain.Status'
+      title:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  domain.Organization:
+    properties:
+      createdAt:
+        type: string
+      expiresAt:
+        description: |-
+          ExpiresAt is when the record stops being served and becomes eligible
+          for deletion; nil means it never expires. Server-managed: only
+          POST /api/v1/populate with a ttl sets it, and /api/v1 writes ignore it.
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      parentId:
+        type: string
+      sourcedId:
+        type: string
+      status:
+        $ref: '#/definitions/domain.Status'
+      type:
+        description: e.g. institution, school, department
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  domain.Person:
+    properties:
+      createdAt:
+        type: string
+      dateOfBirth:
+        type: string
+      emails:
+        items:
+          $ref: '#/definitions/domain.Contact'
+        type: array
+      expiresAt:
+        description: 'ExpiresAt: see Base.ExpiresAt.'
+        type: string
+      familyName:
+        type: string
+      givenName:
+        type: string
+      id:
+        type: string
+      identifiers:
+        items:
+          $ref: '#/definitions/domain.Identifier'
+        type: array
+      middleName:
+        type: string
+      phones:
+        items:
+          $ref: '#/definitions/domain.Contact'
+        type: array
+      roles:
+        items:
+          $ref: '#/definitions/domain.Role'
+        type: array
+      sourcedId:
+        type: string
+      status:
+        $ref: '#/definitions/domain.Status'
+      updatedAt:
+        type: string
+    type: object
+  domain.Program:
+    properties:
+      code:
+        type: string
+      createdAt:
+        type: string
+      expiresAt:
+        description: |-
+          ExpiresAt is when the record stops being served and becomes eligible
+          for deletion; nil means it never expires. Server-managed: only
+          POST /api/v1/populate with a ttl sets it, and /api/v1 writes ignore it.
+        type: string
+      id:
+        type: string
+      level:
+        description: |-
+          Level is the qualification level, e.g. an EQF level ("6") or a local
+          level code.
+        type: string
+      orgId:
+        type: string
+      sourcedId:
+        type: string
+      status:
+        $ref: '#/definitions/domain.Status'
+      title:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  domain.Result:
+    properties:
+      courseId:
+        description: 'Exactly one of CourseID and ProgramID is set: what the result
+          is for.'
+        type: string
+      createdAt:
+        type: string
+      credits:
+        description: |-
+          Credits awarded, in ECTS credits. Credits in other systems (e.g.
+          local points) are not stored here.
+        type: number
+      expiresAt:
+        description: |-
+          ExpiresAt is when the record stops being served and becomes eligible
+          for deletion; nil means it never expires. Server-managed: only
+          POST /api/v1/populate with a ttl sets it, and /api/v1 writes ignore it.
+        type: string
+      grade:
+        description: Grade is the grade as awarded, e.g. "A", "VG", "Pass".
+        type: string
+      id:
+        type: string
+      offeringId:
+        description: |-
+          OfferingID optionally names the offering (class) the result was
+          obtained in.
+        type: string
+      personId:
+        type: string
+      programId:
+        type: string
+      resultDate:
+        description: ResultDate is the ISO 8601 date the result was awarded.
+        type: string
+      sourcedId:
+        type: string
+      status:
+        $ref: '#/definitions/domain.Status'
+      updatedAt:
+        type: string
+    type: object
+  domain.Role:
+    enum:
+    - student
+    - staff
+    - faculty
+    - guest
+    type: string
+    x-enum-varnames:
+    - RoleStudent
+    - RoleStaff
+    - RoleFaculty
+    - RoleGuest
+  domain.Status:
+    enum:
+    - active
+    - inactive
+    - tobedeleted
+    type: string
+    x-enum-varnames:
+    - StatusActive
+    - StatusInactive
+    - StatusToBeDeleted
+  helpers.Error:
+    properties:
+      details: {}
+      title:
+        type: string
+    type: object
+  helpers.ErrorResponse:
+    properties:
+      error:
+        $ref: '#/definitions/helpers.Error'
+    type: object
+  readmodel.PopulateItem:
+    properties:
+      action:
+        type: string
+      id:
+        type: string
+      sourcedId:
+        type: string
+      type:
+        type: string
+    type: object
+  restadmin.ListReply-domain_AcademicSession:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/domain.AcademicSession'
+        type: array
+      limit:
+        description: Limit is the effective page size after defaulting and clamping.
+        type: integer
+      offset:
+        type: integer
+      total:
+        description: Total is the number of entities across all pages.
+        type: integer
+    type: object
+  restadmin.ListReply-domain_Course:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/domain.Course'
+        type: array
+      limit:
+        description: Limit is the effective page size after defaulting and clamping.
+        type: integer
+      offset:
+        type: integer
+      total:
+        description: Total is the number of entities across all pages.
+        type: integer
+    type: object
+  restadmin.ListReply-domain_Enrollment:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/domain.Enrollment'
+        type: array
+      limit:
+        description: Limit is the effective page size after defaulting and clamping.
+        type: integer
+      offset:
+        type: integer
+      total:
+        description: Total is the number of entities across all pages.
+        type: integer
+    type: object
+  restadmin.ListReply-domain_Offering:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/domain.Offering'
+        type: array
+      limit:
+        description: Limit is the effective page size after defaulting and clamping.
+        type: integer
+      offset:
+        type: integer
+      total:
+        description: Total is the number of entities across all pages.
+        type: integer
+    type: object
+  restadmin.ListReply-domain_Organization:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/domain.Organization'
+        type: array
+      limit:
+        description: Limit is the effective page size after defaulting and clamping.
+        type: integer
+      offset:
+        type: integer
+      total:
+        description: Total is the number of entities across all pages.
+        type: integer
+    type: object
+  restadmin.ListReply-domain_Program:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/domain.Program'
+        type: array
+      limit:
+        description: Limit is the effective page size after defaulting and clamping.
+        type: integer
+      offset:
+        type: integer
+      total:
+        description: Total is the number of entities across all pages.
+        type: integer
+    type: object
+  restadmin.ListReply-domain_Result:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/domain.Result'
+        type: array
+      limit:
+        description: Limit is the effective page size after defaulting and clamping.
+        type: integer
+      offset:
+        type: integer
+      total:
+        description: Total is the number of entities across all pages.
+        type: integer
+    type: object
+  restadmin.PersonListReply:
+    properties:
+      limit:
+        description: Limit is the effective page size after defaulting and clamping.
+        type: integer
+      offset:
+        type: integer
+      persons:
+        items:
+          $ref: '#/definitions/domain.Person'
+        type: array
+      total:
+        description: Total is the number of persons across all pages.
+        type: integer
+    type: object
+info:
+  contact: {}
+  description: |-
+    Native REST API of the Student Information System (/api/v1).
+
+    Every endpoint needs a Bearer access token from one of the token
+    issuers SIS trusts (sis.auth.issuers); SIS issues no tokens itself.
+    Reads need scope sis.read and writes need scope sis.write, for
+    people and machine clients alike. sis.write does not include
+    sis.read.
+  license:
+    name: BSD-2-Clause
+    url: https://opensource.org/license/bsd-2-clause
+  title: SIS admin API
+  version: "1.0"
+paths:
+  /academic-sessions:
+    get:
+      description: Lists academic sessions with limit/offset paging.
+      operationId: list-academic-sessions
+      parameters:
+      - description: Page size; defaults to default_limit and is clamped to max_limit
+        in: query
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Number of items to skip
+        in: query
+        minimum: 0
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/restadmin.ListReply-domain_AcademicSession'
+        "400":
+          description: Invalid paging parameters
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List academic sessions
+      tags:
+      - academic-sessions
+    post:
+      consumes:
+      - application/json
+      description: Creates an academic session. title is required. id is generated
+        when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the
+        server.
+      operationId: create-academic-session
+      parameters:
+      - description: Academic session to create
+        in: body
+        name: session
+        required: true
+        schema:
+          $ref: '#/definitions/domain.AcademicSession'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/domain.AcademicSession'
+        "400":
+          description: Malformed body or validation error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "409":
+          description: id or sourcedId already in use
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "413":
+          description: Request body too large
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create academic session
+      tags:
+      - academic-sessions
+  /academic-sessions/{id}:
+    delete:
+      description: Deletes one academic session by id.
+      operationId: delete-academic-session
+      parameters:
+      - description: Academic session id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete academic session
+      tags:
+      - academic-sessions
+    get:
+      description: Returns one academic session by id.
+      operationId: get-academic-session
+      parameters:
+      - description: Academic session id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/domain.AcademicSession'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get academic session
+      tags:
+      - academic-sessions
+    put:
+      consumes:
+      - application/json
+      description: Replaces an academic session. The path id wins over any id in the
+        body; createdAt is preserved and an empty sourcedId keeps the stored one.
+      operationId: update-academic-session
+      parameters:
+      - description: Academic session id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Replacement academic session
+        in: body
+        name: session
+        required: true
+        schema:
+          $ref: '#/definitions/domain.AcademicSession'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/domain.AcademicSession'
+        "400":
+          description: Malformed body or validation error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "409":
+          description: sourcedId already in use
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "413":
+          description: Request body too large
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Replace academic session
+      tags:
+      - academic-sessions
+  /courses:
+    get:
+      description: Lists courses with limit/offset paging.
+      operationId: list-courses
+      parameters:
+      - description: Page size; defaults to default_limit and is clamped to max_limit
+        in: query
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Number of items to skip
+        in: query
+        minimum: 0
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/restadmin.ListReply-domain_Course'
+        "400":
+          description: Invalid paging parameters
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List courses
+      tags:
+      - courses
+    post:
+      consumes:
+      - application/json
+      description: Creates a course. title is required; orgId, when set, must be the
+        id (not sourcedId) of an existing organization. id is generated when empty,
+        sourcedId defaults to id, and createdAt/updatedAt are set by the server.
+      operationId: create-course
+      parameters:
+      - description: Course to create
+        in: body
+        name: course
+        required: true
+        schema:
+          $ref: '#/definitions/domain.Course'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/domain.Course'
+        "400":
+          description: Malformed body or validation error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "409":
+          description: id or sourcedId already in use
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "413":
+          description: Request body too large
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create course
+      tags:
+      - courses
+  /courses/{id}:
+    delete:
+      description: Deletes one course by id.
+      operationId: delete-course
+      parameters:
+      - description: Course id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete course
+      tags:
+      - courses
+    get:
+      description: Returns one course by id.
+      operationId: get-course
+      parameters:
+      - description: Course id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/domain.Course'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get course
+      tags:
+      - courses
+    put:
+      consumes:
+      - application/json
+      description: Replaces a course. orgId, when set, must be the id of an existing
+        organization. The path id wins over any id in the body; createdAt is preserved
+        and an empty sourcedId keeps the stored one.
+      operationId: update-course
+      parameters:
+      - description: Course id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Replacement course
+        in: body
+        name: course
+        required: true
+        schema:
+          $ref: '#/definitions/domain.Course'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/domain.Course'
+        "400":
+          description: Malformed body or validation error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "409":
+          description: sourcedId already in use
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "413":
+          description: Request body too large
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Replace course
+      tags:
+      - courses
+  /enrollments:
+    get:
+      description: Lists enrollments with limit/offset paging.
+      operationId: list-enrollments
+      parameters:
+      - description: Page size; defaults to default_limit and is clamped to max_limit
+        in: query
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Number of items to skip
+        in: query
+        minimum: 0
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/restadmin.ListReply-domain_Enrollment'
+        "400":
+          description: Invalid paging parameters
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List enrollments
+      tags:
+      - enrollments
+    post:
+      consumes:
+      - application/json
+      description: Creates an enrollment. personId and offeringId are required and
+        must be the ids (not sourcedIds) of an existing person and offering. id is
+        generated when empty, sourcedId defaults to id, and createdAt/updatedAt are
+        set by the server.
+      operationId: create-enrollment
+      parameters:
+      - description: Enrollment to create
+        in: body
+        name: enrollment
+        required: true
+        schema:
+          $ref: '#/definitions/domain.Enrollment'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/domain.Enrollment'
+        "400":
+          description: Malformed body or validation error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "409":
+          description: id or sourcedId already in use
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "413":
+          description: Request body too large
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create enrollment
+      tags:
+      - enrollments
+  /enrollments/{id}:
+    delete:
+      description: Deletes one enrollment by id.
+      operationId: delete-enrollment
+      parameters:
+      - description: Enrollment id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete enrollment
+      tags:
+      - enrollments
+    get:
+      description: Returns one enrollment by id.
+      operationId: get-enrollment
+      parameters:
+      - description: Enrollment id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/domain.Enrollment'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get enrollment
+      tags:
+      - enrollments
+    put:
+      consumes:
+      - application/json
+      description: Replaces an enrollment. personId and offeringId must be the ids
+        of an existing person and offering. The path id wins over any id in the body;
+        createdAt is preserved and an empty sourcedId keeps the stored one.
+      operationId: update-enrollment
+      parameters:
+      - description: Enrollment id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Replacement enrollment
+        in: body
+        name: enrollment
+        required: true
+        schema:
+          $ref: '#/definitions/domain.Enrollment'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/domain.Enrollment'
+        "400":
+          description: Malformed body or validation error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "409":
+          description: sourcedId already in use
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "413":
+          description: Request body too large
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Replace enrollment
+      tags:
+      - enrollments
+  /offerings:
+    get:
+      description: Lists offerings with limit/offset paging.
+      operationId: list-offerings
+      parameters:
+      - description: Page size; defaults to default_limit and is clamped to max_limit
+        in: query
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Number of items to skip
+        in: query
+        minimum: 0
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/restadmin.ListReply-domain_Offering'
+        "400":
+          description: Invalid paging parameters
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List offerings
+      tags:
+      - offerings
+    post:
+      consumes:
+      - application/json
+      description: Creates an offering. courseId is required; courseId, academicSessionId
+        and orgId must be ids (not sourcedIds) of existing records. id is generated
+        when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the
+        server.
+      operationId: create-offering
+      parameters:
+      - description: Offering to create
+        in: body
+        name: offering
+        required: true
+        schema:
+          $ref: '#/definitions/domain.Offering'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/domain.Offering'
+        "400":
+          description: Malformed body or validation error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "409":
+          description: id or sourcedId already in use
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "413":
+          description: Request body too large
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create offering
+      tags:
+      - offerings
+  /offerings/{id}:
+    delete:
+      description: Deletes one offering by id.
+      operationId: delete-offering
+      parameters:
+      - description: Offering id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete offering
+      tags:
+      - offerings
+    get:
+      description: Returns one offering by id.
+      operationId: get-offering
+      parameters:
+      - description: Offering id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/domain.Offering'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get offering
+      tags:
+      - offerings
+    put:
+      consumes:
+      - application/json
+      description: Replaces an offering. courseId, academicSessionId and orgId must
+        be ids of existing records. The path id wins over any id in the body; createdAt
+        is preserved and an empty sourcedId keeps the stored one.
+      operationId: update-offering
+      parameters:
+      - description: Offering id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Replacement offering
+        in: body
+        name: offering
+        required: true
+        schema:
+          $ref: '#/definitions/domain.Offering'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/domain.Offering'
+        "400":
+          description: Malformed body or validation error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "409":
+          description: sourcedId already in use
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "413":
+          description: Request body too large
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Replace offering
+      tags:
+      - offerings
+  /organizations:
+    get:
+      description: Lists organizations with limit/offset paging.
+      operationId: list-organizations
+      parameters:
+      - description: Page size; defaults to default_limit and is clamped to max_limit
+        in: query
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Number of items to skip
+        in: query
+        minimum: 0
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/restadmin.ListReply-domain_Organization'
+        "400":
+          description: Invalid paging parameters
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List organizations
+      tags:
+      - organizations
+    post:
+      consumes:
+      - application/json
+      description: Creates an organization. name is required; parentId, when set,
+        must be the id (not sourcedId) of an existing organization. id is generated
+        when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the
+        server.
+      operationId: create-organization
+      parameters:
+      - description: Organization to create
+        in: body
+        name: organization
+        required: true
+        schema:
+          $ref: '#/definitions/domain.Organization'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/domain.Organization'
+        "400":
+          description: Malformed body or validation error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "409":
+          description: id or sourcedId already in use
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "413":
+          description: Request body too large
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create organization
+      tags:
+      - organizations
+  /organizations/{id}:
+    delete:
+      description: Deletes one organization by id.
+      operationId: delete-organization
+      parameters:
+      - description: Organization id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete organization
+      tags:
+      - organizations
+    get:
+      description: Returns one organization by id.
+      operationId: get-organization
+      parameters:
+      - description: Organization id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/domain.Organization'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get organization
+      tags:
+      - organizations
+    put:
+      consumes:
+      - application/json
+      description: Replaces an organization. parentId, when set, must be the id of
+        an existing organization. The path id wins over any id in the body; createdAt
+        is preserved and an empty sourcedId keeps the stored one.
+      operationId: update-organization
+      parameters:
+      - description: Organization id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Replacement organization
+        in: body
+        name: organization
+        required: true
+        schema:
+          $ref: '#/definitions/domain.Organization'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/domain.Organization'
+        "400":
+          description: Malformed body or validation error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "409":
+          description: sourcedId already in use
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "413":
+          description: Request body too large
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Replace organization
+      tags:
+      - organizations
+  /parse:
+    post:
+      consumes:
+      - application/json
+      description: 'Converts data from metadata.input_format (elm: an ELM v3 / European
+        Digital Credential JSON-LD document) to metadata.output_format (eduapi or
+        oeapi) and returns it. Nothing is stored. Records keep the document''s ids
+        as sourcedIds; references between them are sourcedIds. Requires scope sis.read.'
+      operationId: parse
+      parameters:
+      - description: Document to convert
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/convertapi.ParseRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Converted document
+          schema:
+            $ref: '#/definitions/convertapi.ParseReply'
+        "400":
+          description: Malformed body, unsupported format, or a document that cannot
+            be converted
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "413":
+          description: Request body too large
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Convert a document
+      tags:
+      - convert
+  /persons:
+    get:
+      description: Lists persons with limit/offset paging. Requires scope sis.read.
+      operationId: list-persons
+      parameters:
+      - description: Page size; defaults to default_limit and is clamped to max_limit
+        in: query
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Number of items to skip
+        in: query
+        minimum: 0
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/restadmin.PersonListReply'
+        "400":
+          description: Invalid paging parameters
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List persons
+      tags:
+      - persons
+    post:
+      consumes:
+      - application/json
+      description: Creates a person. givenName, familyName and status are required.
+        id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt
+        are set by the server. Requires scope sis.write.
+      operationId: create-person
+      parameters:
+      - description: Person to create
+        in: body
+        name: person
+        required: true
+        schema:
+          $ref: '#/definitions/domain.Person'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/domain.Person'
+        "400":
+          description: Malformed body or validation error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "409":
+          description: id or sourcedId already in use
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "413":
+          description: Request body too large
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create person
+      tags:
+      - persons
+  /persons/{id}:
+    delete:
+      description: Deletes one person by id. Requires scope sis.write.
+      operationId: delete-person
+      parameters:
+      - description: Person id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete person
+      tags:
+      - persons
+    get:
+      description: Returns one person by id. Requires scope sis.read.
+      operationId: get-person
+      parameters:
+      - description: Person id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/domain.Person'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get person
+      tags:
+      - persons
+    put:
+      consumes:
+      - application/json
+      description: Replaces a person. The path id wins over any id in the body; createdAt
+        is preserved and an empty sourcedId keeps the stored one. Requires scope sis.write.
+      operationId: update-person
+      parameters:
+      - description: Person id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Replacement person
+        in: body
+        name: person
+        required: true
+        schema:
+          $ref: '#/definitions/domain.Person'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/domain.Person'
+        "400":
+          description: Malformed body or validation error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "409":
+          description: sourcedId already in use
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "413":
+          description: Request body too large
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Replace person
+      tags:
+      - persons
+  /populate:
+    post:
+      consumes:
+      - application/json
+      description: Converts data from metadata.input_format (elm) and upserts every
+        record by sourcedId, so /eduapi and /oeapi (and /api/v1) serve them. With
+        ttl the records stop being served after that duration and are then deleted;
+        re-populating refreshes the expiry, but a record that already existed without
+        expiry keeps none. References in the document must resolve within it or to
+        stored records. The document is checked completely before anything is stored;
+        a storage failure part-way leaves earlier records stored, and retrying the
+        same request converges. Requires scope sis.write.
+      operationId: populate
+      parameters:
+      - description: Document to load
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/convertapi.PopulateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Stored records
+          schema:
+            $ref: '#/definitions/convertapi.PopulateReply'
+        "400":
+          description: Malformed body, unsupported format, invalid ttl, or a document
+            that cannot be converted
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "409":
+          description: A record id collides with an existing record
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "413":
+          description: Request body too large
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Load a document
+      tags:
+      - convert
+  /programs:
+    get:
+      description: Lists programs with limit/offset paging.
+      operationId: list-programs
+      parameters:
+      - description: Page size; defaults to default_limit and is clamped to max_limit
+        in: query
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Number of items to skip
+        in: query
+        minimum: 0
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/restadmin.ListReply-domain_Program'
+        "400":
+          description: Invalid paging parameters
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List programs
+      tags:
+      - programs
+    post:
+      consumes:
+      - application/json
+      description: Creates a program. title is required; orgId, when set, must be
+        the id (not sourcedId) of an existing organization. id is generated when empty,
+        sourcedId defaults to id, and createdAt/updatedAt are set by the server.
+      operationId: create-program
+      parameters:
+      - description: Program to create
+        in: body
+        name: program
+        required: true
+        schema:
+          $ref: '#/definitions/domain.Program'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/domain.Program'
+        "400":
+          description: Malformed body or validation error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "409":
+          description: id or sourcedId already in use
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "413":
+          description: Request body too large
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create program
+      tags:
+      - programs
+  /programs/{id}:
+    delete:
+      description: Deletes one program by id.
+      operationId: delete-program
+      parameters:
+      - description: Program id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete program
+      tags:
+      - programs
+    get:
+      description: Returns one program by id.
+      operationId: get-program
+      parameters:
+      - description: Program id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/domain.Program'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get program
+      tags:
+      - programs
+    put:
+      consumes:
+      - application/json
+      description: Replaces a program. orgId, when set, must be the id of an existing
+        organization. The path id wins over any id in the body; createdAt is preserved
+        and an empty sourcedId keeps the stored one.
+      operationId: update-program
+      parameters:
+      - description: Program id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Replacement program
+        in: body
+        name: program
+        required: true
+        schema:
+          $ref: '#/definitions/domain.Program'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/domain.Program'
+        "400":
+          description: Malformed body or validation error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "409":
+          description: sourcedId already in use
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "413":
+          description: Request body too large
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Replace program
+      tags:
+      - programs
+  /results:
+    get:
+      description: Lists results with limit/offset paging.
+      operationId: list-results
+      parameters:
+      - description: Page size; defaults to default_limit and is clamped to max_limit
+        in: query
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Number of items to skip
+        in: query
+        minimum: 0
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/restadmin.ListReply-domain_Result'
+        "400":
+          description: Invalid paging parameters
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List results
+      tags:
+      - results
+    post:
+      consumes:
+      - application/json
+      description: Creates a result. personId is required, and exactly one of courseId
+        and programId; offeringId is optional. All must be the ids (not sourcedIds)
+        of existing records. id is generated when empty, sourcedId defaults to id,
+        and createdAt/updatedAt are set by the server.
+      operationId: create-result
+      parameters:
+      - description: Result to create
+        in: body
+        name: result
+        required: true
+        schema:
+          $ref: '#/definitions/domain.Result'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/domain.Result'
+        "400":
+          description: Malformed body or validation error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "409":
+          description: id or sourcedId already in use
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "413":
+          description: Request body too large
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create result
+      tags:
+      - results
+  /results/{id}:
+    delete:
+      description: Deletes one result by id.
+      operationId: delete-result
+      parameters:
+      - description: Result id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete result
+      tags:
+      - results
+    get:
+      description: Returns one result by id.
+      operationId: get-result
+      parameters:
+      - description: Result id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/domain.Result'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get result
+      tags:
+      - results
+    put:
+      consumes:
+      - application/json
+      description: Replaces a result. References must be the ids of existing records.
+        The path id wins over any id in the body; createdAt is preserved and an empty
+        sourcedId keeps the stored one.
+      operationId: update-result
+      parameters:
+      - description: Result id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Replacement result
+        in: body
+        name: result
+        required: true
+        schema:
+          $ref: '#/definitions/domain.Result'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/domain.Result'
+        "400":
+          description: Malformed body or validation error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "409":
+          description: sourcedId already in use
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "413":
+          description: Request body too large
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Replace result
+      tags:
+      - results
+securityDefinitions:
+  BearerAuth:
+    description: Access token prefixed with "Bearer ", e.g. "Bearer eyJhbGciOi...".
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"
