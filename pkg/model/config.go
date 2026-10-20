@@ -135,6 +135,10 @@ type ConvertAPI struct {
 	// MaxBodyBytes caps the request body of these two endpoints; every
 	// other endpoint keeps the 1 MiB cap. Larger requests get 413.
 	MaxBodyBytes int64 `yaml:"max_body_bytes" default:"5242880" validate:"gt=0"`
+	// WriteTimeout replaces sis.httpserver.write_timeout for these two
+	// endpoints: populate stores a large document record by record and can
+	// take longer than other requests.
+	WriteTimeout time.Duration `yaml:"write_timeout" default:"2m" validate:"gt=0"`
 }
 
 // AuthAPI configures sign-in for the web UI, served at GET /auth/config.

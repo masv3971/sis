@@ -49,6 +49,17 @@ func securityHeaders(tls bool) gin.HandlerFunc {
 	}
 }
 
+// writeDeadline replaces the server's write timeout for this request with d,
+// counted from now, so a slow route is not cut off at the global deadline.
+func writeDeadline(d time.Duration, log *logger.Log) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if err := http.NewResponseController(c.Writer).SetWriteDeadline(time.Now().Add(d)); err != nil {
+			log.Warn("set write deadline", "path", c.FullPath(), "err", err)
+		}
+		c.Next()
+	}
+}
+
 // bodyLimit caps request body size to guard against oversized payloads: n
 // bytes, or perRoute[route] for a matched route pattern (gin's FullPath,
 // e.g. "/api/v1/parse"). Global middleware runs after routing, so the

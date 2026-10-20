@@ -258,7 +258,9 @@ jq -n --slurpfile d internal/convert/testdata/edc_bsc.json \
 ```
 
 These two endpoints accept bodies up to `sis.adapter.inbound.convertapi.max_body_bytes`
-(5 MiB by default). Every other endpoint is capped at 1 MiB.
+(5 MiB by default). Every other endpoint is capped at 1 MiB. They also get
+their own write timeout, `sis.adapter.inbound.convertapi.write_timeout` (2m by
+default), instead of `sis.httpserver.write_timeout`.
 
 ### `/oeapi`: Open Education API v6.0 (read-only)
 

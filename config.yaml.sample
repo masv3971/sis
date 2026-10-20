@@ -101,6 +101,9 @@ sis:
         # Request size cap for these two endpoints (bytes); every other
         # endpoint is capped at 1 MiB. Larger requests get 413.
         max_body_bytes: 5242880
+        # Replaces sis.httpserver.write_timeout for these two endpoints:
+        # populate stores a large document record by record.
+        write_timeout: 2m
 
     # Systems SIS calls out to.
     outbound:
