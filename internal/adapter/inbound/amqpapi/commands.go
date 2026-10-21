@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"slices"
+	"unicode/utf8"
 
 	"github.com/Azure/go-amqp"
 
@@ -143,8 +144,7 @@ func (s *Service) authorize(ctx context.Context, msg *amqp.Message) error {
 		}
 		return errUnauthorized("missing " + authorizationProperty + " application property")
 	}
-	header, _ := raw.(string)
-	tok, ok := auth.BearerToken(header)
+	tok, ok := auth.BearerToken(headerString(raw))
 	if !ok {
 		return errUnauthorized(authorizationProperty + ` must be "Bearer <token>"`)
 	}
@@ -160,6 +160,22 @@ func (s *Service) authorize(ctx context.Context, msg *amqp.Message) error {
 		return helpers.NewErrorDetailsWithStatus("forbidden", "token lacks scope "+auth.ScopeWrite, http.StatusForbidden)
 	}
 	return nil
+}
+
+// headerString returns a string or UTF-8 binary property value. RabbitMQ 4
+// hands an AMQP 0-9-1 longstr header to AMQP 1.0 consumers as a string only
+// up to 4096 bytes and as binary above that, so a long bearer token arrives
+// as []byte. Anything else yields "", which BearerToken rejects.
+func headerString(v any) string {
+	switch v := v.(type) {
+	case string:
+		return v
+	case []byte:
+		if utf8.Valid(v) {
+			return string(v)
+		}
+	}
+	return ""
 }
 
 func errUnauthorized(detail string) error {

@@ -273,6 +273,24 @@ func TestAuthorization(t *testing.T) {
 		f.expect(t, message("person.create", f.iss.Token(t, "uni", "sis.read"), body), "rejected")
 	})
 
+	// RabbitMQ 4 converts an AMQP 0-9-1 longstr header above 4096 bytes to
+	// AMQP 1.0 binary, so a long token arrives as []byte.
+	t.Run("binary authorization", func(t *testing.T) {
+		f := newFixture(t)
+		bin := func(v []byte) *amqp.Message {
+			m := message("person.create", "", body)
+			m.ApplicationProperties = map[string]any{authorizationProperty: v}
+			return m
+		}
+		f.expect(t, bin([]byte("Bearer "+f.iss.Token(t, "uni", "sis.write"))), "accepted")
+		if s := f.expect(t, bin([]byte("Bearer "+f.iss.Token(t, "uni", "sis.read"))), "rejected"); s.err.Condition != amqp.ErrCondUnauthorizedAccess {
+			t.Fatalf("read-only binary token: condition = %s", s.err.Condition)
+		}
+		if s := f.expect(t, bin([]byte("Bearer \xff\xfe")), "rejected"); s.err.Condition != amqp.ErrCondUnauthorizedAccess {
+			t.Fatalf("non-UTF-8 binary: condition = %s", s.err.Condition)
+		}
+	})
+
 	t.Run("issuer outage is retried", func(t *testing.T) {
 		f := newFixture(t)
 		tok := f.iss.Token(t, "uni", "sis.write")

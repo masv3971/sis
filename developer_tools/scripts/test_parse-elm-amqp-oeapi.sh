@@ -107,7 +107,7 @@ edu_list() {
         sis "/eduapi/${typ}?limit=${PAGE}&offset=${offset}" \
             -D "$tmp/headers" -o "$tmp/page" >/dev/null
         jq -c --arg k "$typ" --arg t "$T0" \
-            '.[$k][]? | select((.dateLastModified // "") >= $t)' "$tmp/page"
+            '.[$k][]? | select((.dateLastModified // "") >= $t)' "$tmp/page" || return
         total="$(header X-Total-Count)"
         limit="$(header X-Limit)"
         [[ "$total" =~ ^[0-9]+$ ]] || fail "/eduapi/${typ}: no X-Total-Count header"
@@ -118,11 +118,16 @@ edu_list() {
 }
 
 # collect: the Edu-API records modified since T0, keyed like parse output.
+# It runs in $(...), where errexit is off, so each step returns its failure
+# explicitly: one failed type must fail the whole bundle, never leave a
+# partial one that a later successful type hides.
 collect() {
     local typ
+    : >"$tmp/collect" || return
     for typ in "${EDU_TYPES[@]}"; do
-        edu_list "$typ" | jq -cs --arg k "$typ" '{($k): .}'
-    done | jq -cs 'add | with_entries(select(.value | length > 0))'
+        edu_list "$typ" | jq -cs --arg k "$typ" '{($k): .}' >>"$tmp/collect" || return
+    done
+    jq -cs 'add | with_entries(select(.value | length > 0))' "$tmp/collect"
 }
 
 # render_oeapi BUNDLE: fetch each record of an Edu-API bundle from /oeapi.
@@ -177,11 +182,14 @@ echo "published populate ${message_id} to ${QUEUE}; waiting for SIS" >&2
 deadline=$((SECONDS + TIMEOUT))
 prev=""
 while :; do
-    if (($(queue_messages "$DLQ") > dlq_before)); then
+    # Plain assignments, so set -e stops the script when a lookup fails.
+    dlq_now="$(queue_messages "$DLQ")"
+    queued="$(queue_messages "$QUEUE")"
+    if ((dlq_now > dlq_before)); then
         fail "SIS rejected ${message_id}: dead-lettered to ${DLQ} (reason in the SIS log)"
     fi
-    if (($(queue_messages "$QUEUE") == 0)); then
-        bundle="$(collect)"
+    if ((queued == 0)); then
+        bundle="$(collect)" || fail "reading the records back from /eduapi failed"
         [[ "$bundle" != "{}" && "$bundle" == "$prev" ]] && break
         prev="$bundle"
     fi

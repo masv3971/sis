@@ -289,7 +289,7 @@ RabbitMQ hands their messages to SIS over 1.0.
 | ------- | ------- |
 | subject (0-9-1: `type`) | `person.create`, `person.update`, `person.delete`, the same for `organization`, `academicSession`, `course`, `offering`, `enrollment`, `program`, `result`, and `populate` |
 | body | One data section of JSON, the `/api/v1` request body. Update carries the `id` in the body; delete is `{"id": "..."}` |
-| application property `authorization` (0-9-1: header) | `Bearer <token>`, checked like an API token; needs `sis.write` |
+| application property `authorization` (0-9-1: header) | `Bearer <token>`, checked like an API token; needs `sis.write`. A string or UTF-8 binary value (RabbitMQ passes 0-9-1 headers over 4096 bytes on as binary) |
 | `message-id`, `correlation-id` | Optional, logged |
 
 There are no replies. The outcome is how SIS settles the message, so SIS
