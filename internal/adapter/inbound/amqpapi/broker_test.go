@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/Azure/go-amqp"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/SUNET/sis/internal/auth"
 	"github.com/SUNET/sis/pkg/logger"
@@ -31,23 +33,15 @@ func TestBroker(t *testing.T) {
 	const queue, dlq = "/queues/sis.test.commands", "/queues/sis.test.commands.dlq"
 	ctx := t.Context()
 	conn, err := amqp.Dial(ctx, url, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
-	sess, err := conn.NewSession(ctx, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	snd, err := sess.NewSender(ctx, queue, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	dead, err := sess.NewReceiver(ctx, dlq, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	drain(t, dead)
+	session, err := conn.NewSession(ctx, nil)
+	require.NoError(t, err)
+	sender, err := session.NewSender(ctx, queue, nil)
+	require.NoError(t, err)
+	deadLetters, err := session.NewReceiver(ctx, dlq, nil)
+	require.NoError(t, err)
+	drain(t, deadLetters)
 
 	var attempts atomic.Int32
 	accepted := make(chan struct{}, 4)
@@ -56,20 +50,16 @@ func TestBroker(t *testing.T) {
 		"bad":   func(context.Context, []byte) error { return errIDRequired },
 		"flaky": func(context.Context, []byte) error { attempts.Add(1); return errors.New("database unavailable") },
 	}
-	ac := model.AMQPAPI{URL: url, Address: queue, Prefetch: 1, MaxMessageBytes: 1 << 20, Scopes: []string{auth.ScopeWrite}}
-	dial, err := newDialer(ac)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := start(ctx, ac, nil, table, dial, logger.NewWithWriter("test", false, "error", io.Discard))
-	t.Cleanup(func() { _ = s.Close(context.Background()) })
+	amqpCfg := model.AMQPAPI{URL: url, Address: queue, Prefetch: 1, MaxMessageBytes: 1 << 20, Scopes: []string{auth.ScopeWrite}}
+	dial, err := newDialer(amqpCfg)
+	require.NoError(t, err)
+	svc := start(ctx, amqpCfg, nil, table, dial, logger.NewWithWriter("test", false, "error", io.Discard))
+	t.Cleanup(func() { _ = svc.Close(context.Background()) })
 
 	send := func(subject string) {
 		t.Helper()
-		m := &amqp.Message{Properties: &amqp.MessageProperties{Subject: &subject, MessageID: subject}, Data: [][]byte{[]byte(`{}`)}}
-		if err := snd.Send(ctx, m, nil); err != nil {
-			t.Fatal(err)
-		}
+		msg := &amqp.Message{Properties: &amqp.MessageProperties{Subject: &subject, MessageID: subject}, Data: [][]byte{[]byte(`{}`)}}
+		require.NoError(t, sender.Send(ctx, msg, nil))
 	}
 
 	send("ok")
@@ -80,41 +70,33 @@ func TestBroker(t *testing.T) {
 	}
 
 	send("bad")
-	if m := receive(t, dead); m.Properties.MessageID != "bad" {
-		t.Fatalf("dead-lettered %v, want bad", m.Properties.MessageID)
-	}
+	require.Equal(t, "bad", receive(t, deadLetters).Properties.MessageID, "dead-lettered")
 
 	send("flaky")
-	if m := receive(t, dead); m.Properties.MessageID != "flaky" {
-		t.Fatalf("dead-lettered %v, want flaky", m.Properties.MessageID)
-	}
-	if n := attempts.Load(); n < 2 {
-		t.Fatalf("flaky command ran %d times; want it redelivered", n)
-	}
+	require.Equal(t, "flaky", receive(t, deadLetters).Properties.MessageID, "dead-lettered")
+	assert.GreaterOrEqual(t, attempts.Load(), int32(2), "flaky command must be redelivered")
 }
 
-func receive(t *testing.T, r *amqp.Receiver) *amqp.Message {
+func receive(t *testing.T, receiver *amqp.Receiver) *amqp.Message {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 	defer cancel()
-	m, err := r.Receive(ctx, nil)
-	if err != nil {
-		t.Fatalf("receive from dead-letter queue: %v", err)
-	}
-	_ = r.AcceptMessage(ctx, m)
-	return m
+	msg, err := receiver.Receive(ctx, nil)
+	require.NoError(t, err, "receive from dead-letter queue")
+	_ = receiver.AcceptMessage(ctx, msg)
+	return msg
 }
 
 // drain discards leftovers of earlier runs.
-func drain(t *testing.T, r *amqp.Receiver) {
+func drain(t *testing.T, receiver *amqp.Receiver) {
 	t.Helper()
 	for {
 		ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
-		m, err := r.Receive(ctx, nil)
+		msg, err := receiver.Receive(ctx, nil)
 		cancel()
 		if err != nil {
 			return
 		}
-		_ = r.AcceptMessage(t.Context(), m)
+		_ = receiver.AcceptMessage(t.Context(), msg)
 	}
 }

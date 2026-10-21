@@ -1,11 +1,9 @@
 package fileimport
 
 import (
-	"context"
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/SUNET/sis/internal/adapter/outbound/memory"
@@ -15,6 +13,8 @@ import (
 	"github.com/SUNET/sis/internal/readmodel"
 	"github.com/SUNET/sis/pkg/logger"
 	"github.com/SUNET/sis/pkg/model"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 const fakeStudents = "../../testdata/fake_students.json"
@@ -36,62 +36,47 @@ func newCatalog() *readmodel.Client {
 // TestFakeStudentsImport loads the shipped fake-students file, checks the
 // records and their references, and that a second import changes nothing.
 func TestFakeStudentsImport(t *testing.T) {
-	ctx := context.Background()
-	c := newCatalog()
-	n, err := Import(ctx, c, fakeStudents)
-	if err != nil {
-		t.Fatalf("Import: %v", err)
-	}
+	ctx := t.Context()
+	catalog := newCatalog()
+	count, err := Import(ctx, catalog, fakeStudents)
+	require.NoError(t, err, "Import")
 	// 4 organizations, 2 sessions, 5 courses, 2 programs, 5 offerings,
 	// 10 persons, 9 enrollments, 8 results.
-	if n != 45 {
-		t.Fatalf("records = %d, want 45", n)
-	}
+	require.Equal(t, 45, count, "records")
 
-	persons, err := c.Persons.ListPersons(ctx, port.ListParams{})
-	if err != nil || persons.Total != 10 {
-		t.Fatalf("persons = %d, %v", persons.Total, err)
-	}
-	anna, err := c.Persons.GetPersonBySourcedID(ctx, "liu:anna.andersson")
-	if err != nil || anna.ID == "" || anna.ID == anna.SourcedID || len(anna.Identifiers) != 2 {
-		t.Fatalf("anna = %+v, %v", anna, err)
-	}
+	persons, err := catalog.Persons.ListPersons(ctx, port.ListParams{})
+	require.NoError(t, err)
+	require.Equal(t, 10, persons.Total, "persons")
+	anna, err := catalog.Persons.GetPersonBySourcedID(ctx, "liu:anna.andersson")
+	require.NoError(t, err)
+	require.NotEmpty(t, anna.ID, "anna id")
+	require.NotEqual(t, anna.SourcedID, anna.ID, "anna id must differ from sourcedId")
+	require.Len(t, anna.Identifiers, 2, "anna identifiers")
 
 	// References are stored as canonical ids and publish back as sourcedIds.
-	r, err := c.Results.GetBySourcedID(ctx, "liu:anna.andersson:TDDE01")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if r.PersonID != anna.ID {
-		t.Fatalf("result personId = %q, want anna's id %q", r.PersonID, anna.ID)
-	}
-	if err := c.CheckRefs(ctx, r); err != nil {
-		t.Fatalf("CheckRefs: %v", err)
-	}
-	if _, err := c.PublishRefs(ctx, r); err != nil || r.PersonID != "liu:anna.andersson" || r.CourseID != "liu:TDDE01" {
-		t.Fatalf("published result = %+v, %v", r, err)
-	}
-	dept, err := c.Organizations.GetBySourcedID(ctx, "liu-ida")
-	if err != nil || dept.ParentID == "" {
-		t.Fatalf("dept = %+v, %v", dept, err)
-	}
+	result, err := catalog.Results.GetBySourcedID(ctx, "liu:anna.andersson:TDDE01")
+	require.NoError(t, err)
+	require.Equal(t, anna.ID, result.PersonID, "result personId must be anna's id")
+	require.NoError(t, catalog.CheckRefs(ctx, result), "CheckRefs")
+	_, err = catalog.PublishRefs(ctx, result)
+	require.NoError(t, err, "PublishRefs")
+	require.Equal(t, "liu:anna.andersson", result.PersonID, "published personId")
+	require.Equal(t, "liu:TDDE01", result.CourseID, "published courseId")
+	dept, err := catalog.Organizations.GetBySourcedID(ctx, "liu-ida")
+	require.NoError(t, err)
+	require.NotEmpty(t, dept.ParentID, "dept parentId")
 
 	// Imported records are permanent.
-	if anna.ExpiresAt != nil || r.ExpiresAt != nil {
-		t.Fatal("imported records must not expire")
-	}
+	require.Nil(t, anna.ExpiresAt, "imported records must not expire")
+	require.Nil(t, result.ExpiresAt, "imported records must not expire")
 
 	// Importing again converges on the same records.
-	if _, err := Import(ctx, c, fakeStudents); err != nil {
-		t.Fatalf("second Import: %v", err)
-	}
-	again, _ := c.Persons.GetPersonBySourcedID(ctx, "liu:anna.andersson")
-	if again.ID != anna.ID {
-		t.Fatalf("id changed on re-import: %q -> %q", anna.ID, again.ID)
-	}
-	if persons, _ := c.Persons.ListPersons(ctx, port.ListParams{}); persons.Total != 10 {
-		t.Fatalf("persons after re-import = %d", persons.Total)
-	}
+	_, err = Import(ctx, catalog, fakeStudents)
+	require.NoError(t, err, "second Import")
+	again, _ := catalog.Persons.GetPersonBySourcedID(ctx, "liu:anna.andersson")
+	assert.Equal(t, anna.ID, again.ID, "id changed on re-import")
+	persons, _ = catalog.Persons.ListPersons(ctx, port.ListParams{})
+	assert.Equal(t, 10, persons.Total, "persons after re-import")
 }
 
 func TestDecodeRejects(t *testing.T) {
@@ -106,9 +91,8 @@ func TestDecodeRejects(t *testing.T) {
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {
-			if _, err := Decode([]byte(body)); err == nil {
-				t.Fatal("expected an error")
-			}
+			_, err := Decode([]byte(body))
+			assert.Error(t, err)
 		})
 	}
 }
@@ -116,30 +100,23 @@ func TestDecodeRejects(t *testing.T) {
 // TestImportStoresNothingOnBadReference checks a file with a reference to a
 // record that exists nowhere fails before anything is stored.
 func TestImportStoresNothingOnBadReference(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	path := filepath.Join(t.TempDir(), "bad.json")
 	body := `{
 	  "persons": [{"sourcedId": "a", "givenName": "A", "familyName": "B", "status": "active"}],
 	  "enrollments": [{"sourcedId": "e", "personId": "a", "offeringId": "nowhere"}]
 	}`
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	c := newCatalog()
-	_, err := Import(ctx, c, path)
-	if err == nil || !strings.Contains(err.Error(), "nowhere") {
-		t.Fatalf("expected an unknown-reference error, got %v", err)
-	}
-	if p, _ := c.Persons.ListPersons(ctx, port.ListParams{}); p.Total != 0 {
-		t.Fatalf("stored %d persons from a rejected file", p.Total)
-	}
+	require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
+	catalog := newCatalog()
+	_, err := Import(ctx, catalog, path)
+	require.ErrorContains(t, err, "nowhere", "expected an unknown-reference error")
+	page, _ := catalog.Persons.ListPersons(ctx, port.ListParams{})
+	assert.Zero(t, page.Total, "stored persons from a rejected file")
 }
 
 func TestRunNamesFailingFile(t *testing.T) {
 	cfg := &model.Cfg{}
 	cfg.SIS.FileImport.Files = []string{fakeStudents, "/no/such/file.json"}
-	err := Run(context.Background(), cfg, newCatalog(), logger.NewWithWriter("test", false, "error", io.Discard))
-	if err == nil || !strings.Contains(err.Error(), "/no/such/file.json") {
-		t.Fatalf("expected error naming the missing file, got %v", err)
-	}
+	err := Run(t.Context(), cfg, newCatalog(), logger.NewWithWriter("test", false, "error", io.Discard))
+	assert.ErrorContains(t, err, "/no/such/file.json", "expected error naming the missing file")
 }

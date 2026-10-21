@@ -28,20 +28,20 @@ import (
 // The receiver is named c to match the vc convention; the gin.Context
 // parameter is therefore named gc to avoid shadowing.
 type Client struct {
-	cfg      *model.Cfg
-	commands *command.Client
-	convert  *convert.Client
-	log      *logger.Log
+	cfg       *model.Cfg
+	commands  *command.Client
+	converter *convert.Client
+	log       *logger.Log
 }
 
 // New builds the convertapi Client, with its own convert Client (pure, so
 // nothing is shared or shut down).
 func New(ctx context.Context, cfg *model.Cfg, commands *command.Client, log *logger.Log) (*Client, error) {
-	conv, err := convert.New(ctx, cfg, log)
+	converter, err := convert.New(ctx, cfg, log)
 	if err != nil {
 		return nil, err
 	}
-	return &Client{cfg: cfg, commands: commands, convert: conv, log: log.New("convertapi")}, nil
+	return &Client{cfg: cfg, commands: commands, converter: converter, log: log.New("convertapi")}, nil
 }
 
 // ParseRequest is the body of POST /api/v1/parse.
@@ -88,16 +88,16 @@ func (c *Client) Parse(gc *gin.Context) {
 		helpers.WriteError(gc, err)
 		return
 	}
-	if err := req.Metadata.Check(c.convert, true); err != nil {
+	if err := req.Metadata.Check(c.converter, true); err != nil {
 		helpers.WriteError(gc, err)
 		return
 	}
-	parsed, err := c.convert.Parse(req.Metadata.InputFormat, req.Data, "data")
+	parsed, err := c.converter.Parse(req.Metadata.InputFormat, req.Data, "data")
 	if err != nil {
 		helpers.WriteError(gc, err)
 		return
 	}
-	out, err := c.convert.Render(req.Metadata.OutputFormat, parsed.Bundle)
+	out, err := c.converter.Render(req.Metadata.OutputFormat, parsed.Bundle)
 	if err != nil {
 		helpers.WriteError(gc, err)
 		return

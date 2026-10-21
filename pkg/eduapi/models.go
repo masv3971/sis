@@ -121,22 +121,22 @@ type Result struct {
 }
 
 // FromPerson maps a canonical person to the Edu-API shape.
-func FromPerson(p domain.Person) Person {
-	roles := make([]Role, 0, len(p.Roles))
-	for _, r := range p.Roles {
-		roles = append(roles, Role{Role: string(r)})
+func FromPerson(person domain.Person) Person {
+	roles := make([]Role, 0, len(person.Roles))
+	for _, role := range person.Roles {
+		roles = append(roles, Role{Role: string(role)})
 	}
-	ids := make([]UserID, 0, len(p.Identifiers))
-	for _, id := range p.Identifiers {
+	ids := make([]UserID, 0, len(person.Identifiers))
+	for _, id := range person.Identifiers {
 		ids = append(ids, UserID{Type: id.Type, Identifier: id.Value})
 	}
 	var email string
-	if len(p.Emails) > 0 {
-		email = p.Emails[0].Value
+	if len(person.Emails) > 0 {
+		email = person.Emails[0].Value
 	}
 	return Person{
-		SourcedID: p.SourcedID, Status: string(p.Status), DateLastModified: rfc3339(p.UpdatedAt),
-		GivenName: p.GivenName, FamilyName: p.FamilyName, MiddleName: p.MiddleName,
+		SourcedID: person.SourcedID, Status: string(person.Status), DateLastModified: rfc3339(person.UpdatedAt),
+		GivenName: person.GivenName, FamilyName: person.FamilyName, MiddleName: person.MiddleName,
 		Email: email, Roles: roles, UserIDs: ids,
 	}
 }
@@ -147,66 +147,66 @@ func FromPerson(p domain.Person) Person {
 // referenced records' sourcedIds (readmodel.Client.PublishRefs).
 
 // FromOrg maps a canonical organization.
-func FromOrg(o *domain.Organization) Org {
+func FromOrg(org *domain.Organization) Org {
 	return Org{
-		SourcedID: o.SourcedID, Status: string(o.Status), DateLastModified: rfc3339(o.UpdatedAt),
-		Name: o.Name, Type: o.Type, Parent: ref(o.ParentID, "org"),
+		SourcedID: org.SourcedID, Status: string(org.Status), DateLastModified: rfc3339(org.UpdatedAt),
+		Name: org.Name, Type: org.Type, Parent: ref(org.ParentID, "org"),
 	}
 }
 
 // FromAcademicSession maps a canonical academic session.
-func FromAcademicSession(a *domain.AcademicSession) AcademicSession {
+func FromAcademicSession(session *domain.AcademicSession) AcademicSession {
 	return AcademicSession{
-		SourcedID: a.SourcedID, Status: string(a.Status), DateLastModified: rfc3339(a.UpdatedAt),
-		Title: a.Title, Type: a.Type, StartDate: a.StartDate, EndDate: a.EndDate,
+		SourcedID: session.SourcedID, Status: string(session.Status), DateLastModified: rfc3339(session.UpdatedAt),
+		Title: session.Title, Type: session.Type, StartDate: session.StartDate, EndDate: session.EndDate,
 	}
 }
 
 // FromCourse maps a canonical course.
-func FromCourse(c *domain.Course) Course {
+func FromCourse(course *domain.Course) Course {
 	return Course{
-		SourcedID: c.SourcedID, Status: string(c.Status), DateLastModified: rfc3339(c.UpdatedAt),
-		Title: c.Title, CourseCode: c.Code, Org: ref(c.OrgID, "org"),
+		SourcedID: course.SourcedID, Status: string(course.Status), DateLastModified: rfc3339(course.UpdatedAt),
+		Title: course.Title, CourseCode: course.Code, Org: ref(course.OrgID, "org"),
 	}
 }
 
 // FromClass maps a canonical offering to an Edu-API class.
-func FromClass(o *domain.Offering) Class {
+func FromClass(offering *domain.Offering) Class {
 	var terms []GUIDRef
-	if o.AcademicSessionID != "" {
-		terms = []GUIDRef{{SourcedID: o.AcademicSessionID, Type: "academicSession"}}
+	if offering.AcademicSessionID != "" {
+		terms = []GUIDRef{{SourcedID: offering.AcademicSessionID, Type: "academicSession"}}
 	}
 	return Class{
-		SourcedID: o.SourcedID, Status: string(o.Status), DateLastModified: rfc3339(o.UpdatedAt),
-		Title: o.Title, Course: ref(o.CourseID, "course"), Terms: terms, School: ref(o.OrgID, "org"),
+		SourcedID: offering.SourcedID, Status: string(offering.Status), DateLastModified: rfc3339(offering.UpdatedAt),
+		Title: offering.Title, Course: ref(offering.CourseID, "course"), Terms: terms, School: ref(offering.OrgID, "org"),
 	}
 }
 
 // FromEnrollment maps a canonical enrollment.
-func FromEnrollment(e *domain.Enrollment) Enrollment {
+func FromEnrollment(enrollment *domain.Enrollment) Enrollment {
 	return Enrollment{
-		SourcedID: e.SourcedID, Status: string(e.Status), DateLastModified: rfc3339(e.UpdatedAt),
-		User:  GUIDRef{SourcedID: e.PersonID, Type: "user"},
-		Class: GUIDRef{SourcedID: e.OfferingID, Type: "class"},
-		Role:  string(e.Role),
+		SourcedID: enrollment.SourcedID, Status: string(enrollment.Status), DateLastModified: rfc3339(enrollment.UpdatedAt),
+		User:  GUIDRef{SourcedID: enrollment.PersonID, Type: "user"},
+		Class: GUIDRef{SourcedID: enrollment.OfferingID, Type: "class"},
+		Role:  string(enrollment.Role),
 	}
 }
 
 // FromProgram maps a canonical program.
-func FromProgram(p *domain.Program) Program {
+func FromProgram(program *domain.Program) Program {
 	return Program{
-		SourcedID: p.SourcedID, Status: string(p.Status), DateLastModified: rfc3339(p.UpdatedAt),
-		Title: p.Title, ProgramCode: p.Code, Level: p.Level, Org: ref(p.OrgID, "org"),
+		SourcedID: program.SourcedID, Status: string(program.Status), DateLastModified: rfc3339(program.UpdatedAt),
+		Title: program.Title, ProgramCode: program.Code, Level: program.Level, Org: ref(program.OrgID, "org"),
 	}
 }
 
 // FromResult maps a canonical result.
-func FromResult(r *domain.Result) Result {
+func FromResult(result *domain.Result) Result {
 	return Result{
-		SourcedID: r.SourcedID, Status: string(r.Status), DateLastModified: rfc3339(r.UpdatedAt),
-		Student: GUIDRef{SourcedID: r.PersonID, Type: "user"},
-		Course:  ref(r.CourseID, "course"), Program: ref(r.ProgramID, "program"), Class: ref(r.OfferingID, "class"),
-		Score: r.Grade, Credits: r.Credits, ScoreDate: r.ResultDate,
+		SourcedID: result.SourcedID, Status: string(result.Status), DateLastModified: rfc3339(result.UpdatedAt),
+		Student: GUIDRef{SourcedID: result.PersonID, Type: "user"},
+		Course:  ref(result.CourseID, "course"), Program: ref(result.ProgramID, "program"), Class: ref(result.OfferingID, "class"),
+		Score: result.Grade, Credits: result.Credits, ScoreDate: result.ResultDate,
 	}
 }
 
@@ -236,8 +236,8 @@ func FromBundle(b *domain.Bundle) Bundle {
 		Enrollments:      mapAll(b.Enrollments, FromEnrollment),
 		Results:          mapAll(b.Results, FromResult),
 	}
-	for _, p := range b.Persons {
-		out.Persons = append(out.Persons, FromPerson(p))
+	for _, person := range b.Persons {
+		out.Persons = append(out.Persons, FromPerson(person))
 	}
 	return out
 }

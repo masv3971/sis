@@ -5,6 +5,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/SUNET/sis/internal/adapter/outbound/memory"
 	"github.com/SUNET/sis/internal/core/domain"
 	"github.com/SUNET/sis/internal/core/service"
@@ -13,12 +16,9 @@ import (
 	"github.com/SUNET/sis/pkg/model"
 )
 
-func TestSweepDeletesExpired(t *testing.T) {
-	ctx := t.Context()
-	log := logger.NewWithWriter("test", false, "error", io.Discard)
-	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	clock := func() time.Time { return now }
-	c := &readmodel.Client{
+// newCatalog is an in-memory catalog on a shared test clock.
+func newCatalog(clock func() time.Time, log *logger.Log) *readmodel.Client {
+	return &readmodel.Client{
 		Persons:          service.New(memory.NewPersonRepository().WithClock(clock), nil, clock, log),
 		Organizations:    service.NewResource(memory.NewDocRepo[domain.Organization]().WithClock(clock), nil, clock, log),
 		AcademicSessions: service.NewResource(memory.NewDocRepo[domain.AcademicSession]().WithClock(clock), nil, clock, log),
@@ -28,44 +28,60 @@ func TestSweepDeletesExpired(t *testing.T) {
 		Programs:         service.NewResource(memory.NewDocRepo[domain.Program]().WithClock(clock), nil, clock, log),
 		Results:          service.NewResource(memory.NewDocRepo[domain.Result]().WithClock(clock), nil, clock, log),
 	}
-	exp := now.Add(time.Minute)
-	_, err := c.Populate(ctx, &domain.Bundle{
+}
+
+func TestSweepDeletesExpired(t *testing.T) {
+	ctx := t.Context()
+	log := logger.NewWithWriter("test", false, "error", io.Discard)
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	catalog := newCatalog(func() time.Time { return now }, log)
+	expiry := now.Add(time.Minute)
+	_, err := catalog.Populate(ctx, &domain.Bundle{
 		Persons: []domain.Person{{SourcedID: "p", Status: domain.StatusActive, GivenName: "A", FamilyName: "B"}},
 		Courses: []*domain.Course{{SourcedID: "c", Title: "C"}},
 		Results: []*domain.Result{{SourcedID: "r", PersonID: "p", CourseID: "c"}},
-	}, &exp)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := c.Organizations.Create(ctx, &domain.Organization{Name: "permanent"}); err != nil {
-		t.Fatal(err)
-	}
+	}, &expiry)
+	require.NoError(t, err)
+	_, err = catalog.Organizations.Create(ctx, &domain.Organization{Name: "permanent"})
+	require.NoError(t, err)
 
 	cfg := &model.Cfg{}
 	cfg.SIS.Adapter.Sweeper.Interval = time.Hour
-	s, err := New(ctx, cfg, c, log)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s, err := New(ctx, cfg, catalog, log)
+	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close(t.Context()) })
 
-	if n := s.Sweep(ctx); n != 0 {
-		t.Fatalf("nothing expired yet, swept %d", n)
-	}
-	now = exp
-	if n := s.Sweep(ctx); n != 3 {
-		t.Fatalf("swept %d, want 3", n)
-	}
-	if n := s.Sweep(ctx); n != 0 {
-		t.Fatalf("second sweep found %d", n)
-	}
+	assert.Zero(t, s.Sweep(ctx), "nothing expired yet")
+	now = expiry
+	assert.Equal(t, 3, s.Sweep(ctx))
+	assert.Zero(t, s.Sweep(ctx), "second sweep")
+}
+
+// TestSweepBoundedStopsAtTimeout: a pass that runs out of time stops before
+// the next type instead of running on.
+func TestSweepBoundedStopsAtTimeout(t *testing.T) {
+	log := logger.NewWithWriter("test", false, "error", io.Discard)
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	catalog := newCatalog(func() time.Time { return now }, log)
+	expiry := now.Add(time.Minute)
+	_, err := catalog.Populate(t.Context(), &domain.Bundle{
+		Courses: []*domain.Course{{SourcedID: "c", Title: "C"}},
+	}, &expiry)
+	require.NoError(t, err)
+	now = expiry
+
+	// The deadline has passed before the first type: nothing is swept.
+	s := &Service{catalog: catalog, timeout: time.Nanosecond, log: log}
+	assert.Zero(t, s.sweepBounded(t.Context()))
+	// Without a limit the same pass deletes it.
+	s.timeout = 0
+	assert.Equal(t, 1, s.sweepBounded(t.Context()))
 }
 
 func TestNewRejectsZeroInterval(t *testing.T) {
 	log := logger.NewWithWriter("test", false, "error", io.Discard)
-	if _, err := New(t.Context(), &model.Cfg{}, &readmodel.Client{}, log); err == nil {
-		t.Fatal("zero interval must be rejected")
-	}
+	_, err := New(t.Context(), &model.Cfg{}, &readmodel.Client{}, log)
+	assert.Error(t, err, "zero interval must be rejected")
 }
 
 func TestCloseStopsLoop(t *testing.T) {
@@ -73,12 +89,8 @@ func TestCloseStopsLoop(t *testing.T) {
 	cfg := &model.Cfg{}
 	cfg.SIS.Adapter.Sweeper.Interval = time.Hour
 	s, err := New(t.Context(), cfg, &readmodel.Client{}, log)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Close(t.Context()); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+	require.NoError(t, s.Close(t.Context()))
 	select {
 	case <-s.done:
 	default:

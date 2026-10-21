@@ -180,8 +180,8 @@ func (s *Service) Close(ctx context.Context) error {
 	}
 	errs := make([]error, len(inbound))
 	var wg sync.WaitGroup
-	for i, svc := range inbound {
-		wg.Go(func() { errs[i] = svc.Close(ctx) })
+	for i, transport := range inbound {
+		wg.Go(func() { errs[i] = transport.Close(ctx) })
 	}
 	wg.Wait()
 	if s.sweeper != nil {

@@ -2,6 +2,9 @@ package elm
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestTextForms(t *testing.T) {
@@ -13,20 +16,14 @@ func TestTextForms(t *testing.T) {
 		"arr": ["", "second"],
 		"num": 12345678901234567890
 	}`), "data")
-	if err != nil {
-		t.Fatal(err)
-	}
-	n := doc.Root
+	require.NoError(t, err)
+	root := doc.Root
 	cases := map[string]string{"plain": "Ada", "lang": "Course", "langOne": "Kurs", "value": "V", "arr": "second", "num": "12345678901234567890", "missing": ""}
 	for prop, want := range cases {
-		if got := n.Text(prop); got != want {
-			t.Errorf("Text(%s) = %q, want %q", prop, got, want)
-		}
+		assert.Equal(t, want, root.Text(prop), "Text(%s)", prop)
 	}
 	doc.Languages = []string{"sv", "en"}
-	if got := n.Text("lang"); got != "Kurs" {
-		t.Errorf("language preference not applied: %q", got)
-	}
+	assert.Equal(t, "Kurs", root.Text("lang"), "language preference not applied")
 }
 
 func TestNodesResolveReferences(t *testing.T) {
@@ -36,23 +33,19 @@ func TestNodesResolveReferences(t *testing.T) {
 			"awardedBy": {"awardingBody": [{"id": "urn:org:1"}, "urn:org:missing"]}}},
 		"defs": [{"id": "urn:org:1", "type": "Organisation", "legalName": {"en": "Uni"}}]
 	}`), "data")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := doc.Root.Node("issuer"); got == nil || got.Text("legalName") != "Uni" || !got.Is("Organisation") {
-		t.Fatalf("string reference not resolved: %+v", got)
-	}
+	require.NoError(t, err)
+	issuer := doc.Root.Node("issuer")
+	require.NotNil(t, issuer, "string reference not resolved")
+	require.Equal(t, "Uni", issuer.Text("legalName"), "string reference not resolved")
+	require.True(t, issuer.Is("Organisation"), "string reference not resolved: %+v", issuer)
 	claims := doc.Root.Node("credentialSubject").Nodes("hasClaim")
-	if len(claims) != 1 || claims[0].Path != "data.credentialSubject.hasClaim" {
-		t.Fatalf("single value must be one node: %+v", claims)
-	}
+	require.Len(t, claims, 1, "single value must be one node")
+	require.Equal(t, "data.credentialSubject.hasClaim", claims[0].Path)
 	bodies := claims[0].Node("awardedBy").Nodes("awardingBody")
-	if len(bodies) != 2 || bodies[0].Text("legalName") != "Uni" || bodies[1].ID() != "urn:org:missing" {
-		t.Fatalf("stub/missing references: %+v", bodies)
-	}
-	if bodies[1].Path != "data.credentialSubject.hasClaim.awardedBy.awardingBody[1]" {
-		t.Fatalf("path = %s", bodies[1].Path)
-	}
+	require.Len(t, bodies, 2, "stub/missing references")
+	require.Equal(t, "Uni", bodies[0].Text("legalName"), "resolved reference")
+	require.Equal(t, "urn:org:missing", bodies[1].ID(), "missing reference stub")
+	assert.Equal(t, "data.credentialSubject.hasClaim.awardedBy.awardingBody[1]", bodies[1].Path)
 }
 
 // TestNodesCompleteTypedReferences checks an inline reference carrying more
@@ -65,29 +58,23 @@ func TestNodesCompleteTypedReferences(t *testing.T) {
 			"parentOrganisation": {"id": "urn:org:0", "type": "Organisation"}},
 			{"id": "urn:org:0", "type": "Organisation", "legalName": "Root"}]
 	}`), "data")
-	if err != nil {
-		t.Fatal(err)
+	require.NoError(t, err)
+	issuer := doc.Root.Node("issuer")
+	require.NotNil(t, issuer, "typed reference not completed")
+	require.Equal(t, "Uni", issuer.Text("legalName"), "typed reference not completed")
+	require.True(t, issuer.Is("Organisation"), "typed reference not completed: %+v", issuer)
+	assert.Equal(t, "U", issuer.Text("altLabel"), "inline property must win over the indexed one")
+	if parent := issuer.Node("parentOrganisation"); assert.NotNil(t, parent, "nested typed reference not completed") {
+		assert.Equal(t, "Root", parent.Text("legalName"), "nested typed reference not completed")
 	}
-	iss := doc.Root.Node("issuer")
-	if iss == nil || iss.Text("legalName") != "Uni" || !iss.Is("Organisation") {
-		t.Fatalf("typed reference not completed: %+v", iss)
-	}
-	if got := iss.Text("altLabel"); got != "U" {
-		t.Errorf("inline property must win over the indexed one: altLabel = %q", got)
-	}
-	if p := iss.Node("parentOrganisation"); p == nil || p.Text("legalName") != "Root" {
-		t.Errorf("nested typed reference not completed: %+v", p)
-	}
-	if def := doc.Root.Nodes("defs")[0]; def.Text("altLabel") != "Full" {
-		t.Errorf("indexed definition was modified: altLabel = %q", def.Text("altLabel"))
-	}
+	defs := doc.Root.Nodes("defs")
+	require.NotEmpty(t, defs)
+	assert.Equal(t, "Full", defs[0].Text("altLabel"), "indexed definition was modified")
 }
 
 func TestParseRejectsNonObject(t *testing.T) {
-	if _, err := Parse([]byte(`[1]`), "data"); err == nil {
-		t.Fatal("array root must be rejected")
-	}
-	if _, err := Parse([]byte(`{`), "data"); err == nil {
-		t.Fatal("malformed JSON must be rejected")
-	}
+	_, err := Parse([]byte(`[1]`), "data")
+	assert.Error(t, err, "array root must be rejected")
+	_, err = Parse([]byte(`{`), "data")
+	assert.Error(t, err, "malformed JSON must be rejected")
 }

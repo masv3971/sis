@@ -5,10 +5,12 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/SUNET/sis/pkg/logger"
+	"github.com/SUNET/sis/pkg/model"
 )
 
 // Service owns the connection pool and provides the repositories. It is a
@@ -19,9 +21,14 @@ type Service struct {
 	log  *logger.Log
 }
 
-// New connects to Postgres, verifies connectivity, and runs migrations.
-func New(ctx context.Context, databaseURL string, log *logger.Log) (*Service, error) {
-	pool, err := pgxpool.New(ctx, databaseURL)
+// New connects to sis.adapter.outbound.postgres, verifies connectivity, and
+// runs migrations. ctx bounds only this startup work: the pool outlives it.
+func New(ctx context.Context, cfg *model.Cfg, log *logger.Log) (*Service, error) {
+	poolCfg, err := poolConfig(cfg.SIS.Adapter.Outbound.Postgres)
+	if err != nil {
+		return nil, err
+	}
+	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
 		return nil, fmt.Errorf("connect postgres: %w", err)
 	}
@@ -35,6 +42,26 @@ func New(ctx context.Context, databaseURL string, log *logger.Log) (*Service, er
 	}
 	log.Info("postgres connected and migrated")
 	return &Service{pool: pool, log: log}, nil
+}
+
+// poolConfig parses the connection string and applies the configured
+// timeouts on top of it. A zero timeout keeps what the connection string
+// (or the server) says.
+func poolConfig(cfg model.Postgres) (*pgxpool.Config, error) {
+	poolCfg, err := pgxpool.ParseConfig(cfg.ConnectionString)
+	if err != nil {
+		// pgx redacts the password in its parse errors.
+		return nil, fmt.Errorf("parse postgres connection_string: %w", err)
+	}
+	if cfg.ConnectTimeout > 0 {
+		poolCfg.ConnConfig.ConnectTimeout = cfg.ConnectTimeout
+	}
+	if cfg.StatementTimeout > 0 {
+		// A startup parameter, so it is the session default that
+		// RESET statement_timeout returns to.
+		poolCfg.ConnConfig.RuntimeParams["statement_timeout"] = strconv.FormatInt(cfg.StatementTimeout.Milliseconds(), 10)
+	}
+	return poolCfg, nil
 }
 
 // Persons returns the Person repository backed by this service.

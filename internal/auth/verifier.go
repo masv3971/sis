@@ -10,15 +10,12 @@ package auth
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
-	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -26,6 +23,7 @@ import (
 
 	coreoidc "github.com/coreos/go-oidc/v3/oidc"
 
+	"github.com/SUNET/sis/pkg/helpers"
 	"github.com/SUNET/sis/pkg/logger"
 	"github.com/SUNET/sis/pkg/model"
 )
@@ -54,11 +52,11 @@ func (c *Claims) HasScope(scope string) bool { return slices.Contains(c.Scopes, 
 
 // ErrInvalidToken is returned for any token that is not accepted, without
 // saying why to the caller (the reason is in the wrapped error, for logs).
-var ErrInvalidToken = errors.New("invalid token")
+var ErrInvalidToken = errors.New(helpers.MsgInvalidToken)
 
 // ErrIssuerUnavailable is returned when the token's issuer could not be
 // reached (discovery or keys), so the token could not be checked at all.
-var ErrIssuerUnavailable = errors.New("token issuer unavailable")
+var ErrIssuerUnavailable = errors.New(helpers.MsgIssuerUnavailable)
 
 // httpTimeout bounds every request to an issuer (discovery and JWKS), so an
 // issuer that accepts the connection but never answers cannot hang a
@@ -99,16 +97,16 @@ func New(_ context.Context, cfg *model.Cfg, log *logger.Log) (*Verifier, error) 
 	log = log.New("auth")
 	v := &Verifier{issuers: map[string]*issuer{}, log: log}
 	httpsOnly := cfg.Common.Production
-	hc, err := newHTTPClient(cfg.SIS.Auth.CAFiles, httpsOnly)
+	httpClient, err := newHTTPClient(cfg.SIS.Auth.CAFiles, httpsOnly)
 	if err != nil {
 		return nil, err
 	}
-	for _, ic := range cfg.SIS.Auth.Issuers {
-		if _, dup := v.issuers[ic.Issuer]; dup {
-			return nil, fmt.Errorf("auth: issuer %q listed twice", ic.Issuer)
+	for _, issuerCfg := range cfg.SIS.Auth.Issuers {
+		if _, dup := v.issuers[issuerCfg.Issuer]; dup {
+			return nil, fmt.Errorf("auth: issuer %q listed twice", issuerCfg.Issuer)
 		}
-		v.issuers[ic.Issuer] = &issuer{cfg: ic, httpClient: hc, httpsOnly: httpsOnly}
-		log.Info("trusting token issuer", "issuer", ic.Issuer, "audience", ic.Audience)
+		v.issuers[issuerCfg.Issuer] = &issuer{cfg: issuerCfg, httpClient: httpClient, httpsOnly: httpsOnly}
+		log.Info("trusting token issuer", "issuer", issuerCfg.Issuer, "audience", issuerCfg.Audience)
 	}
 	if len(v.issuers) == 0 {
 		log.Warn("sis.auth.issuers is empty; every API request will be rejected")
@@ -120,9 +118,9 @@ func New(_ context.Context, cfg *model.Cfg, log *logger.Log) (*Verifier, error) 
 // are trusted in addition to the system roots, e.g. a development CA. With
 // httpsOnly, redirects to anything but https are refused.
 func newHTTPClient(caFiles []string, httpsOnly bool) (*http.Client, error) {
-	hc := &http.Client{Timeout: httpTimeout}
+	httpClient := &http.Client{Timeout: httpTimeout}
 	if httpsOnly {
-		hc.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		httpClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 			if !strings.EqualFold(req.URL.Scheme, "https") {
 				return fmt.Errorf("redirect to %s: https is required in production", req.URL.Redacted())
 			}
@@ -133,25 +131,16 @@ func newHTTPClient(caFiles []string, httpsOnly bool) (*http.Client, error) {
 		}
 	}
 	if len(caFiles) == 0 {
-		return hc, nil
+		return httpClient, nil
 	}
-	pool, err := x509.SystemCertPool()
+	pool, err := helpers.CertPool(caFiles)
 	if err != nil {
-		pool = x509.NewCertPool()
+		return nil, fmt.Errorf("auth: %w", err)
 	}
-	for _, f := range caFiles {
-		pemData, err := os.ReadFile(f) //nolint:gosec // path comes from operator config
-		if err != nil {
-			return nil, fmt.Errorf("auth: read ca file: %w", err)
-		}
-		if !pool.AppendCertsFromPEM(pemData) {
-			return nil, fmt.Errorf("auth: ca file %s holds no PEM certificate", f)
-		}
-	}
-	tr := http.DefaultTransport.(*http.Transport).Clone()
-	tr.TLSClientConfig = &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}
-	hc.Transport = tr
-	return hc, nil
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.TLSClientConfig = &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}
+	httpClient.Transport = transport
+	return httpClient, nil
 }
 
 // Verify checks raw was signed by a trusted issuer and is valid now
@@ -168,21 +157,21 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (*Claims, error) {
 	// Only the issuer is read before verification, to pick which keys to
 	// check the signature with. An unknown issuer is rejected without
 	// any network call.
-	iss, ok := v.issuers[unverified.Issuer]
+	trusted, ok := v.issuers[unverified.Issuer]
 	if !ok {
 		return nil, fmt.Errorf("%w: untrusted issuer %q", ErrInvalidToken, unverified.Issuer)
 	}
-	tv, err := iss.tokenVerifier(ctx)
+	idVerifier, err := trusted.tokenVerifier(ctx)
 	if err != nil {
-		v.log.Warn("token issuer unavailable", "issuer", iss.cfg.Issuer, "err", err)
+		v.log.Warn("token issuer unavailable", "issuer", trusted.cfg.Issuer, "err", err)
 		return nil, fmt.Errorf("%w: %v", ErrIssuerUnavailable, err)
 	}
-	ctx, cancel := context.WithTimeout(coreoidc.ClientContext(ctx, iss.httpClient), httpTimeout)
+	ctx, cancel := context.WithTimeout(coreoidc.ClientContext(ctx, trusted.httpClient), httpTimeout)
 	defer cancel()
 	var fetchErr error
-	tok, err := tv.Verify(context.WithValue(ctx, fetchErrKey{}, &fetchErr), raw)
+	idToken, err := idVerifier.Verify(context.WithValue(ctx, fetchErrKey{}, &fetchErr), raw)
 	if fetchErr != nil {
-		v.log.Warn("token issuer keys unavailable", "issuer", iss.cfg.Issuer, "err", fetchErr)
+		v.log.Warn("token issuer keys unavailable", "issuer", trusted.cfg.Issuer, "err", fetchErr)
 		return nil, fmt.Errorf("%w: %v", ErrIssuerUnavailable, fetchErr)
 	}
 	if err != nil {
@@ -191,22 +180,22 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (*Claims, error) {
 	if err := checkAccessToken(raw); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidToken, err)
 	}
-	var c struct {
+	var extra struct {
 		Scope json.RawMessage `json:"scope"`
 		Typ   string          `json:"typ"`
 	}
-	if err := tok.Claims(&c); err != nil {
+	if err := idToken.Claims(&extra); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidToken, err)
 	}
 	// Keycloak marks its ID tokens with typ "ID" in the payload.
-	if strings.EqualFold(c.Typ, "ID") {
+	if strings.EqualFold(extra.Typ, "ID") {
 		return nil, fmt.Errorf("%w: an ID token is not an access token", ErrInvalidToken)
 	}
-	scopes, err := parseScope(c.Scope)
+	scopes, err := parseScope(extra.Scope)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidToken, err)
 	}
-	return &Claims{Issuer: tok.Issuer, Subject: tok.Subject, Scopes: scopes}, nil
+	return &Claims{Issuer: idToken.Issuer, Subject: idToken.Subject, Scopes: scopes}, nil
 }
 
 // tokenVerifier returns the issuer's verifier, building it on first success.
@@ -221,13 +210,13 @@ func (i *issuer) tokenVerifier(ctx context.Context) (*coreoidc.IDTokenVerifier, 
 	if i.failErr != nil && time.Since(i.failedAt) < retryDelay {
 		return nil, i.failErr
 	}
-	tv, err := i.newTokenVerifier(ctx)
+	idVerifier, err := i.newTokenVerifier(ctx)
 	if err != nil {
 		i.failErr, i.failedAt = err, time.Now()
 		return nil, err
 	}
-	i.verifier, i.failErr = tv, nil
-	return tv, nil
+	i.verifier, i.failErr = idVerifier, nil
+	return idVerifier, nil
 }
 
 func (i *issuer) newTokenVerifier(ctx context.Context) (*coreoidc.IDTokenVerifier, error) {
@@ -243,7 +232,7 @@ func (i *issuer) newTokenVerifier(ctx context.Context) (*coreoidc.IDTokenVerifie
 		}
 		// The keys decide who gets in: in production they must not come
 		// over a tamperable channel, whatever discovery advertises.
-		if i.httpsOnly && !isHTTPS(jwksURL) {
+		if i.httpsOnly && !helpers.IsHTTPS(jwksURL) {
 			return nil, fmt.Errorf("discovered jwks_uri %s: https is required in production", jwksURL)
 		}
 	}
@@ -272,8 +261,8 @@ func (k keySet) VerifySignature(ctx context.Context, jwt string) ([]byte, error)
 	payload, err := k.remote.VerifySignature(ctx, jwt)
 	// RemoteKeySet prefixes exactly its fetch failures this way.
 	if err != nil && strings.HasPrefix(err.Error(), "fetching keys") {
-		if p, ok := ctx.Value(fetchErrKey{}).(*error); ok {
-			*p = err
+		if errSlot, ok := ctx.Value(fetchErrKey{}).(*error); ok {
+			*errSlot = err
 		}
 	}
 	return payload, err
@@ -282,37 +271,32 @@ func (k keySet) VerifySignature(ctx context.Context, jwt string) ([]byte, error)
 // discoverJWKS reads jwks_uri from the issuer's discovery document. It does
 // not require the document's issuer to match: the configured issuer is
 // checked against every token's iss claim instead.
-func discoverJWKS(ctx context.Context, hc *http.Client, issuerURL string) (string, error) {
+func discoverJWKS(ctx context.Context, httpClient *http.Client, issuerURL string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, httpTimeout)
 	defer cancel()
-	u := strings.TrimSuffix(issuerURL, "/") + "/.well-known/openid-configuration"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	discoveryURL := strings.TrimSuffix(issuerURL, "/") + "/.well-known/openid-configuration"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, discoveryURL, nil)
 	if err != nil {
 		return "", err
 	}
-	resp, err := hc.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("discovery %s: %w", u, err)
+		return "", fmt.Errorf("discovery %s: %w", discoveryURL, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("discovery %s: status %d", u, resp.StatusCode)
+		return "", fmt.Errorf("discovery %s: status %d", discoveryURL, resp.StatusCode)
 	}
 	var doc struct {
 		JWKSURI string `json:"jwks_uri"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&doc); err != nil {
-		return "", fmt.Errorf("discovery %s: %w", u, err)
+		return "", fmt.Errorf("discovery %s: %w", discoveryURL, err)
 	}
 	if doc.JWKSURI == "" {
-		return "", fmt.Errorf("discovery %s: no jwks_uri", u)
+		return "", fmt.Errorf("discovery %s: no jwks_uri", discoveryURL)
 	}
 	return doc.JWKSURI, nil
-}
-
-func isHTTPS(raw string) bool {
-	u, err := url.Parse(raw)
-	return err == nil && strings.EqualFold(u.Scheme, "https")
 }
 
 // parseScope reads a scope claim: a space-separated string (RFC 9068), or a
@@ -321,9 +305,9 @@ func parseScope(raw json.RawMessage) ([]string, error) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return nil, nil
 	}
-	var s string
-	if err := json.Unmarshal(raw, &s); err == nil {
-		return strings.Fields(s), nil
+	var spaced string
+	if err := json.Unmarshal(raw, &spaced); err == nil {
+		return strings.Fields(spaced), nil
 	}
 	var list []string
 	if err := json.Unmarshal(raw, &list); err != nil {
@@ -337,21 +321,21 @@ func parseScope(raw json.RawMessage) ([]string, error) {
 // send JWT or nothing, so those pass too. Call it after the signature check.
 func checkAccessToken(raw string) error {
 	head, _, _ := strings.Cut(raw, ".")
-	b, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(head, "="))
+	headerJSON, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(head, "="))
 	if err != nil {
 		return fmt.Errorf("header: %w", err)
 	}
-	var h struct {
+	var header struct {
 		Typ string `json:"typ"`
 	}
-	if err := json.Unmarshal(b, &h); err != nil {
+	if err := json.Unmarshal(headerJSON, &header); err != nil {
 		return fmt.Errorf("header: %w", err)
 	}
-	switch strings.TrimPrefix(strings.ToLower(h.Typ), "application/") {
+	switch strings.TrimPrefix(strings.ToLower(header.Typ), "application/") {
 	case "", "jwt", "at+jwt":
 		return nil
 	}
-	return fmt.Errorf("typ %q is not an access token", h.Typ)
+	return fmt.Errorf("typ %q is not an access token", header.Typ)
 }
 
 // unverifiedPayload decodes a compact JWS payload without checking the
@@ -361,9 +345,9 @@ func unverifiedPayload(raw string, v any) error {
 	if len(parts) != 3 {
 		return errors.New("not a compact JWT")
 	}
-	b, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(parts[1], "="))
+	payloadJSON, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(parts[1], "="))
 	if err != nil {
 		return fmt.Errorf("payload: %w", err)
 	}
-	return json.Unmarshal(b, v)
+	return json.Unmarshal(payloadJSON, v)
 }

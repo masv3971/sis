@@ -19,6 +19,8 @@ import (
 // Service runs the sweep loop.
 type Service struct {
 	catalog *readmodel.Client
+	// timeout bounds one pass of the loop; 0 means no limit.
+	timeout time.Duration
 	cancel  context.CancelFunc
 	done    chan struct{}
 	log     *logger.Log
@@ -38,7 +40,7 @@ func New(ctx context.Context, cfg *model.Cfg, catalog *readmodel.Client, log *lo
 		return nil, errors.New("sweeper: sis.adapter.sweeper.interval must be positive")
 	}
 	loopCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
-	s := &Service{catalog: catalog, cancel: cancel, done: make(chan struct{}), log: log.New("sweeper")}
+	s := &Service{catalog: catalog, timeout: cfg.SIS.Adapter.Sweeper.Timeout, cancel: cancel, done: make(chan struct{}), log: log.New("sweeper")}
 	go s.loop(loopCtx, interval)
 	s.log.Info("sweeper started", "interval", interval.String())
 	return s, nil
@@ -46,49 +48,65 @@ func New(ctx context.Context, cfg *model.Cfg, catalog *readmodel.Client, log *lo
 
 func (s *Service) loop(ctx context.Context, interval time.Duration) {
 	defer close(s.done)
-	t := time.NewTicker(interval)
-	defer t.Stop()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-t.C:
-			s.Sweep(ctx)
+		case <-ticker.C:
+			s.sweepBounded(ctx)
 		}
 	}
+}
+
+// sweepBounded runs one Sweep within sis.adapter.sweeper.timeout, so a slow
+// database cannot stall the loop (and Close) indefinitely. What is left is
+// deleted by the next pass.
+func (s *Service) sweepBounded(ctx context.Context) int {
+	if s.timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, s.timeout)
+		defer cancel()
+	}
+	return s.Sweep(ctx)
 }
 
 // Sweep runs one pass over every entity type and returns the number of
 // records deleted. Failures are logged and the pass continues with the next
 // type; the next tick retries.
 func (s *Service) Sweep(ctx context.Context) int {
-	c := s.catalog
+	catalog := s.catalog
 	// Dependants first, so a pass never leaves a reference to a record it
 	// just deleted while the referrer survives until the next tick. (Records
 	// populated together share an expiry, so they normally go together.)
-	funcs := []sweepFunc{
-		{"result", c.Results.DeleteExpired},
-		{"enrollment", c.Enrollments.DeleteExpired},
-		{"person", c.Persons.DeleteExpiredPersons},
-		{"offering", c.Offerings.DeleteExpired},
-		{"program", c.Programs.DeleteExpired},
-		{"course", c.Courses.DeleteExpired},
-		{"academicSession", c.AcademicSessions.DeleteExpired},
-		{"organization", c.Organizations.DeleteExpired},
+	sweeps := []sweepFunc{
+		{"result", catalog.Results.DeleteExpired},
+		{"enrollment", catalog.Enrollments.DeleteExpired},
+		{"person", catalog.Persons.DeleteExpiredPersons},
+		{"offering", catalog.Offerings.DeleteExpired},
+		{"program", catalog.Programs.DeleteExpired},
+		{"course", catalog.Courses.DeleteExpired},
+		{"academicSession", catalog.AcademicSessions.DeleteExpired},
+		{"organization", catalog.Organizations.DeleteExpired},
 	}
 	total := 0
-	for _, f := range funcs {
-		if ctx.Err() != nil {
+	for _, sweep := range sweeps {
+		if err := ctx.Err(); err != nil {
+			// Close cancels silently; running out of time is worth a note.
+			if errors.Is(err, context.DeadlineExceeded) {
+				s.log.Warn("sweep timed out; the next one continues", "next_type", sweep.typ)
+			}
 			break
 		}
-		ids, err := f.run(ctx)
+		ids, err := sweep.run(ctx)
 		total += len(ids)
 		if err != nil {
-			s.log.Error("sweep failed", "type", f.typ, "err", err)
+			s.log.Error("sweep failed", "type", sweep.typ, "err", err)
 			continue
 		}
 		if len(ids) > 0 {
-			s.log.Info("expired records deleted", "type", f.typ, "count", len(ids))
+			s.log.Info("expired records deleted", "type", sweep.typ, "count", len(ids))
 		}
 	}
 	return total

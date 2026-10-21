@@ -1,17 +1,17 @@
 package auth_test
 
 import (
-	"context"
 	"encoding/pem"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"slices"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/SUNET/sis/internal/auth"
 	"github.com/SUNET/sis/internal/auth/authtest"
@@ -23,46 +23,39 @@ func newVerifier(t *testing.T, issuers ...model.Issuer) *auth.Verifier {
 	t.Helper()
 	cfg := &model.Cfg{}
 	cfg.SIS.Auth.Issuers = issuers
-	v, err := auth.New(context.Background(), cfg, logger.NewWithWriter("test", false, "error", io.Discard))
-	if err != nil {
-		t.Fatalf("auth.New: %v", err)
-	}
-	return v
+	verifier, err := auth.New(t.Context(), cfg, logger.NewWithWriter("test", false, "error", io.Discard))
+	require.NoError(t, err, "auth.New")
+	return verifier
 }
 
 func TestVerifyAcceptsTrustedTokens(t *testing.T) {
 	iss := authtest.NewIssuer(t)
-	v := newVerifier(t, iss.Config())
+	verifier := newVerifier(t, iss.Config())
 
-	c, err := v.Verify(context.Background(), iss.Token(t, "sunet-vc", "openid sis.read"))
-	if err != nil {
-		t.Fatalf("Verify: %v", err)
-	}
-	if c.Subject != "sunet-vc" || c.Issuer != iss.URL || !slices.Equal(c.Scopes, []string{"openid", "sis.read"}) {
-		t.Fatalf("claims = %+v", c)
-	}
-	if !c.HasScope(auth.ScopeRead) || c.HasScope(auth.ScopeWrite) {
-		t.Fatalf("HasScope wrong for %v", c.Scopes)
-	}
+	claims, err := verifier.Verify(t.Context(), iss.Token(t, "sunet-vc", "openid sis.read"))
+	require.NoError(t, err, "Verify")
+	assert.Equal(t, "sunet-vc", claims.Subject)
+	assert.Equal(t, iss.URL, claims.Issuer)
+	assert.Equal(t, []string{"openid", "sis.read"}, claims.Scopes)
+	assert.True(t, claims.HasScope(auth.ScopeRead), "HasScope(read) for %v", claims.Scopes)
+	assert.False(t, claims.HasScope(auth.ScopeWrite), "HasScope(write) for %v", claims.Scopes)
 
 	// Some issuers send scope as a JSON array.
 	now := time.Now()
-	c, err = v.Verify(context.Background(), iss.Sign(t, map[string]any{
+	claims, err = verifier.Verify(t.Context(), iss.Sign(t, map[string]any{
 		"iss": iss.URL, "sub": "liu", "aud": "sis", "exp": now.Add(time.Hour).Unix(),
 		"scope": []string{"sis.read", "sis.write"},
 	}))
-	if err != nil || !c.HasScope(auth.ScopeWrite) {
-		t.Fatalf("array scope: %+v %v", c, err)
-	}
+	require.NoError(t, err, "array scope")
+	assert.True(t, claims.HasScope(auth.ScopeWrite), "array scope: %+v", claims)
 
 	// Access token typ headers in use (RFC 9068 at+jwt, plain JWT, none).
 	for _, typ := range []string{"at+jwt", "application/at+jwt", "AT+JWT", "JWT", ""} {
-		tok := iss.SignTyp(t, typ, map[string]any{
+		token := iss.SignTyp(t, typ, map[string]any{
 			"iss": iss.URL, "sub": "x", "aud": "sis", "exp": now.Add(time.Hour).Unix(), "scope": "sis.read", "typ": "Bearer",
 		})
-		if _, err := v.Verify(context.Background(), tok); err != nil {
-			t.Fatalf("typ %q: %v", typ, err)
-		}
+		_, err := verifier.Verify(t.Context(), token)
+		require.NoError(t, err, "typ %q", typ)
 	}
 }
 
@@ -71,18 +64,18 @@ func TestVerifyAcceptsTrustedTokens(t *testing.T) {
 func TestVerifyRejects(t *testing.T) {
 	iss := authtest.NewIssuer(t)
 	other := authtest.NewIssuer(t) // a real issuer SIS does not trust
-	v := newVerifier(t, iss.Config())
+	verifier := newVerifier(t, iss.Config())
 	now := time.Now()
 	claims := func(over map[string]any) map[string]any {
-		c := map[string]any{"iss": iss.URL, "sub": "x", "aud": "sis", "exp": now.Add(time.Hour).Unix(), "scope": "sis.read"}
-		for k, val := range over {
+		base := map[string]any{"iss": iss.URL, "sub": "x", "aud": "sis", "exp": now.Add(time.Hour).Unix(), "scope": "sis.read"}
+		for key, val := range over {
 			if val == nil {
-				delete(c, k)
+				delete(base, key)
 				continue
 			}
-			c[k] = val
+			base[key] = val
 		}
-		return c
+		return base
 	}
 	cases := map[string]string{
 		"not a jwt":         "abc",
@@ -102,11 +95,10 @@ func TestVerifyRejects(t *testing.T) {
 		"keycloak id token": iss.Sign(t, claims(map[string]any{"typ": "ID"})),
 		"logout token":      iss.SignTyp(t, "logout+jwt", claims(nil)),
 	}
-	for name, tok := range cases {
+	for name, token := range cases {
 		t.Run(name, func(t *testing.T) {
-			if _, err := v.Verify(context.Background(), tok); !errors.Is(err, auth.ErrInvalidToken) {
-				t.Fatalf("expected ErrInvalidToken, got %v", err)
-			}
+			_, err := verifier.Verify(t.Context(), token)
+			assert.ErrorIs(t, err, auth.ErrInvalidToken)
 		})
 	}
 }
@@ -115,33 +107,30 @@ func TestVerifyWithoutAudienceAcceptsAnyAud(t *testing.T) {
 	iss := authtest.NewIssuer(t)
 	cfg := iss.Config()
 	cfg.Audience = ""
-	v := newVerifier(t, cfg)
+	verifier := newVerifier(t, cfg)
 	iss.Audience = "whatever"
-	if _, err := v.Verify(context.Background(), iss.Token(t, "x", "sis.read")); err != nil {
-		t.Fatalf("Verify: %v", err)
-	}
+	_, err := verifier.Verify(t.Context(), iss.Token(t, "x", "sis.read"))
+	assert.NoError(t, err, "Verify")
 }
 
 func TestVerifyMissingScopeGrantsNothing(t *testing.T) {
 	iss := authtest.NewIssuer(t)
-	v := newVerifier(t, iss.Config())
-	c, err := v.Verify(context.Background(), iss.Sign(t, map[string]any{
+	verifier := newVerifier(t, iss.Config())
+	claims, err := verifier.Verify(t.Context(), iss.Sign(t, map[string]any{
 		"iss": iss.URL, "sub": "x", "aud": "sis", "exp": time.Now().Add(time.Hour).Unix(),
 	}))
-	if err != nil || len(c.Scopes) != 0 {
-		t.Fatalf("got %+v %v", c, err)
-	}
+	require.NoError(t, err)
+	assert.Empty(t, claims.Scopes)
 }
 
 // TestVerifyTrustsSeveralIssuers checks each issuer's tokens verify against
 // its own keys.
 func TestVerifyTrustsSeveralIssuers(t *testing.T) {
-	a, b := authtest.NewIssuer(t), authtest.NewIssuer(t)
-	v := newVerifier(t, a.Config(), b.Config())
-	for _, iss := range []*authtest.Issuer{a, b} {
-		if _, err := v.Verify(context.Background(), iss.Token(t, "x", "sis.read")); err != nil {
-			t.Fatalf("%s: %v", iss.URL, err)
-		}
+	first, second := authtest.NewIssuer(t), authtest.NewIssuer(t)
+	verifier := newVerifier(t, first.Config(), second.Config())
+	for _, iss := range []*authtest.Issuer{first, second} {
+		_, err := verifier.Verify(t.Context(), iss.Token(t, "x", "sis.read"))
+		require.NoError(t, err, iss.URL)
 	}
 }
 
@@ -150,27 +139,22 @@ func TestVerifyTrustsSeveralIssuers(t *testing.T) {
 // is reused for the retry delay, and that keys are cached.
 func TestVerifyRecoversWhenIssuerComesUp(t *testing.T) {
 	iss := authtest.NewIssuer(t)
-	v := newVerifier(t, iss.Config())
-	tok := iss.Token(t, "x", "sis.read")
+	verifier := newVerifier(t, iss.Config())
+	token := iss.Token(t, "x", "sis.read")
 
 	auth.SetRetryDelay(t, time.Hour)
 	iss.Down.Store(true)
-	if _, err := v.Verify(context.Background(), tok); !errors.Is(err, auth.ErrIssuerUnavailable) {
-		t.Fatalf("down issuer: expected ErrIssuerUnavailable, got %v", err)
-	}
+	_, err := verifier.Verify(t.Context(), token)
+	require.ErrorIs(t, err, auth.ErrIssuerUnavailable, "down issuer")
 	iss.Down.Store(false)
-	if _, err := v.Verify(context.Background(), tok); !errors.Is(err, auth.ErrIssuerUnavailable) {
-		t.Fatalf("within retry delay: expected the cached failure, got %v", err)
-	}
+	_, err = verifier.Verify(t.Context(), token)
+	require.ErrorIs(t, err, auth.ErrIssuerUnavailable, "within retry delay: expected the cached failure")
 	auth.SetRetryDelay(t, 0)
 	for range 3 {
-		if _, err := v.Verify(context.Background(), tok); err != nil {
-			t.Fatalf("after recovery: %v", err)
-		}
+		_, err := verifier.Verify(t.Context(), token)
+		require.NoError(t, err, "after recovery")
 	}
-	if hits := iss.JWKSHits.Load(); hits != 1 {
-		t.Fatalf("JWKS fetched %d times, want 1 (cached)", hits)
-	}
+	assert.EqualValues(t, 1, iss.JWKSHits.Load(), "JWKS fetches, want 1 (cached)")
 }
 
 // TestVerifyKeysUnavailable checks a JWKS endpoint that fails is reported as
@@ -179,11 +163,10 @@ func TestVerifyKeysUnavailable(t *testing.T) {
 	iss := authtest.NewIssuer(t)
 	cfg := iss.Config()
 	cfg.JWKSURL = iss.URL + "/certs"
-	v := newVerifier(t, cfg)
+	verifier := newVerifier(t, cfg)
 	iss.Down.Store(true)
-	if _, err := v.Verify(context.Background(), iss.Token(t, "x", "sis.read")); !errors.Is(err, auth.ErrIssuerUnavailable) {
-		t.Fatalf("expected ErrIssuerUnavailable, got %v", err)
-	}
+	_, err := verifier.Verify(t.Context(), iss.Token(t, "x", "sis.read"))
+	assert.ErrorIs(t, err, auth.ErrIssuerUnavailable)
 }
 
 // TestVerifyUsesConfiguredJWKSURL checks jwks_url skips discovery, for when
@@ -193,13 +176,12 @@ func TestVerifyUsesConfiguredJWKSURL(t *testing.T) {
 	cfg := iss.Config()
 	cfg.JWKSURL = iss.URL + "/certs"
 	cfg.Issuer = "https://issuer.example/realms/sis" // not reachable: discovery would fail
-	v := newVerifier(t, cfg)
-	tok := iss.Sign(t, map[string]any{
+	verifier := newVerifier(t, cfg)
+	token := iss.Sign(t, map[string]any{
 		"iss": cfg.Issuer, "sub": "x", "aud": "sis", "exp": time.Now().Add(time.Hour).Unix(), "scope": "sis.read",
 	})
-	if _, err := v.Verify(context.Background(), tok); err != nil {
-		t.Fatalf("Verify: %v", err)
-	}
+	_, err := verifier.Verify(t.Context(), token)
+	assert.NoError(t, err, "Verify")
 }
 
 // TestVerifyTrustsCAFiles checks an issuer served over https with a
@@ -207,35 +189,29 @@ func TestVerifyUsesConfiguredJWKSURL(t *testing.T) {
 // sis.auth.ca_files.
 func TestVerifyTrustsCAFiles(t *testing.T) {
 	iss := authtest.NewTLSIssuer(t)
-	tok := iss.Token(t, "x", "sis.read")
+	token := iss.Token(t, "x", "sis.read")
 
-	if _, err := newVerifier(t, iss.Config()).Verify(context.Background(), tok); err == nil {
-		t.Fatal("expected failure: the issuer's CA is not trusted")
-	}
+	_, err := newVerifier(t, iss.Config()).Verify(t.Context(), token)
+	require.Error(t, err, "expected failure: the issuer's CA is not trusted")
 
 	cfg := &model.Cfg{}
 	cfg.SIS.Auth.Issuers = []model.Issuer{iss.Config()}
 	cfg.SIS.Auth.CAFiles = []string{iss.CAFile(t)}
-	v, err := auth.New(context.Background(), cfg, logger.NewWithWriter("test", false, "error", io.Discard))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := v.Verify(context.Background(), tok); err != nil {
-		t.Fatalf("with ca_files: %v", err)
-	}
+	verifier, err := auth.New(t.Context(), cfg, logger.NewWithWriter("test", false, "error", io.Discard))
+	require.NoError(t, err)
+	_, err = verifier.Verify(t.Context(), token)
+	require.NoError(t, err, "with ca_files")
 
 	cfg.SIS.Auth.CAFiles = []string{"/no/such/ca.pem"}
-	if _, err := auth.New(context.Background(), cfg, logger.NewWithWriter("test", false, "error", io.Discard)); err == nil {
-		t.Fatal("expected an error for a missing ca file")
-	}
+	_, err = auth.New(t.Context(), cfg, logger.NewWithWriter("test", false, "error", io.Discard))
+	assert.Error(t, err, "expected an error for a missing ca file")
 }
 
 func TestNewRejectsDuplicateIssuer(t *testing.T) {
 	cfg := &model.Cfg{}
 	cfg.SIS.Auth.Issuers = []model.Issuer{{Issuer: "https://a"}, {Issuer: "https://a"}}
-	if _, err := auth.New(context.Background(), cfg, logger.NewWithWriter("test", false, "error", io.Discard)); err == nil {
-		t.Fatal("expected duplicate issuer error")
-	}
+	_, err := auth.New(t.Context(), cfg, logger.NewWithWriter("test", false, "error", io.Discard))
+	assert.Error(t, err, "expected duplicate issuer error")
 }
 
 // TestVerifyProductionRequiresHTTPSKeys checks that in production signing
@@ -246,48 +222,36 @@ func TestVerifyProductionRequiresHTTPSKeys(t *testing.T) {
 	keys := authtest.NewIssuer(t) // http: serves the keys the tokens are signed with
 	exp := time.Now().Add(time.Hour).Unix()
 
-	verify := func(t *testing.T, production bool, ic model.Issuer, caFile, tok string) error {
+	verify := func(t *testing.T, production bool, issuer model.Issuer, caFile, token string) error {
 		t.Helper()
 		cfg := &model.Cfg{}
 		cfg.Common.Production = production
-		cfg.SIS.Auth.Issuers = []model.Issuer{ic}
+		cfg.SIS.Auth.Issuers = []model.Issuer{issuer}
 		cfg.SIS.Auth.CAFiles = []string{caFile}
-		v, err := auth.New(context.Background(), cfg, logger.NewWithWriter("test", false, "error", io.Discard))
-		if err != nil {
-			t.Fatal(err)
-		}
-		_, err = v.Verify(context.Background(), tok)
+		verifier, err := auth.New(t.Context(), cfg, logger.NewWithWriter("test", false, "error", io.Discard))
+		require.NoError(t, err)
+		_, err = verifier.Verify(t.Context(), token)
 		return err
 	}
 
 	t.Run("discovered http jwks_uri", func(t *testing.T) {
 		iss := authtest.NewTLSIssuer(t)
 		iss.JWKSURI = keys.URL + "/certs"
-		tok := keys.Sign(t, map[string]any{"iss": iss.URL, "sub": "x", "aud": "sis", "exp": exp, "scope": "sis.read"})
+		token := keys.Sign(t, map[string]any{"iss": iss.URL, "sub": "x", "aud": "sis", "exp": exp, "scope": "sis.read"})
 		ca := iss.CAFile(t)
-		if err := verify(t, false, iss.Config(), ca, tok); err != nil {
-			t.Fatalf("development: %v", err)
-		}
-		if err := verify(t, true, iss.Config(), ca, tok); !errors.Is(err, auth.ErrIssuerUnavailable) {
-			t.Fatalf("production: expected ErrIssuerUnavailable, got %v", err)
-		}
+		require.NoError(t, verify(t, false, iss.Config(), ca, token), "development")
+		require.ErrorIs(t, verify(t, true, iss.Config(), ca, token), auth.ErrIssuerUnavailable, "production")
 	})
 
 	t.Run("redirect to http", func(t *testing.T) {
 		redir := httptest.NewTLSServer(http.RedirectHandler(keys.URL+"/certs", http.StatusFound))
 		t.Cleanup(redir.Close)
 		ca := filepath.Join(t.TempDir(), "ca.pem")
-		if err := os.WriteFile(ca, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: redir.Certificate().Raw}), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		ic := keys.Config()
-		ic.JWKSURL = redir.URL + "/certs"
-		tok := keys.Token(t, "x", "sis.read")
-		if err := verify(t, false, ic, ca, tok); err != nil {
-			t.Fatalf("development: %v", err)
-		}
-		if err := verify(t, true, ic, ca, tok); !errors.Is(err, auth.ErrIssuerUnavailable) {
-			t.Fatalf("production: expected ErrIssuerUnavailable, got %v", err)
-		}
+		require.NoError(t, os.WriteFile(ca, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: redir.Certificate().Raw}), 0o600))
+		issuer := keys.Config()
+		issuer.JWKSURL = redir.URL + "/certs"
+		token := keys.Token(t, "x", "sis.read")
+		require.NoError(t, verify(t, false, issuer, ca, token), "development")
+		require.ErrorIs(t, verify(t, true, issuer, ca, token), auth.ErrIssuerUnavailable, "production")
 	})
 }

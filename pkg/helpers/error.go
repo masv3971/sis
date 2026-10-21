@@ -7,6 +7,7 @@ package helpers
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,9 +27,11 @@ const (
 	ErrValidation   = "validation_error"
 	ErrBadRequest   = "invalid_request"
 	ErrUnauthorized = "unauthorized"
+	ErrForbidden    = "forbidden"
 	ErrNotFound     = "not_found"
 	ErrConflict     = "conflict"
 	ErrTooLarge     = "request_too_large"
+	ErrUnavailable  = "unavailable"
 	ErrInternal     = "internal_server_error"
 )
 
@@ -97,12 +100,16 @@ func (e *Error) Status() int {
 		return http.StatusBadRequest
 	case ErrUnauthorized:
 		return http.StatusUnauthorized
+	case ErrForbidden:
+		return http.StatusForbidden
 	case ErrNotFound:
 		return http.StatusNotFound
 	case ErrConflict:
 		return http.StatusConflict
 	case ErrTooLarge:
 		return http.StatusRequestEntityTooLarge
+	case ErrUnavailable:
+		return http.StatusServiceUnavailable
 	default:
 		return http.StatusInternalServerError
 	}
@@ -158,6 +165,10 @@ func NewErrorFromError(err error) *Error {
 		return &Error{Title: ErrNotFound, HTTPStatus: http.StatusNotFound}
 	case errors.Is(err, domain.ErrConflict):
 		return &Error{Title: ErrConflict, HTTPStatus: http.StatusConflict}
+	case errors.Is(err, context.DeadlineExceeded):
+		// The operation's deadline (request, command) passed; retrying may
+		// succeed, so 503 rather than 500.
+		return &Error{Title: ErrUnavailable, Err: MsgTimedOut, HTTPStatus: http.StatusServiceUnavailable}
 	}
 
 	return &Error{Title: ErrInternal, Err: err.Error(), HTTPStatus: http.StatusInternalServerError, unclassified: true}
@@ -204,8 +215,8 @@ func DecodeJSON(body []byte, v any) error {
 // decodeError classifies a body read or decode failure, which is always the
 // client's fault (400).
 func decodeError(err error) error {
-	if e := NewErrorFromError(err); !e.IsUnclassified() {
-		return e
+	if apiErr := NewErrorFromError(err); !apiErr.IsUnclassified() {
+		return apiErr
 	}
 	// The decoder's own messages name the offending field or value and carry
 	// no server internals, so they are safe to return.
@@ -248,27 +259,27 @@ func decodeSingleJSON(body []byte, v any) error {
 // generic title. Before redacting, the original error is attached to the gin
 // context (gc.Errors) so the request logger records it server-side; otherwise
 // a database failure would surface only as an unexplained 500.
-func WriteError(c *gin.Context, err error) {
-	e := NewErrorFromError(err)
-	if e == nil {
-		e = NewErrorWithStatus(ErrInternal, http.StatusInternalServerError)
+func WriteError(gc *gin.Context, err error) {
+	apiErr := NewErrorFromError(err)
+	if apiErr == nil {
+		apiErr = NewErrorWithStatus(ErrInternal, http.StatusInternalServerError)
 	}
-	if e.IsUnclassified() {
-		_ = c.Error(err)
-		e = NewErrorWithStatus(e.Title, e.Status())
+	if apiErr.IsUnclassified() {
+		_ = gc.Error(err)
+		apiErr = NewErrorWithStatus(apiErr.Title, apiErr.Status())
 	}
-	c.JSON(e.Status(), ErrorResponse{Error: e})
+	gc.JSON(apiErr.Status(), ErrorResponse{Error: apiErr})
 }
 
 // validationDetails renders validator field failures as structured, safe detail.
 func validationDetails(fieldErrors validator.ValidationErrors) []map[string]any {
 	out := make([]map[string]any, 0, len(fieldErrors))
-	for _, e := range fieldErrors {
+	for _, fieldErr := range fieldErrors {
 		out = append(out, map[string]any{
-			"field":      e.Field(),
-			"namespace":  e.Namespace(),
-			"validation": e.Tag(),
-			"param":      e.Param(),
+			"field":      fieldErr.Field(),
+			"namespace":  fieldErr.Namespace(),
+			"validation": fieldErr.Tag(),
+			"param":      fieldErr.Param(),
 		})
 	}
 	return out

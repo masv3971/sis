@@ -7,6 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/SUNET/sis/internal/core/port"
 	"github.com/SUNET/sis/pkg/logger"
 	"github.com/SUNET/sis/pkg/model"
@@ -23,36 +26,25 @@ func TestNewMemorySmoke(t *testing.T) {
 	}}
 	log := logger.NewWithWriter("test", false, "error", io.Discard)
 
-	s, err := New(ctx, cfg, log)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	if s.outbound.pg != nil {
-		t.Fatal("empty connection_string must select the memory store")
-	}
+	svc, err := New(ctx, cfg, log)
+	require.NoError(t, err, "New")
+	require.Nil(t, svc.outbound.pg, "empty connection_string must select the memory store")
 
-	page, err := s.inbound.readmodel.Persons.ListPersons(ctx, port.ListParams{Limit: 1})
-	if err != nil || page.Total == 0 {
-		t.Fatalf("imported persons = %d, err %v; want the file import in the catalog", page.Total, err)
-	}
+	page, err := svc.inbound.readmodel.Persons.ListPersons(ctx, port.ListParams{Limit: 1})
+	require.NoError(t, err, "imported persons")
+	require.NotZero(t, page.Total, "want the file import in the catalog")
 
-	url := "http://" + s.inbound.http.Addr().String() + "/healthz"
+	url := "http://" + svc.inbound.http.Addr().String() + "/healthz"
 	resp, err := http.Get(url)
-	if err != nil {
-		t.Fatalf("GET /healthz: %v", err)
-	}
+	require.NoError(t, err, "GET /healthz")
 	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("GET /healthz = %d", resp.StatusCode)
-	}
+	require.Equal(t, http.StatusOK, resp.StatusCode, "GET /healthz")
 
 	closeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	if err := s.Close(closeCtx); err != nil {
-		t.Fatalf("Close: %v", err)
-	}
+	require.NoError(t, svc.Close(closeCtx), "Close")
 	if resp, err := http.Get(url); err == nil {
 		resp.Body.Close()
-		t.Fatal("server still answering after Close")
+		assert.Fail(t, "server still answering after Close")
 	}
 }

@@ -64,23 +64,23 @@ type Service struct {
 // is down is retried with backoff rather than failing startup. Settings
 // errors (URL, CA files) fail New.
 func New(ctx context.Context, cfg *model.Cfg, verifier *auth.Verifier, commands *command.Client, catalog *readmodel.Client, log *logger.Log) (*Service, error) {
-	ac := cfg.SIS.Adapter.Inbound.AMQPAPI
-	dial, err := newDialer(ac)
+	amqpCfg := cfg.SIS.Adapter.Inbound.AMQPAPI
+	dial, err := newDialer(amqpCfg)
 	if err != nil {
 		return nil, err
 	}
 	log = log.New("amqpapi")
-	if cfg.Common.Production && len(ac.Scopes) > 0 {
-		log.Warn("messages without a token are trusted with sis.adapter.inbound.amqpapi.scopes", "scopes", ac.Scopes)
+	if cfg.Common.Production && len(amqpCfg.Scopes) > 0 {
+		log.Warn("messages without a token are trusted with sis.adapter.inbound.amqpapi.scopes", "scopes", amqpCfg.Scopes)
 	}
-	return start(ctx, ac, verifier, newCommandTable(commands, catalog), dial, log), nil
+	return start(ctx, amqpCfg, verifier, newCommandTable(commands, catalog), dial, log), nil
 }
 
-func start(ctx context.Context, ac model.AMQPAPI, verifier tokenVerifier, commands map[string]handlerFunc, dial dialFunc, log *logger.Log) *Service {
+func start(ctx context.Context, cfg model.AMQPAPI, verifier tokenVerifier, commands map[string]handlerFunc, dial dialFunc, log *logger.Log) *Service {
 	workCtx, abort := context.WithCancel(context.WithoutCancel(ctx))
 	recvCtx, stopRecv := context.WithCancel(workCtx)
 	s := &Service{
-		cfg: ac, verifier: verifier, commands: commands, dial: dial,
+		cfg: cfg, verifier: verifier, commands: commands, dial: dial,
 		stopRecv: stopRecv, abort: abort, done: make(chan struct{}), log: log,
 	}
 	go s.run(recvCtx, workCtx)
@@ -109,15 +109,15 @@ func (s *Service) run(recvCtx, workCtx context.Context) {
 	defer close(s.done)
 	delay := minRetryDelay
 	for recvCtx.Err() == nil {
-		l, err := s.dial(recvCtx)
+		receiver, err := s.dial(recvCtx)
 		if err == nil {
 			s.log.Info("consuming commands", "address", s.cfg.Address, "prefetch", s.cfg.Prefetch)
-			up := time.Now()
-			err = s.consume(recvCtx, workCtx, l)
+			linkUpAt := time.Now()
+			err = s.consume(recvCtx, workCtx, receiver)
 			closeCtx, cancel := context.WithTimeout(context.WithoutCancel(workCtx), settleTimeout)
-			_ = l.Close(closeCtx)
+			_ = receiver.Close(closeCtx)
 			cancel()
-			if time.Since(up) >= stableLink {
+			if time.Since(linkUpAt) >= stableLink {
 				delay = minRetryDelay
 			}
 		}
@@ -140,7 +140,7 @@ func (s *Service) run(recvCtx, workCtx context.Context) {
 // and the link without that credit, so the link is given up: run closes it
 // and reconnects, and the broker redelivers what was not settled. A message
 // received after the stop is not dispatched; closing the link releases it.
-func (s *Service) consume(recvCtx, workCtx context.Context, l link) error {
+func (s *Service) consume(recvCtx, workCtx context.Context, receiver link) error {
 	linkCtx, fail := context.WithCancelCause(recvCtx)
 	defer fail(nil)
 	var wg sync.WaitGroup
@@ -157,7 +157,7 @@ func (s *Service) consume(recvCtx, workCtx context.Context, l link) error {
 		case <-linkCtx.Done():
 			return context.Cause(linkCtx)
 		}
-		msg, err := l.Receive(linkCtx, nil)
+		msg, err := receiver.Receive(linkCtx, nil)
 		if linkCtx.Err() != nil {
 			return context.Cause(linkCtx)
 		}
@@ -166,7 +166,7 @@ func (s *Service) consume(recvCtx, workCtx context.Context, l link) error {
 		}
 		wg.Go(func() {
 			defer func() { <-slots }()
-			if err := s.process(workCtx, l, msg); err != nil {
+			if err := s.process(workCtx, receiver, msg); err != nil {
 				fail(err)
 			}
 		})
@@ -175,27 +175,27 @@ func (s *Service) consume(recvCtx, workCtx context.Context, l link) error {
 
 // process runs one command and settles its message. It returns the error of
 // a failed settlement.
-func (s *Service) process(ctx context.Context, l link, msg *amqp.Message) error {
+func (s *Service) process(ctx context.Context, receiver link, msg *amqp.Message) error {
 	began := time.Now()
-	err := s.handle(ctx, msg)
-	e := helpers.NewErrorFromError(err)
+	err := s.runCommand(ctx, msg)
+	apiErr := helpers.NewErrorFromError(err)
 
 	settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), settleTimeout)
 	defer cancel()
 	var outcome string
 	var settleErr error
-	var rej *amqp.Error
+	var rejectErr *amqp.Error
 	switch {
-	case e == nil:
+	case apiErr == nil:
 		outcome = "accepted"
-		settleErr = l.AcceptMessage(settleCtx, msg)
-	case e.Status() >= http.StatusInternalServerError:
+		settleErr = receiver.AcceptMessage(settleCtx, msg)
+	case apiErr.Status() >= http.StatusInternalServerError:
 		outcome = "retry"
-		settleErr = l.ModifyMessage(settleCtx, msg, &amqp.ModifyMessageOptions{DeliveryFailed: true})
+		settleErr = receiver.ModifyMessage(settleCtx, msg, &amqp.ModifyMessageOptions{DeliveryFailed: true})
 	default:
 		outcome = "rejected"
-		rej = rejection(e)
-		settleErr = l.RejectMessage(settleCtx, msg, rej)
+		rejectErr = rejection(apiErr)
+		settleErr = receiver.RejectMessage(settleCtx, msg, rejectErr)
 	}
 
 	props := msg.Properties
@@ -216,37 +216,50 @@ func (s *Service) process(ctx context.Context, l link, msg *amqp.Message) error 
 	case outcome == "rejected":
 		// The same bounded description the broker got, so the log names
 		// the field and the reason (e.g. an invalid ttl), not just a title.
-		s.log.Warn("command rejected", append(attrs, "condition", string(rej.Condition), "error", rej.Description)...)
+		s.log.Warn("command rejected", append(attrs, "condition", string(rejectErr.Condition), "error", rejectErr.Description)...)
 	default:
 		s.log.Info("command", attrs...)
 	}
 	return nil
 }
 
+// runCommand runs one command within sis.adapter.inbound.amqpapi.command_timeout,
+// so a stuck command cannot hold a prefetch slot until shutdown. Running past
+// it is a server-side failure (503): the message is redelivered. Zero means
+// no limit.
+func (s *Service) runCommand(ctx context.Context, msg *amqp.Message) error {
+	if s.cfg.CommandTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, s.cfg.CommandTimeout)
+		defer cancel()
+	}
+	return s.handle(ctx, msg)
+}
+
 // rejection describes a client error for the dead-lettered message. The
 // detail of a classified *helpers.Error is safe to return. A description
 // above maxRejectionBytes (e.g. a decoder error quoting a huge field name)
 // keeps only the title.
-func rejection(e *helpers.Error) *amqp.Error {
-	desc, err := json.Marshal(e)
-	if err != nil || len(desc) > maxRejectionBytes {
-		desc, err = json.Marshal(&helpers.Error{Title: e.Title, Err: "details omitted: too long"})
-		if err != nil || len(desc) > maxRejectionBytes {
-			desc = []byte(`{"title":"rejected"}`)
+func rejection(apiErr *helpers.Error) *amqp.Error {
+	description, err := json.Marshal(apiErr)
+	if err != nil || len(description) > maxRejectionBytes {
+		description, err = json.Marshal(&helpers.Error{Title: apiErr.Title, Err: "details omitted: too long"})
+		if err != nil || len(description) > maxRejectionBytes {
+			description = []byte(`{"title":"rejected"}`)
 		}
 	}
-	cond := amqp.ErrCondInvalidField
-	switch e.Status() {
+	condition := amqp.ErrCondInvalidField
+	switch apiErr.Status() {
 	case http.StatusUnauthorized, http.StatusForbidden:
-		cond = amqp.ErrCondUnauthorizedAccess
+		condition = amqp.ErrCondUnauthorizedAccess
 	case http.StatusNotFound:
-		cond = amqp.ErrCondNotFound
+		condition = amqp.ErrCondNotFound
 	case http.StatusConflict:
-		cond = amqp.ErrCondPreconditionFailed
+		condition = amqp.ErrCondPreconditionFailed
 	case http.StatusRequestEntityTooLarge:
-		cond = amqp.ErrCondMessageSizeExceeded
+		condition = amqp.ErrCondMessageSizeExceeded
 	}
-	return &amqp.Error{Condition: cond, Description: string(desc)}
+	return &amqp.Error{Condition: condition, Description: string(description)}
 }
 
 // subjectOf returns the command name: the subject property, or the type
@@ -255,8 +268,8 @@ func subjectOf(msg *amqp.Message) string {
 	if msg.Properties != nil && msg.Properties.Subject != nil {
 		return *msg.Properties.Subject
 	}
-	if t, ok := msg.Annotations["x-basic-type"].(string); ok {
-		return t
+	if basicType, ok := msg.Annotations["x-basic-type"].(string); ok {
+		return basicType
 	}
 	return ""
 }

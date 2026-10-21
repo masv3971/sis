@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/SUNET/sis/pkg/helpers"
 	"github.com/SUNET/sis/pkg/logger"
 )
 
@@ -81,13 +82,13 @@ func mountSPA(engine *gin.Engine, root string, log *logger.Log) error {
 		// Only GET/HEAD can serve the SPA; other methods on unknown paths
 		// stay 404 so misdirected writes do not get a 200 HTML.
 		if gc.Request.Method != http.MethodGet && gc.Request.Method != http.MethodHead {
-			gc.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
+			gc.JSON(http.StatusNotFound, gin.H{"error": helpers.ErrNotFound})
 			return
 		}
 		// API paths that fall through to NoRoute are honest-to-goodness 404s;
 		// returning HTML there would mask routing bugs.
 		if isAPIPath(gc.Request.URL.Path) {
-			gc.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
+			gc.JSON(http.StatusNotFound, gin.H{"error": helpers.ErrNotFound})
 			return
 		}
 		// A missing bundle file is a plain 404 so the browser reports it

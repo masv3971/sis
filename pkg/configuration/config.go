@@ -62,16 +62,16 @@ func New(_ context.Context, _ string) (*model.Cfg, error) {
 // Otherwise the user signs in successfully and every API call then fails
 // with 401.
 func checkWebLogin(cfg *model.Cfg) error {
-	web := cfg.SIS.Adapter.Inbound.AuthAPI.Issuer
-	if web == "" {
+	webIssuer := cfg.SIS.Adapter.Inbound.AuthAPI.Issuer
+	if webIssuer == "" {
 		return nil
 	}
-	for _, iss := range cfg.SIS.Auth.Issuers {
-		if iss.Issuer == web {
+	for _, issuer := range cfg.SIS.Auth.Issuers {
+		if issuer.Issuer == webIssuer {
 			return nil
 		}
 	}
-	return fmt.Errorf("sis.adapter.inbound.authapi.issuer %q is not in sis.auth.issuers", web)
+	return fmt.Errorf("sis.adapter.inbound.authapi.issuer %q is not in sis.auth.issuers", webIssuer)
 }
 
 // resolveImportPaths makes relative file paths in the config (import files,
@@ -79,9 +79,9 @@ func checkWebLogin(cfg *model.Cfg) error {
 // directory, so they do not depend on the working directory SIS is started
 // from.
 func resolveImportPaths(cfg *model.Cfg, dir string) {
-	resolve := func(p *string) {
-		if *p != "" && !filepath.IsAbs(*p) {
-			*p = filepath.Join(dir, *p)
+	resolve := func(path *string) {
+		if *path != "" && !filepath.IsAbs(*path) {
+			*path = filepath.Join(dir, *path)
 		}
 	}
 	for i := range cfg.SIS.FileImport.Files {
@@ -145,27 +145,22 @@ func checkProduction(cfg *model.Cfg) error {
 	if !cfg.Common.Production {
 		return nil
 	}
-	for i, iss := range cfg.SIS.Auth.Issuers {
+	for i, issuer := range cfg.SIS.Auth.Issuers {
 		field := fmt.Sprintf("sis.auth.issuers[%d]", i)
-		if !isHTTPS(iss.Issuer) {
+		if !helpers.IsHTTPS(issuer.Issuer) {
 			return fmt.Errorf("%s.issuer must use https when common.production is true", field)
 		}
-		if iss.JWKSURL != "" && !isHTTPS(iss.JWKSURL) {
+		if issuer.JWKSURL != "" && !helpers.IsHTTPS(issuer.JWKSURL) {
 			return fmt.Errorf("%s.jwks_url must use https when common.production is true", field)
 		}
-		if iss.Audience == "" {
+		if issuer.Audience == "" {
 			return fmt.Errorf("%s.audience is required when common.production is true", field)
 		}
 	}
-	if a := cfg.SIS.Adapter.Inbound.AMQPAPI; a.Enabled {
-		if u, err := url.Parse(a.URL); err != nil || !strings.EqualFold(u.Scheme, "amqps") {
+	if amqpCfg := cfg.SIS.Adapter.Inbound.AMQPAPI; amqpCfg.Enabled {
+		if parsed, err := url.Parse(amqpCfg.URL); err != nil || !strings.EqualFold(parsed.Scheme, "amqps") {
 			return errors.New("sis.adapter.inbound.amqpapi.url must use amqps when common.production is true")
 		}
 	}
 	return nil
-}
-
-func isHTTPS(raw string) bool {
-	u, err := url.Parse(raw)
-	return err == nil && strings.EqualFold(u.Scheme, "https")
 }

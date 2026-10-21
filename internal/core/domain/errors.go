@@ -25,3 +25,14 @@ type ValidationError struct {
 func (e *ValidationError) Error() string {
 	return fmt.Sprintf("validation: %s: %s", e.Field, e.Msg)
 }
+
+// Messages for ValidationError.Msg that recur across entities.
+const (
+	MsgRequired          = "required"
+	MsgRequiredForUpsert = "required for upsert"
+)
+
+// Required reports a missing mandatory field.
+func Required(field string) *ValidationError {
+	return &ValidationError{Field: field, Msg: MsgRequired}
+}
