@@ -23,64 +23,64 @@ func MergeExpiry(stored, incoming *time.Time) *time.Time {
 
 // CreatePerson validates, assigns identity/timestamps, persists, and emits an
 // event. ExpiresAt is server-managed: the caller's value is dropped.
-func (s *Service) CreatePerson(ctx context.Context, p domain.Person) (domain.Person, error) {
-	p.ExpiresAt = nil
-	return s.createPerson(ctx, p)
+func (s *Service) CreatePerson(ctx context.Context, person domain.Person) (domain.Person, error) {
+	person.ExpiresAt = nil
+	return s.createPerson(ctx, person)
 }
 
-func (s *Service) createPerson(ctx context.Context, p domain.Person) (domain.Person, error) {
-	if err := p.Validate(); err != nil {
+func (s *Service) createPerson(ctx context.Context, person domain.Person) (domain.Person, error) {
+	if err := person.Validate(); err != nil {
 		return domain.Person{}, err
 	}
 	now := s.now().UTC()
-	if p.ID == "" {
-		p.ID = s.newID()
+	if person.ID == "" {
+		person.ID = s.newID()
 	}
-	if p.SourcedID == "" {
-		p.SourcedID = p.ID
+	if person.SourcedID == "" {
+		person.SourcedID = person.ID
 	}
-	p.CreatedAt = now
-	p.UpdatedAt = now
-	if err := s.persons.Create(ctx, p); err != nil {
+	person.CreatedAt = now
+	person.UpdatedAt = now
+	if err := s.persons.Create(ctx, person); err != nil {
 		return domain.Person{}, err
 	}
-	s.emit(ctx, "person.created", "person", p.ID, p)
-	return p, nil
+	s.emit(ctx, "person.created", "person", person.ID, person)
+	return person, nil
 }
 
 // UpdatePerson validates and replaces an existing person, preserving its
 // creation time and expiry (server-managed), and emits an event.
-func (s *Service) UpdatePerson(ctx context.Context, p domain.Person) (domain.Person, error) {
-	return s.updatePerson(ctx, p, func(existing domain.Person) *time.Time { return existing.ExpiresAt })
+func (s *Service) UpdatePerson(ctx context.Context, person domain.Person) (domain.Person, error) {
+	return s.updatePerson(ctx, person, func(existing domain.Person) *time.Time { return existing.ExpiresAt })
 }
 
-func (s *Service) updatePerson(ctx context.Context, p domain.Person, expiry func(existing domain.Person) *time.Time) (domain.Person, error) {
-	if p.ID == "" {
-		return domain.Person{}, &domain.ValidationError{Field: "id", Msg: "required"}
+func (s *Service) updatePerson(ctx context.Context, person domain.Person, expiry func(existing domain.Person) *time.Time) (domain.Person, error) {
+	if person.ID == "" {
+		return domain.Person{}, domain.Required("id")
 	}
-	if err := p.Validate(); err != nil {
+	if err := person.Validate(); err != nil {
 		return domain.Person{}, err
 	}
 	// Conditional write with re-read on domain.ErrStale; see Resource.update.
-	sourcedID := p.SourcedID
+	sourcedID := person.SourcedID
 	for attempt := 1; ; attempt++ {
-		existing, err := s.persons.Get(ctx, p.ID)
+		existing, err := s.persons.Get(ctx, person.ID)
 		if err != nil {
 			return domain.Person{}, err
 		}
-		p.ExpiresAt = expiry(existing)
-		p.CreatedAt = existing.CreatedAt
-		p.UpdatedAt = s.now().UTC()
-		p.SourcedID = cmp.Or(sourcedID, existing.SourcedID)
-		err = s.persons.Update(ctx, p, existing.ExpiresAt)
+		person.ExpiresAt = expiry(existing)
+		person.CreatedAt = existing.CreatedAt
+		person.UpdatedAt = s.now().UTC()
+		person.SourcedID = cmp.Or(sourcedID, existing.SourcedID)
+		err = s.persons.Update(ctx, person, existing.ExpiresAt)
 		if errors.Is(err, domain.ErrStale) && attempt < maxStaleRetries {
 			continue
 		}
 		if err != nil {
 			return domain.Person{}, err
 		}
-		s.emit(ctx, "person.updated", "person", p.ID, p)
-		return p, nil
+		s.emit(ctx, "person.updated", "person", person.ID, person)
+		return person, nil
 	}
 }
 
@@ -100,42 +100,42 @@ const maxStaleRetries = 5
 // and both calls succeed with the same id.
 //
 // The result never expires; see UpsertPersonWithExpiry.
-func (s *Service) UpsertPersonBySourcedID(ctx context.Context, p domain.Person) (domain.Person, error) {
-	out, _, err := s.UpsertPersonWithExpiry(ctx, p, nil)
+func (s *Service) UpsertPersonBySourcedID(ctx context.Context, person domain.Person) (domain.Person, error) {
+	out, _, err := s.UpsertPersonWithExpiry(ctx, person, nil)
 	return out, err
 }
 
 // UpsertPersonWithExpiry is UpsertPersonBySourcedID for time-limited data,
 // with the expiry rules of Resource.UpsertWithExpiry. created reports
 // whether a new person was stored.
-func (s *Service) UpsertPersonWithExpiry(ctx context.Context, p domain.Person, expiresAt *time.Time) (out domain.Person, created bool, err error) {
-	if p.SourcedID == "" {
-		return domain.Person{}, false, &domain.ValidationError{Field: "sourcedId", Msg: "required for upsert"}
+func (s *Service) UpsertPersonWithExpiry(ctx context.Context, person domain.Person, expiresAt *time.Time) (out domain.Person, created bool, err error) {
+	if person.SourcedID == "" {
+		return domain.Person{}, false, &domain.ValidationError{Field: "sourcedId", Msg: domain.MsgRequiredForUpsert}
 	}
 	merge := func(existing domain.Person) *time.Time { return MergeExpiry(existing.ExpiresAt, expiresAt) }
-	existing, err := s.persons.GetBySourcedID(ctx, p.SourcedID)
+	existing, err := s.persons.GetBySourcedID(ctx, person.SourcedID)
 	switch {
 	case err == nil:
-		p.ID = existing.ID
-		out, err = s.updatePerson(ctx, p, merge)
+		person.ID = existing.ID
+		out, err = s.updatePerson(ctx, person, merge)
 		return out, false, err
 	case !errors.Is(err, domain.ErrNotFound):
 		return domain.Person{}, false, err
 	}
 
-	p.ExpiresAt = expiresAt
-	out, err = s.createPerson(ctx, p)
+	person.ExpiresAt = expiresAt
+	out, err = s.createPerson(ctx, person)
 	if !errors.Is(err, domain.ErrConflict) {
 		return out, err == nil, err
 	}
 	// Lost the race. If the conflict was not on sourcedId (e.g. a
 	// caller-supplied id already in use), there is no winner to update.
-	winner, getErr := s.persons.GetBySourcedID(ctx, p.SourcedID)
+	winner, getErr := s.persons.GetBySourcedID(ctx, person.SourcedID)
 	if getErr != nil {
 		return domain.Person{}, false, err
 	}
-	p.ID = winner.ID
-	out, err = s.updatePerson(ctx, p, merge)
+	person.ID = winner.ID
+	out, err = s.updatePerson(ctx, person, merge)
 	return out, false, err
 }
 

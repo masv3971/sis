@@ -41,22 +41,26 @@ type PopulateItem struct {
 // records written so far, and since every write is an upsert by sourcedId,
 // retrying the same request converges.
 //
+// Populate checks ctx before every write, so a cancelled or expired ctx
+// stops it even on a store that ignores ctx (memory); the error wraps
+// ctx.Err().
+//
 // Populate consumes b: it assigns ids and rewrites references in place.
 func (c *Client) Populate(ctx context.Context, b *domain.Bundle, expiresAt *time.Time) ([]PopulateItem, error) {
-	p := &populator{c: c, ids: map[refKey]string{}, inBundle: map[refKey]bool{}, expiresAt: expiresAt}
+	p := &populator{client: c, ids: map[refKey]string{}, inBundle: map[refKey]bool{}, expiresAt: expiresAt}
 	orgs, err := p.plan(ctx, b)
 	if err != nil {
 		return nil, err
 	}
 
 	items := make([]PopulateItem, 0, b.Len())
-	add := func(typ, sid, id string, created bool) {
+	add := func(typ, sourcedID, id string, created bool) {
 		action := ActionUpdated
 		if created {
 			action = ActionCreated
 		}
-		items = append(items, PopulateItem{Type: typ, SourcedID: sid, ID: id, Action: action})
-		p.ids[refKey{typ, sid}] = id
+		items = append(items, PopulateItem{Type: typ, SourcedID: sourcedID, ID: id, Action: action})
+		p.ids[refKey{typ, sourcedID}] = id
 	}
 	steps := []func() error{
 		func() error { return upsertAll(ctx, p, c.Organizations, orgs, add) },
@@ -66,6 +70,9 @@ func (c *Client) Populate(ctx context.Context, b *domain.Bundle, expiresAt *time
 		func() error { return upsertAll(ctx, p, c.Offerings, b.Offerings, add) },
 		func() error {
 			for _, person := range b.Persons {
+				if err := ctx.Err(); err != nil {
+					return fmt.Errorf("populate person %s: %w", person.SourcedID, err)
+				}
 				out, created, err := c.Persons.UpsertPersonWithExpiry(ctx, person, expiresAt)
 				if err != nil {
 					return fmt.Errorf("populate person %s: %w", person.SourcedID, err)
@@ -86,7 +93,7 @@ func (c *Client) Populate(ctx context.Context, b *domain.Bundle, expiresAt *time
 }
 
 type populator struct {
-	c *Client
+	client *Client
 	// ids maps a referenced record to its canonical id: filled in the first
 	// pass for references to stored records, and in the second as bundle
 	// records are written.
@@ -104,8 +111,8 @@ func (p *populator) plan(ctx context.Context, b *domain.Bundle) ([]*domain.Organ
 			return nil, err
 		}
 	}
-	collect := func(es ...domain.Entity) error {
-		for _, e := range es {
+	collect := func(records ...domain.Entity) error {
+		for _, e := range records {
 			if err := p.member(e.EntityType(), e.GetSourcedID(), e.Validate()); err != nil {
 				return err
 			}
@@ -132,103 +139,103 @@ func (p *populator) plan(ctx context.Context, b *domain.Bundle) ([]*domain.Organ
 
 // member registers a bundle record, rejecting an invalid record or a
 // duplicate sourcedId.
-func (p *populator) member(typ, sid string, validateErr error) error {
+func (p *populator) member(typ, sourcedID string, validateErr error) error {
 	if validateErr != nil {
 		if ve, ok := errors.AsType[*domain.ValidationError](validateErr); ok {
-			return &domain.ValidationError{Field: typ + "[" + sid + "]." + ve.Field, Msg: ve.Msg}
+			return &domain.ValidationError{Field: typ + "[" + sourcedID + "]." + ve.Field, Msg: ve.Msg}
 		}
 		return validateErr
 	}
-	if sid == "" {
-		return &domain.ValidationError{Field: typ + ".sourcedId", Msg: "required"}
+	if sourcedID == "" {
+		return domain.Required(typ + ".sourcedId")
 	}
-	k := refKey{typ, sid}
-	if p.inBundle[k] {
-		return &domain.ValidationError{Field: typ + "[" + sid + "]", Msg: "duplicate sourcedId"}
+	key := refKey{typ, sourcedID}
+	if p.inBundle[key] {
+		return &domain.ValidationError{Field: typ + "[" + sourcedID + "]", Msg: "duplicate sourcedId"}
 	}
-	p.inBundle[k] = true
+	p.inBundle[key] = true
 	return nil
 }
 
-// resolveStored checks every reference of es names a record in the bundle or
-// a stored one, recording the stored records' canonical ids. Stored records
-// are looked up in one batched call per type.
-func (p *populator) resolveStored(ctx context.Context, es []domain.Entity) error {
+// resolveStored checks every reference of records names a record in the
+// bundle or a stored one, recording the stored records' canonical ids. Stored
+// records are looked up in one batched call per type.
+func (p *populator) resolveStored(ctx context.Context, records []domain.Entity) error {
 	type use struct {
-		e domain.Entity
-		r ref
+		entity    domain.Entity
+		reference ref
 	}
 	var uses []use
 	byType := map[string][]string{}
 	seen := map[refKey]bool{}
-	for _, e := range es {
-		for _, r := range refsOf(e) {
-			k := refKey{r.typ, *r.ptr}
-			if k.id == "" || p.inBundle[k] {
+	for _, e := range records {
+		for _, reference := range refsOf(e) {
+			key := refKey{reference.typ, *reference.target}
+			if key.id == "" || p.inBundle[key] {
 				continue
 			}
-			uses = append(uses, use{e, r})
-			if !seen[k] {
-				seen[k] = true
-				byType[r.typ] = append(byType[r.typ], k.id)
+			uses = append(uses, use{e, reference})
+			if !seen[key] {
+				seen[key] = true
+				byType[reference.typ] = append(byType[reference.typ], key.id)
 			}
 		}
 	}
-	for typ, sids := range byType {
-		ids, err := p.c.storedIDs(ctx, typ, sids)
+	for typ, sourcedIDs := range byType {
+		ids, err := p.client.storedIDs(ctx, typ, sourcedIDs)
 		if err != nil {
 			return err
 		}
-		for sid, id := range ids {
-			p.ids[refKey{typ, sid}] = id
+		for sourcedID, id := range ids {
+			p.ids[refKey{typ, sourcedID}] = id
 		}
 	}
-	for _, u := range uses {
-		if _, ok := p.ids[refKey{u.r.typ, *u.r.ptr}]; !ok {
+	for _, pending := range uses {
+		if _, ok := p.ids[refKey{pending.reference.typ, *pending.reference.target}]; !ok {
 			return &domain.ValidationError{
-				Field: u.e.EntityType() + "[" + u.e.GetSourcedID() + "]." + u.r.field,
-				Msg:   "no " + u.r.typ + " with sourcedId " + *u.r.ptr + " in the document or stored",
+				Field: pending.entity.EntityType() + "[" + pending.entity.GetSourcedID() + "]." + pending.reference.field,
+				Msg:   "no " + pending.reference.typ + " with sourcedId " + *pending.reference.target + " in the document or stored",
 			}
 		}
 	}
 	return nil
 }
 
-// storedIDs maps each sourcedId in sids that names a stored typ record to
-// that record's canonical id, in a single repository call.
-func (c *Client) storedIDs(ctx context.Context, typ string, sids []string) (map[string]string, error) {
+// storedIDs maps each sourcedId in sourcedIDs that names a stored typ record
+// to that record's canonical id, in a single repository call.
+func (c *Client) storedIDs(ctx context.Context, typ string, sourcedIDs []string) (map[string]string, error) {
 	switch typ {
 	case "person":
-		ps, err := c.Persons.GetPersonsBySourcedIDs(ctx, sids)
+		persons, err := c.Persons.GetPersonsBySourcedIDs(ctx, sourcedIDs)
 		if err != nil {
 			return nil, err
 		}
-		out := make(map[string]string, len(ps))
-		for _, p := range ps {
-			out[p.SourcedID] = p.ID
+		out := make(map[string]string, len(persons))
+		for _, person := range persons {
+			out[person.SourcedID] = person.ID
 		}
 		return out, nil
 	case "organization":
-		return entityIDs(ctx, c.Organizations, sids)
+		return entityIDs(ctx, c.Organizations, sourcedIDs)
 	case "academicSession":
-		return entityIDs(ctx, c.AcademicSessions, sids)
+		return entityIDs(ctx, c.AcademicSessions, sourcedIDs)
 	case "course":
-		return entityIDs(ctx, c.Courses, sids)
+		return entityIDs(ctx, c.Courses, sourcedIDs)
 	case "program":
-		return entityIDs(ctx, c.Programs, sids)
+		return entityIDs(ctx, c.Programs, sourcedIDs)
 	case "offering":
-		return entityIDs(ctx, c.Offerings, sids)
+		return entityIDs(ctx, c.Offerings, sourcedIDs)
 	}
-	return nil, fmt.Errorf("readmodel: unknown reference type %q", typ)
+	return nil, errUnknownRefType(typ)
 }
 
-func entityIDs[T any, PT domain.EntityPtr[T]](ctx context.Context, svc *service.Resource[T, PT], sids []string) (map[string]string, error) {
-	es, err := svc.GetBySourcedIDs(ctx, sids)
+func entityIDs[T any, PT domain.EntityPtr[T]](ctx context.Context, svc *service.Resource[T, PT], sourcedIDs []string) (map[string]string, error) {
+	records, err := svc.GetBySourcedIDs(ctx, sourcedIDs)
 	if err != nil {
 		return nil, err
 	}
-	out := make(map[string]string, len(es))
-	for _, e := range es {
+	out := make(map[string]string, len(records))
+	for _, e := range records {
 		out[e.GetSourcedID()] = e.GetID()
 	}
 	return out, nil
@@ -275,11 +282,14 @@ func orderOrgs(orgs []*domain.Organization) ([]*domain.Organization, error) {
 
 // upsertAll rewrites each record's references to canonical ids and upserts
 // it. A free function because it is generic over the entity type.
-func upsertAll[T any, PT domain.EntityPtr[T]](ctx context.Context, p *populator, svc *service.Resource[T, PT], es []PT, add func(typ, sid, id string, created bool)) error {
-	for _, e := range es {
-		for _, r := range refsOf(e) {
-			if *r.ptr != "" {
-				*r.ptr = p.ids[refKey{r.typ, *r.ptr}]
+func upsertAll[T any, PT domain.EntityPtr[T]](ctx context.Context, p *populator, svc *service.Resource[T, PT], records []PT, add func(typ, sourcedID, id string, created bool)) error {
+	for _, e := range records {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("populate %s %s: %w", svc.TypeName(), e.GetSourcedID(), err)
+		}
+		for _, reference := range refsOf(e) {
+			if *reference.target != "" {
+				*reference.target = p.ids[refKey{reference.typ, *reference.target}]
 			}
 		}
 		e.SetID("")
@@ -292,9 +302,9 @@ func upsertAll[T any, PT domain.EntityPtr[T]](ctx context.Context, p *populator,
 	return nil
 }
 
-func entities[PT domain.Entity](es []PT) []domain.Entity {
-	out := make([]domain.Entity, len(es))
-	for i, e := range es {
+func entities[PT domain.Entity](records []PT) []domain.Entity {
+	out := make([]domain.Entity, len(records))
+	for i, e := range records {
 		out[i] = e
 	}
 	return out

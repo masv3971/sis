@@ -45,26 +45,26 @@ func (c *Client) ListPersons(gc *gin.Context) {
 		helpers.WriteError(gc, err)
 		return
 	}
-	p, err := c.catalog.Persons.ListPersons(gc.Request.Context(), params)
+	page, err := c.catalog.Persons.ListPersons(gc.Request.Context(), params)
 	if err != nil {
 		helpers.WriteError(gc, err)
 		return
 	}
-	out := make([]dto.Person, 0, len(p.Items))
-	for _, person := range p.Items {
+	out := make([]dto.Person, 0, len(page.Items))
+	for _, person := range page.Items {
 		out = append(out, dto.FromPerson(person))
 	}
-	gc.JSON(http.StatusOK, dto.NewPage(out, pageNumber, pageSize, p.Total))
+	gc.JSON(http.StatusOK, dto.NewPage(out, pageNumber, pageSize, page.Total))
 }
 
 // GetPerson publishes a single person by sourcedId in OEAPI shape.
 func (c *Client) GetPerson(gc *gin.Context) {
-	p, err := c.catalog.Persons.GetPersonBySourcedID(gc.Request.Context(), gc.Param("id"))
+	person, err := c.catalog.Persons.GetPersonBySourcedID(gc.Request.Context(), gc.Param("id"))
 	if err != nil {
 		helpers.WriteError(gc, err)
 		return
 	}
-	gc.JSON(http.StatusOK, dto.FromPerson(p))
+	gc.JSON(http.StatusOK, dto.FromPerson(person))
 }
 
 // The generic handlers below could not be methods on *Client: Go does not
@@ -73,33 +73,33 @@ func (c *Client) GetPerson(gc *gin.Context) {
 // httpserver can mount directly.
 
 // List builds an OEAPI paged list handler for an entity type.
-func List[T any, PT domain.EntityPtr[T], D any](c *Client, svc *service.Resource[T, PT], mapFn func(PT) D) gin.HandlerFunc {
+func List[T any, PT domain.EntityPtr[T], D any](c *Client, svc *service.Resource[T, PT], toDTO func(PT) D) gin.HandlerFunc {
 	return func(gc *gin.Context) {
 		pageNumber, pageSize, params, err := c.page(gc)
 		if err != nil {
 			helpers.WriteError(gc, err)
 			return
 		}
-		res, err := svc.List(gc.Request.Context(), params)
+		page, err := svc.List(gc.Request.Context(), params)
 		if err != nil {
 			helpers.WriteError(gc, err)
 			return
 		}
-		items, err := publishRefs(c, gc, res.Items...)
+		items, err := publishRefs(c, gc, page.Items...)
 		if err != nil {
 			helpers.WriteError(gc, err)
 			return
 		}
 		out := make([]D, 0, len(items))
 		for _, e := range items {
-			out = append(out, mapFn(e))
+			out = append(out, toDTO(e))
 		}
-		gc.JSON(http.StatusOK, dto.NewPage(out, pageNumber, pageSize, res.Total))
+		gc.JSON(http.StatusOK, dto.NewPage(out, pageNumber, pageSize, page.Total))
 	}
 }
 
 // Get builds a get-by-sourcedId handler for an entity type.
-func Get[T any, PT domain.EntityPtr[T], D any](c *Client, svc *service.Resource[T, PT], mapFn func(PT) D) gin.HandlerFunc {
+func Get[T any, PT domain.EntityPtr[T], D any](c *Client, svc *service.Resource[T, PT], toDTO func(PT) D) gin.HandlerFunc {
 	return func(gc *gin.Context) {
 		e, err := svc.GetBySourcedID(gc.Request.Context(), gc.Param("id"))
 		if err != nil {
@@ -115,7 +115,7 @@ func Get[T any, PT domain.EntityPtr[T], D any](c *Client, svc *service.Resource[
 			helpers.WriteError(gc, domain.ErrNotFound)
 			return
 		}
-		gc.JSON(http.StatusOK, mapFn(e))
+		gc.JSON(http.StatusOK, toDTO(e))
 	}
 }
 
@@ -127,17 +127,17 @@ func Get[T any, PT domain.EntityPtr[T], D any](c *Client, svc *service.Resource[
 // items while totals still count stored records. A free function for the
 // same reason as List/Get: it is generic over PT.
 func publishRefs[PT domain.Entity](c *Client, gc *gin.Context, items ...PT) ([]PT, error) {
-	ents := make([]domain.Entity, len(items))
+	entities := make([]domain.Entity, len(items))
 	for i, e := range items {
-		ents[i] = e
+		entities[i] = e
 	}
-	ok, err := c.catalog.PublishRefs(gc.Request.Context(), ents...)
+	publishable, err := c.catalog.PublishRefs(gc.Request.Context(), entities...)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]PT, 0, len(items))
 	for i, e := range items {
-		if ok[i] {
+		if publishable[i] {
 			out = append(out, e)
 		}
 	}
@@ -149,6 +149,6 @@ func publishRefs[PT domain.Entity](c *Client, gc *gin.Context, items ...PT) ([]P
 // whose offset would overflow is rejected, so neither input can produce an
 // unbounded or negative query. An omitted pageSize takes .default_page_size.
 func (c *Client) page(gc *gin.Context) (pageNumber, pageSize int, params port.ListParams, err error) {
-	oc := c.cfg.SIS.Adapter.Inbound.OEAPI
-	return helpers.ParsePageNumberSize(gc, oc.DefaultPageSize, oc.MaxPageSize)
+	oeapiCfg := c.cfg.SIS.Adapter.Inbound.OEAPI
+	return helpers.ParsePageNumberSize(gc, oeapiCfg.DefaultPageSize, oeapiCfg.MaxPageSize)
 }

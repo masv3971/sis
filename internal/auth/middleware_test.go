@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
 
 	"github.com/SUNET/sis/internal/auth"
 	"github.com/SUNET/sis/internal/auth/authtest"
@@ -17,10 +18,10 @@ import (
 func TestRequireScope(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	iss := authtest.NewIssuer(t)
-	v := newVerifier(t, iss.Config())
+	verifier := newVerifier(t, iss.Config())
 
-	r := gin.New()
-	r.GET("/write", v.RequireAuth(), auth.RequireScope(auth.ScopeWrite), func(c *gin.Context) { c.Status(http.StatusOK) })
+	router := gin.New()
+	router.GET("/write", verifier.RequireAuth(), auth.RequireScope(auth.ScopeWrite), func(gc *gin.Context) { gc.Status(http.StatusOK) })
 
 	cases := []struct {
 		name      string
@@ -36,22 +37,19 @@ func TestRequireScope(t *testing.T) {
 		{"write", authtest.Bearer(iss.Token(t, "liu", "sis.write")), http.StatusOK, "", ""},
 		{"read and write", authtest.Bearer(iss.Token(t, "alice", "openid sis.read sis.write")), http.StatusOK, "", ""},
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
 			w := httptest.NewRecorder()
 			req := httptest.NewRequest(http.MethodGet, "/write", nil)
-			if c.auth != "" {
-				req.Header.Set("Authorization", c.auth)
+			if tc.auth != "" {
+				req.Header.Set("Authorization", tc.auth)
 			}
-			r.ServeHTTP(w, req)
+			router.ServeHTTP(w, req)
 			var body struct{ Error string }
 			_ = json.Unmarshal(w.Body.Bytes(), &body)
-			if w.Code != c.status || body.Error != c.code {
-				t.Fatalf("got %d %q, want %d %q", w.Code, body.Error, c.status, c.code)
-			}
-			if got := w.Header().Get("WWW-Authenticate"); got != c.challenge {
-				t.Fatalf("WWW-Authenticate = %q, want %q", got, c.challenge)
-			}
+			assert.Equal(t, tc.status, w.Code)
+			assert.Equal(t, tc.code, body.Error)
+			assert.Equal(t, tc.challenge, w.Header().Get("WWW-Authenticate"))
 		})
 	}
 }
@@ -61,20 +59,19 @@ func TestRequireScope(t *testing.T) {
 func TestRequireAuthIssuerDown(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	iss := authtest.NewIssuer(t)
-	v := newVerifier(t, iss.Config())
+	verifier := newVerifier(t, iss.Config())
 	iss.Down.Store(true)
 
-	r := gin.New()
-	r.GET("/x", v.RequireAuth(), func(c *gin.Context) { c.Status(http.StatusOK) })
+	router := gin.New()
+	router.GET("/x", verifier.RequireAuth(), func(gc *gin.Context) { gc.Status(http.StatusOK) })
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/x", nil)
 	req.Header.Set("Authorization", authtest.Bearer(iss.Token(t, "x", "sis.read")))
-	r.ServeHTTP(w, req)
+	router.ServeHTTP(w, req)
 	var body struct{ Error string }
 	_ = json.Unmarshal(w.Body.Bytes(), &body)
-	if w.Code != http.StatusServiceUnavailable || body.Error != "unavailable" {
-		t.Fatalf("got %d %q, want 503 \"unavailable\"", w.Code, body.Error)
-	}
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+	assert.Equal(t, "unavailable", body.Error)
 }
 
 // TestRequireAuthSchemeIsCaseInsensitive checks the Bearer scheme name is
@@ -83,29 +80,27 @@ func TestRequireAuthIssuerDown(t *testing.T) {
 func TestRequireAuthSchemeIsCaseInsensitive(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	iss := authtest.NewIssuer(t)
-	v := newVerifier(t, iss.Config())
-	tok := iss.Token(t, "u", "sis.read")
+	verifier := newVerifier(t, iss.Config())
+	token := iss.Token(t, "u", "sis.read")
 
-	r := gin.New()
-	r.GET("/x", v.RequireAuth(), func(c *gin.Context) { c.Status(http.StatusOK) })
+	router := gin.New()
+	router.GET("/x", verifier.RequireAuth(), func(gc *gin.Context) { gc.Status(http.StatusOK) })
 
 	cases := map[string]int{
-		"Bearer " + tok:     http.StatusOK,
-		"bearer " + tok:     http.StatusOK,
-		"BEARER " + tok:     http.StatusOK,
-		"Bearer   " + tok:   http.StatusOK,
-		"Basic " + tok:      http.StatusUnauthorized,
-		"Bearer":            http.StatusUnauthorized,
-		"Bearer ":           http.StatusUnauthorized,
-		"Bearertoken" + tok: http.StatusUnauthorized,
+		"Bearer " + token:     http.StatusOK,
+		"bearer " + token:     http.StatusOK,
+		"BEARER " + token:     http.StatusOK,
+		"Bearer   " + token:   http.StatusOK,
+		"Basic " + token:      http.StatusUnauthorized,
+		"Bearer":              http.StatusUnauthorized,
+		"Bearer ":             http.StatusUnauthorized,
+		"Bearertoken" + token: http.StatusUnauthorized,
 	}
 	for header, want := range cases {
 		w := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/x", nil)
 		req.Header.Set("Authorization", header)
-		r.ServeHTTP(w, req)
-		if w.Code != want {
-			t.Errorf("Authorization %.20q: got %d, want %d", header, w.Code, want)
-		}
+		router.ServeHTTP(w, req)
+		assert.Equal(t, want, w.Code, "Authorization %.20q", header)
 	}
 }

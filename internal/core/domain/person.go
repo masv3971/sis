@@ -70,13 +70,13 @@ type Person struct {
 // Validate checks required invariants for a Person.
 func (p Person) Validate() error {
 	if p.GivenName == "" {
-		return &ValidationError{Field: "givenName", Msg: "required"}
+		return Required("givenName")
 	}
 	if p.FamilyName == "" {
-		return &ValidationError{Field: "familyName", Msg: "required"}
+		return Required("familyName")
 	}
 	if p.Status == "" {
-		return &ValidationError{Field: "status", Msg: "required"}
+		return Required("status")
 	}
 	if !p.Status.Valid() {
 		return &ValidationError{Field: "status", Msg: statusMsg}
