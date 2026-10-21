@@ -1,13 +1,14 @@
 package configuration_test
 
 import (
-	"context"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/SUNET/sis/pkg/configuration"
 )
@@ -15,58 +16,80 @@ import (
 func writeConfig(t *testing.T, body string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "config.yaml")
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
+	require.NoError(t, os.WriteFile(path, []byte(body), 0o600), "write config")
 	return path
+}
+
+// assertErr checks err against wantErr: "" means no error, anything else
+// must appear in the error message.
+func assertErr(t *testing.T, wantErr string, err error) {
+	t.Helper()
+	if wantErr == "" {
+		assert.NoError(t, err)
+		return
+	}
+	assert.ErrorContains(t, err, wantErr)
 }
 
 func TestNewLoadsFileAndDefaults(t *testing.T) {
 	path := writeConfig(t, "sis:\n  adapter:\n    outbound:\n      postgres:\n        connection_string: \"postgres://x\"\n")
 	t.Setenv("SIS_CONFIG_YAML", path)
 
-	cfg, err := configuration.New(context.Background(), "sis")
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	if got := cfg.SIS.Adapter.Outbound.Postgres.ConnectionString; got != "postgres://x" {
-		t.Fatalf("expected connection string from file, got %q", got)
-	}
+	cfg, err := configuration.New(t.Context(), "sis")
+	require.NoError(t, err)
+	assert.Equal(t, "postgres://x", cfg.SIS.Adapter.Outbound.Postgres.ConnectionString, "connection string from file")
 	// Defaults fill unset fields.
-	if cfg.SIS.HTTPServer.Addr != ":8080" {
-		t.Fatalf("expected default addr :8080, got %q", cfg.SIS.HTTPServer.Addr)
+	assert.Equal(t, ":8080", cfg.SIS.HTTPServer.Addr)
+	assert.Equal(t, 2*time.Minute, cfg.SIS.StartupTimeout)
+	inbound := cfg.SIS.Adapter.Inbound
+	assert.Equal(t, 50, inbound.RestAdmin.DefaultLimit)
+	assert.Equal(t, 500, inbound.RestAdmin.MaxLimit)
+	assert.Equal(t, 100, inbound.EduAPI.DefaultLimit)
+	assert.Equal(t, 500, inbound.EduAPI.MaxLimit)
+	assert.Equal(t, 10, inbound.OEAPI.DefaultPageSize)
+	assert.Equal(t, 500, inbound.OEAPI.MaxPageSize)
+	assert.Equal(t, "openid sis.read sis.write", inbound.AuthAPI.Scope)
+	assert.Equal(t, time.Minute, cfg.SIS.Adapter.Sweeper.Interval)
+	assert.Equal(t, 30*time.Second, cfg.SIS.Adapter.Sweeper.Timeout)
+	assert.Equal(t, "nats://localhost:4222", cfg.SIS.Adapter.Outbound.Events.URL)
+	assert.Equal(t, 10*time.Second, cfg.SIS.Adapter.Outbound.Postgres.ConnectTimeout)
+	assert.Equal(t, 30*time.Second, cfg.SIS.Adapter.Outbound.Postgres.StatementTimeout)
+	amqpCfg := inbound.AMQPAPI
+	assert.False(t, amqpCfg.Enabled)
+	assert.Equal(t, 10, amqpCfg.Prefetch)
+	assert.Equal(t, int64(5<<20), amqpCfg.MaxMessageBytes)
+	assert.Equal(t, 2*time.Minute, amqpCfg.CommandTimeout)
+}
+
+func TestNewTimeoutRules(t *testing.T) {
+	cases := []struct {
+		name    string
+		body    string
+		wantErr string
+	}{
+		{"sweep may take the whole interval", "sis:\n  adapter:\n    sweeper:\n      interval: 1m\n      timeout: 1m\n", ""},
+		{"sweep longer than interval", "sis:\n  adapter:\n    sweeper:\n      interval: 1m\n      timeout: 2m\n", "sweeper.timeout"},
+		{"zero startup timeout", "sis:\n  startup_timeout: 0s\n", "sis.startup_timeout"},
+		{"zero command timeout", "sis:\n  adapter:\n    inbound:\n      amqpapi:\n        command_timeout: 0s\n", "amqpapi.command_timeout"},
+		{"postgres timeouts may be 0", "sis:\n  adapter:\n    outbound:\n      postgres:\n        connect_timeout: 0s\n        statement_timeout: 0s\n", ""},
+		{"negative statement timeout", "sis:\n  adapter:\n    outbound:\n      postgres:\n        statement_timeout: -1s\n", "postgres.statement_timeout"},
 	}
-	in := cfg.SIS.Adapter.Inbound
-	if in.RestAdmin.DefaultLimit != 50 || in.RestAdmin.MaxLimit != 500 {
-		t.Fatalf("unexpected restadmin paging defaults: %+v", in.RestAdmin)
-	}
-	if in.EduAPI.DefaultLimit != 100 || in.EduAPI.MaxLimit != 500 {
-		t.Fatalf("unexpected eduapi paging defaults: %+v", in.EduAPI)
-	}
-	if in.OEAPI.DefaultPageSize != 10 || in.OEAPI.MaxPageSize != 500 {
-		t.Fatalf("unexpected oeapi paging defaults: %+v", in.OEAPI)
-	}
-	if in.AuthAPI.Scope != "openid sis.read sis.write" {
-		t.Fatalf("expected default authapi scope, got %q", in.AuthAPI.Scope)
-	}
-	if cfg.SIS.Adapter.Sweeper.Interval != time.Minute {
-		t.Fatalf("expected default sweeper interval 1m, got %s", cfg.SIS.Adapter.Sweeper.Interval)
-	}
-	if cfg.SIS.Adapter.Outbound.Events.URL != "nats://localhost:4222" {
-		t.Fatalf("expected default events url, got %q", cfg.SIS.Adapter.Outbound.Events.URL)
-	}
-	if a := in.AMQPAPI; a.Enabled || a.Prefetch != 10 || a.MaxMessageBytes != 5<<20 {
-		t.Fatalf("unexpected amqpapi defaults: %+v", a)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("SIS_CONFIG_YAML", writeConfig(t, tc.body))
+			_, err := configuration.New(t.Context(), "sis")
+			assertErr(t, tc.wantErr, err)
+		})
 	}
 }
 
 func TestNewAMQPAPIRules(t *testing.T) {
 	amqp := func(prod bool, body string) string {
-		s := ""
+		common := ""
 		if prod {
-			s = "common:\n  production: true\n"
+			common = "common:\n  production: true\n"
 		}
-		return s + "sis:\n  adapter:\n    inbound:\n      amqpapi:\n" + body
+		return common + "sis:\n  adapter:\n    inbound:\n      amqpapi:\n" + body
 	}
 	cases := []struct {
 		name    string
@@ -81,16 +104,11 @@ func TestNewAMQPAPIRules(t *testing.T) {
 		{"prod amqps ok", amqp(true, "        enabled: true\n        url: amqps://b\n        address: q\n"), ""},
 		{"only sis.write as fallback scope", amqp(false, "        scopes: [sis.read]\n"), "scopes"},
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			t.Setenv("SIS_CONFIG_YAML", writeConfig(t, c.body))
-			_, err := configuration.New(context.Background(), "sis")
-			switch {
-			case c.wantErr == "" && err != nil:
-				t.Fatalf("unexpected error: %v", err)
-			case c.wantErr != "" && (err == nil || !strings.Contains(err.Error(), c.wantErr)):
-				t.Fatalf("expected error containing %q, got %v", c.wantErr, err)
-			}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("SIS_CONFIG_YAML", writeConfig(t, tc.body))
+			_, err := configuration.New(t.Context(), "sis")
+			assertErr(t, tc.wantErr, err)
 		})
 	}
 }
@@ -100,45 +118,31 @@ func TestNewAMQPAPIRules(t *testing.T) {
 func TestMaxBelowDefaultRejected(t *testing.T) {
 	body := "sis:\n  adapter:\n    inbound:\n      oeapi:\n        default_page_size: 50\n        max_page_size: 20\n"
 	t.Setenv("SIS_CONFIG_YAML", writeConfig(t, body))
-	_, err := configuration.New(context.Background(), "sis")
-	if err == nil || !strings.Contains(err.Error(), "max_page_size") {
-		t.Fatalf("expected max_page_size validation error, got %v", err)
-	}
+	_, err := configuration.New(t.Context(), "sis")
+	assert.ErrorContains(t, err, "max_page_size")
 }
 
 func TestNewRejectsUnknownKeys(t *testing.T) {
-	path := writeConfig(t, "sis:\n  auth:\n    issuer: \"https://idp.example\"\n")
-	t.Setenv("SIS_CONFIG_YAML", path)
-	_, err := configuration.New(context.Background(), "sis")
-	if err == nil || !strings.Contains(err.Error(), "issuer") {
-		t.Fatalf("expected unknown-key error naming issuer, got %v", err)
-	}
+	t.Setenv("SIS_CONFIG_YAML", writeConfig(t, "sis:\n  auth:\n    issuer: \"https://idp.example\"\n"))
+	_, err := configuration.New(t.Context(), "sis")
+	assert.ErrorContains(t, err, "issuer", "unknown-key error names the key")
 }
 
 // TestExplicitFalseOverridesTrueDefault guards against defaults clobbering an
 // explicit zero value from the file (common.log.json defaults to true).
 func TestExplicitFalseOverridesTrueDefault(t *testing.T) {
 	t.Setenv("SIS_CONFIG_YAML", writeConfig(t, "common:\n  log:\n    json: false\n    level: debug\n"))
-	cfg, err := configuration.New(context.Background(), "sis")
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	if cfg.Common.Log.JSON {
-		t.Fatal("explicit json: false was overwritten by the default")
-	}
-	if cfg.Common.Log.Level != "debug" {
-		t.Fatalf("expected level debug, got %q", cfg.Common.Log.Level)
-	}
-	if cfg.SIS.HTTPServer.Addr != ":8080" {
-		t.Fatalf("defaults must still fill unset fields, got addr %q", cfg.SIS.HTTPServer.Addr)
-	}
+	cfg, err := configuration.New(t.Context(), "sis")
+	require.NoError(t, err)
+	assert.False(t, cfg.Common.Log.JSON, "explicit json: false was overwritten by the default")
+	assert.Equal(t, "debug", cfg.Common.Log.Level)
+	assert.Equal(t, ":8080", cfg.SIS.HTTPServer.Addr, "defaults must still fill unset fields")
 }
 
 func TestNewAcceptsEmptyFile(t *testing.T) {
 	t.Setenv("SIS_CONFIG_YAML", writeConfig(t, ""))
-	if _, err := configuration.New(context.Background(), "sis"); err != nil {
-		t.Fatalf("empty file should load with defaults: %v", err)
-	}
+	_, err := configuration.New(t.Context(), "sis")
+	assert.NoError(t, err, "empty file should load with defaults")
 }
 
 // TestNewRejectsMultipleDocuments checks that only a single YAML document is
@@ -152,9 +156,8 @@ func TestNewRejectsMultipleDocuments(t *testing.T) {
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {
 			t.Setenv("SIS_CONFIG_YAML", writeConfig(t, body))
-			if _, err := configuration.New(context.Background(), "sis"); err == nil {
-				t.Fatal("expected an error for a config file with more than one document")
-			}
+			_, err := configuration.New(t.Context(), "sis")
+			assert.Error(t, err, "a config file with more than one document")
 		})
 	}
 	// A leading "---" or trailing "..." still marks a single document.
@@ -164,9 +167,8 @@ func TestNewRejectsMultipleDocuments(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Setenv("SIS_CONFIG_YAML", writeConfig(t, body))
-			if _, err := configuration.New(context.Background(), "sis"); err != nil {
-				t.Fatalf("single document should load: %v", err)
-			}
+			_, err := configuration.New(t.Context(), "sis")
+			assert.NoError(t, err, "single document should load")
 		})
 	}
 }
@@ -175,20 +177,20 @@ func TestNewAuthRules(t *testing.T) {
 	issuers := func(entries ...string) string {
 		return "  auth:\n    issuers:\n" + strings.Join(entries, "")
 	}
-	issuer := func(url, aud, jwks string) string {
-		s := "      - issuer: \"" + url + "\"\n"
-		if aud != "" {
-			s += "        audience: \"" + aud + "\"\n"
+	issuer := func(url, audience, jwksURL string) string {
+		entry := "      - issuer: \"" + url + "\"\n"
+		if audience != "" {
+			entry += "        audience: \"" + audience + "\"\n"
 		}
-		if jwks != "" {
-			s += "        jwks_url: \"" + jwks + "\"\n"
+		if jwksURL != "" {
+			entry += "        jwks_url: \"" + jwksURL + "\"\n"
 		}
-		return s
+		return entry
 	}
 	const prod = "common:\n  production: true\nsis:\n"
 	const dev = "sis:\n"
-	web := func(iss string) string {
-		return "  adapter:\n    inbound:\n      authapi:\n        issuer: \"" + iss + "\"\n        client_id: sis-web\n"
+	web := func(webIssuer string) string {
+		return "  adapter:\n    inbound:\n      authapi:\n        issuer: \"" + webIssuer + "\"\n        client_id: sis-web\n"
 	}
 	cases := []struct {
 		name    string
@@ -208,16 +210,11 @@ func TestNewAuthRules(t *testing.T) {
 		{"web login untrusted", dev + issuers(issuer("https://a.example", "", "")) + web("https://b.example"), "not in sis.auth.issuers"},
 		{"web login without client_id", dev + issuers(issuer("https://a.example", "", "")) + "  adapter:\n    inbound:\n      authapi:\n        issuer: \"https://a.example\"\n", "client_id"},
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			t.Setenv("SIS_CONFIG_YAML", writeConfig(t, c.body))
-			_, err := configuration.New(context.Background(), "sis")
-			switch {
-			case c.wantErr == "" && err != nil:
-				t.Fatalf("unexpected error: %v", err)
-			case c.wantErr != "" && (err == nil || !strings.Contains(err.Error(), c.wantErr)):
-				t.Fatalf("expected error containing %q, got %v", c.wantErr, err)
-			}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("SIS_CONFIG_YAML", writeConfig(t, tc.body))
+			_, err := configuration.New(t.Context(), "sis")
+			assertErr(t, tc.wantErr, err)
 		})
 	}
 }
@@ -227,14 +224,10 @@ func TestNewAuthRules(t *testing.T) {
 func TestFileImportPathsAreRelativeToConfig(t *testing.T) {
 	path := writeConfig(t, "sis:\n  file_import:\n    files:\n      - testdata/students.json\n      - /abs/other.json\n")
 	t.Setenv("SIS_CONFIG_YAML", path)
-	cfg, err := configuration.New(context.Background(), "sis")
-	if err != nil {
-		t.Fatal(err)
-	}
+	cfg, err := configuration.New(t.Context(), "sis")
+	require.NoError(t, err)
 	want := []string{filepath.Join(filepath.Dir(path), "testdata/students.json"), "/abs/other.json"}
-	if !slices.Equal(cfg.SIS.FileImport.Files, want) {
-		t.Fatalf("files = %v, want %v", cfg.SIS.FileImport.Files, want)
-	}
+	assert.Equal(t, want, cfg.SIS.FileImport.Files)
 }
 
 // TestShippedConfigsLoad keeps config.yaml.sample and the dev config.yaml
@@ -248,14 +241,10 @@ func TestShippedConfigsLoad(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			t.Setenv("SIS_CONFIG_YAML", path)
-			cfg, err := configuration.New(context.Background(), "sis")
-			if err != nil {
-				t.Fatalf("%s no longer matches pkg/model: %v", name, err)
-			}
-			for _, f := range cfg.SIS.FileImport.Files {
-				if _, err := os.Stat(f); err != nil {
-					t.Errorf("file_import: %v", err)
-				}
+			cfg, err := configuration.New(t.Context(), "sis")
+			require.NoError(t, err, "%s no longer matches pkg/model", name)
+			for _, importFile := range cfg.SIS.FileImport.Files {
+				assert.FileExists(t, importFile, "file_import")
 			}
 		})
 	}
@@ -263,14 +252,12 @@ func TestShippedConfigsLoad(t *testing.T) {
 
 func TestNewRequiresConfigPath(t *testing.T) {
 	t.Setenv("SIS_CONFIG_YAML", "")
-	if _, err := configuration.New(context.Background(), "sis"); err == nil {
-		t.Fatal("expected an error when SIS_CONFIG_YAML is unset")
-	}
+	_, err := configuration.New(t.Context(), "sis")
+	assert.Error(t, err, "SIS_CONFIG_YAML unset")
 }
 
 func TestNewErrorsOnMissingFile(t *testing.T) {
 	t.Setenv("SIS_CONFIG_YAML", "/no/such/config.yaml")
-	if _, err := configuration.New(context.Background(), "sis"); err == nil {
-		t.Fatal("expected an error for a missing config file")
-	}
+	_, err := configuration.New(t.Context(), "sis")
+	assert.Error(t, err, "missing config file")
 }

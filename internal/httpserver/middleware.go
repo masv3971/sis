@@ -1,6 +1,8 @@
 package httpserver
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -15,20 +17,20 @@ import (
 // before redacting them from the response) are included on that line, which
 // is then logged at error level, so a 500 always carries its cause.
 func requestLogger(log *logger.Log) gin.HandlerFunc {
-	return func(c *gin.Context) {
+	return func(gc *gin.Context) {
 		start := time.Now()
-		c.Next()
+		gc.Next()
 		attrs := []any{
-			"method", c.Request.Method,
-			"path", c.Request.URL.Path,
-			"status", c.Writer.Status(),
+			"method", gc.Request.Method,
+			"path", gc.Request.URL.Path,
+			"status", gc.Writer.Status(),
 			"dur", time.Since(start).String(),
 		}
-		if len(c.Errors) == 0 {
+		if len(gc.Errors) == 0 {
 			log.Info("http", attrs...)
 			return
 		}
-		log.Error("http", append(attrs, "err", strings.Join(c.Errors.Errors(), "; "))...)
+		log.Error("http", append(attrs, "err", strings.Join(gc.Errors.Errors(), "; "))...)
 	}
 }
 
@@ -36,41 +38,67 @@ func requestLogger(log *logger.Log) gin.HandlerFunc {
 // sniffing, no framing, no Referer (the SPA's URL carries the OIDC code after
 // sign-in), and HSTS when served over TLS.
 func securityHeaders(tls bool) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		h := c.Writer.Header()
-		h.Set("X-Content-Type-Options", "nosniff")
-		h.Set("X-Frame-Options", "DENY")
-		h.Set("Content-Security-Policy", "frame-ancestors 'none'")
-		h.Set("Referrer-Policy", "no-referrer")
+	return func(gc *gin.Context) {
+		header := gc.Writer.Header()
+		header.Set("X-Content-Type-Options", "nosniff")
+		header.Set("X-Frame-Options", "DENY")
+		header.Set("Content-Security-Policy", "frame-ancestors 'none'")
+		header.Set("Referrer-Policy", "no-referrer")
 		if tls {
-			h.Set("Strict-Transport-Security", "max-age=31536000")
+			header.Set("Strict-Transport-Security", "max-age=31536000")
 		}
-		c.Next()
+		gc.Next()
 	}
 }
 
-// writeDeadline replaces the server's write timeout for this request with d,
-// counted from now, so a slow route is not cut off at the global deadline.
-func writeDeadline(d time.Duration, log *logger.Log) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		if err := http.NewResponseController(c.Writer).SetWriteDeadline(time.Now().Add(d)); err != nil {
-			log.Warn("set write deadline", "path", c.FullPath(), "err", err)
+// responseGrace is how long a response may still take to send after the
+// request's work deadline, so a handler stopped by that deadline can deliver
+// its 503 instead of the client seeing the connection close.
+const responseGrace = 5 * time.Second
+
+// requestTimeout gives the request defaultTimeout, or perRoute[route] for a
+// matched route pattern (gin's FullPath), counted from now. It bounds both
+// the work and the reply:
+//   - the request context gets that deadline, so database calls and other
+//     ctx-aware work stop when it passes and the handler answers 503
+//     (helpers.WriteError maps context.DeadlineExceeded); this includes
+//     reading the body (helpers.BindJSON), so a body still arriving then
+//     is cut off and its command never runs;
+//   - the connection's write deadline is set grace later (responseGrace in
+//     production), so the 503 still reaches the client, and a route with
+//     its own timeout is not cut off at the server's write timeout.
+//
+// Global middleware runs after routing, so the pattern is known here.
+func requestTimeout(defaultTimeout time.Duration, perRoute map[string]time.Duration, grace time.Duration, log *logger.Log) gin.HandlerFunc {
+	return func(gc *gin.Context) {
+		timeout := defaultTimeout
+		if routeTimeout, ok := perRoute[gc.FullPath()]; ok {
+			timeout = routeTimeout
 		}
-		c.Next()
+		workDeadline := time.Now().Add(timeout)
+		// ErrNotSupported only outside a real server (httptest recorders).
+		err := http.NewResponseController(gc.Writer).SetWriteDeadline(workDeadline.Add(grace))
+		if err != nil && !errors.Is(err, http.ErrNotSupported) {
+			log.Warn("set write deadline", "path", gc.FullPath(), "err", err)
+		}
+		ctx, cancel := context.WithDeadline(gc.Request.Context(), workDeadline)
+		defer cancel()
+		gc.Request = gc.Request.WithContext(ctx)
+		gc.Next()
 	}
 }
 
-// bodyLimit caps request body size to guard against oversized payloads: n
-// bytes, or perRoute[route] for a matched route pattern (gin's FullPath,
-// e.g. "/api/v1/parse"). Global middleware runs after routing, so the
-// pattern is known here.
-func bodyLimit(n int64, perRoute map[string]int64) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		limit := n
-		if l, ok := perRoute[c.FullPath()]; ok {
-			limit = l
+// bodyLimit caps request body size to guard against oversized payloads:
+// defaultLimit bytes, or perRoute[route] for a matched route pattern (gin's
+// FullPath, e.g. "/api/v1/parse"). Global middleware runs after routing, so
+// the pattern is known here.
+func bodyLimit(defaultLimit int64, perRoute map[string]int64) gin.HandlerFunc {
+	return func(gc *gin.Context) {
+		limit := defaultLimit
+		if routeLimit, ok := perRoute[gc.FullPath()]; ok {
+			limit = routeLimit
 		}
-		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, limit)
-		c.Next()
+		gc.Request.Body = http.MaxBytesReader(gc.Writer, gc.Request.Body, limit)
+		gc.Next()
 	}
 }

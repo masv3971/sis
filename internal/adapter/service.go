@@ -15,6 +15,7 @@ package adapter
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 
 	"github.com/SUNET/sis/internal/adapter/inbound/amqpapi"
@@ -123,6 +124,11 @@ func New(ctx context.Context, cfg *model.Cfg, log *logger.Log) (*Service, error)
 	if err := fileimport.Run(ctx, cfg, s.inbound.readmodel, log); err != nil {
 		return nil, err
 	}
+	// Stop before any listener starts if startup was cancelled or ran out
+	// of time meanwhile (steps that ignore ctx do not report it).
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("startup: %w", err)
+	}
 
 	// Write commands, shared by every inbound transport.
 	if s.inbound.commands, err = command.New(ctx, cfg, s.inbound.readmodel, log); err != nil {
@@ -180,8 +186,8 @@ func (s *Service) Close(ctx context.Context) error {
 	}
 	errs := make([]error, len(inbound))
 	var wg sync.WaitGroup
-	for i, svc := range inbound {
-		wg.Go(func() { errs[i] = svc.Close(ctx) })
+	for i, transport := range inbound {
+		wg.Go(func() { errs[i] = transport.Close(ctx) })
 	}
 	wg.Wait()
 	if s.sweeper != nil {

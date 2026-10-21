@@ -27,12 +27,19 @@ common:
     json: true    # true: one JSON object per line; false: readable text
 
 sis:
+  # Max time from start to serving: database connect + migrations, file
+  # import, listener. SIGINT/SIGTERM during startup stops it at once.
+  startup_timeout: 2m
+
   # -- internal/httpserver -----------------------------------------------------
   # One listener serves every API and the admin web UI.
   httpserver:
     addr: ":8080"           # host:port; startup fails if it is taken
     read_timeout: 15s       # max time to receive a request
-    write_timeout: 15s      # max time to send a response
+    # The request's work budget, reading the body included: past it the
+    # handler is cancelled (database calls stop) and the reply is 503, which
+    # may take 5s more to send.
+    write_timeout: 15s
     shutdown_timeout: 10s   # grace period for in-flight requests on SIGTERM
     web:
       # Directory with the built admin UI (index.html + assets/). The Docker
@@ -123,6 +130,8 @@ sis:
         # set a matching publish limit at the broker (RabbitMQ:
         # max_message_size = max_message_bytes + 65536).
         max_message_bytes: 5242880
+        # A command running longer is cancelled and its message redelivered.
+        command_timeout: 2m
         # Messages carry "authorization: Bearer <token>" (application
         # property), checked like an API token; it needs sis.write. A
         # message without one gets these scopes: [] requires a token,
@@ -139,6 +148,10 @@ sis:
         # mounted as config.yaml), use the service name instead:
         #   postgres://sis:sis@postgres:5432/sis?sslmode=disable
         connection_string: "postgres://sis:sis@localhost:5432/sis?sslmode=disable"
+        connect_timeout: 10s     # opening one connection; 0 = the URL's connect_timeout
+        # The server aborts statements running longer (statement_timeout);
+        # 0 = the server's setting. Startup migrations are not limited.
+        statement_timeout: 30s
       events:
         # Events are logged today; NATS publishing is not implemented yet.
         enabled: false
@@ -150,6 +163,7 @@ sis:
     # moment they expire; the sweeper then deletes them on this interval.
     sweeper:
       interval: 1m
+      timeout: 30s   # max time for one sweep (<= interval); the next one finishes the rest
 
   # -- internal/fileimport -----------------------------------------------------
   # Records loaded from JSON files at every start, in order, e.g. fake

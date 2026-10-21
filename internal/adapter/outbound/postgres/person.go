@@ -227,7 +227,7 @@ type row interface {
 }
 
 // scanPerson scans one personColumns row, then any extra trailing columns.
-func scanPerson(r row, extra ...any) (domain.Person, error) {
+func scanPerson(src row, extra ...any) (domain.Person, error) {
 	var (
 		p                          domain.Person
 		roles, ids, emails, phones []byte
@@ -235,7 +235,7 @@ func scanPerson(r row, extra ...any) (domain.Person, error) {
 	dest := append([]any{&p.ID, &p.SourcedID, &p.Status, &p.GivenName, &p.FamilyName,
 		&p.MiddleName, &p.DateOfBirth, &roles, &ids, &emails, &phones,
 		&p.CreatedAt, &p.UpdatedAt, &p.ExpiresAt}, extra...)
-	if err := r.Scan(dest...); err != nil {
+	if err := src.Scan(dest...); err != nil {
 		return domain.Person{}, err
 	}
 	if err := unmarshalInto(roles, &p.Roles); err != nil {

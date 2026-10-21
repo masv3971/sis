@@ -48,17 +48,17 @@ func (s *Service) emit(ctx context.Context, eventType, aggType, aggID string, pa
 	})
 }
 
-// publish hands e to the publisher. The write it describes is already
+// publish hands event to the publisher. The write it describes is already
 // committed and cannot be rolled back here, so a failure is logged with the
 // event's identity instead of being returned (see port.EventPublisher).
-func publish(ctx context.Context, events port.EventPublisher, log *logger.Log, e domain.Event) {
+func publish(ctx context.Context, events port.EventPublisher, log *logger.Log, event domain.Event) {
 	if events == nil {
 		return
 	}
-	if err := events.Publish(ctx, e); err != nil {
+	if err := events.Publish(ctx, event); err != nil {
 		log.ErrorContext(ctx, "event publish failed; event lost",
-			"eventId", e.ID, "type", e.Type,
-			"aggregateType", e.AggregateType, "aggregateId", e.AggregateID,
+			"eventId", event.ID, "type", event.Type,
+			"aggregateType", event.AggregateType, "aggregateId", event.AggregateID,
 			"err", err)
 	}
 }

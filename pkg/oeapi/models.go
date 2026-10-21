@@ -108,20 +108,20 @@ type Result struct {
 }
 
 // FromPerson maps a canonical person to the OEAPI shape.
-func FromPerson(p domain.Person) Person {
+func FromPerson(person domain.Person) Person {
 	var mail string
-	if len(p.Emails) > 0 {
-		mail = p.Emails[0].Value
+	if len(person.Emails) > 0 {
+		mail = person.Emails[0].Value
 	}
-	display := p.GivenName
-	if p.FamilyName != "" {
+	display := person.GivenName
+	if person.FamilyName != "" {
 		if display != "" {
 			display += " "
 		}
-		display += p.FamilyName
+		display += person.FamilyName
 	}
 	return Person{
-		PersonID: p.SourcedID, GivenName: p.GivenName, Surname: p.FamilyName,
+		PersonID: person.SourcedID, GivenName: person.GivenName, Surname: person.FamilyName,
 		DisplayName: display, Mail: mail,
 	}
 }
@@ -132,45 +132,45 @@ func FromPerson(p domain.Person) Person {
 // fields to the referenced records' sourcedIds (readmodel.Client.PublishRefs).
 
 // FromOrganization maps a canonical organization.
-func FromOrganization(o *domain.Organization) Organization {
+func FromOrganization(org *domain.Organization) Organization {
 	return Organization{
-		OrganizationID: o.SourcedID, Name: o.Name, Type: o.Type, ParentOrganization: o.ParentID,
+		OrganizationID: org.SourcedID, Name: org.Name, Type: org.Type, ParentOrganization: org.ParentID,
 	}
 }
 
 // FromAcademicSession maps a canonical academic session.
-func FromAcademicSession(a *domain.AcademicSession) AcademicSession {
+func FromAcademicSession(session *domain.AcademicSession) AcademicSession {
 	return AcademicSession{
-		AcademicSessionID: a.SourcedID, Name: a.Title, Type: a.Type,
-		StartDate: a.StartDate, EndDate: a.EndDate,
+		AcademicSessionID: session.SourcedID, Name: session.Title, Type: session.Type,
+		StartDate: session.StartDate, EndDate: session.EndDate,
 	}
 }
 
 // FromCourse maps a canonical course.
-func FromCourse(c *domain.Course) Course {
-	return Course{CourseID: c.SourcedID, Name: c.Title, Abbreviation: c.Code, OrganizationID: c.OrgID}
+func FromCourse(course *domain.Course) Course {
+	return Course{CourseID: course.SourcedID, Name: course.Title, Abbreviation: course.Code, OrganizationID: course.OrgID}
 }
 
 // FromOffering maps a canonical offering.
-func FromOffering(o *domain.Offering) Offering {
+func FromOffering(offering *domain.Offering) Offering {
 	return Offering{
-		OfferingID: o.SourcedID, Name: o.Title, CourseID: o.CourseID, AcademicSessionID: o.AcademicSessionID,
+		OfferingID: offering.SourcedID, Name: offering.Title, CourseID: offering.CourseID, AcademicSessionID: offering.AcademicSessionID,
 	}
 }
 
 // FromProgram maps a canonical program.
-func FromProgram(p *domain.Program) Program {
+func FromProgram(program *domain.Program) Program {
 	return Program{
-		ProgramID: p.SourcedID, Name: p.Title, Abbreviation: p.Code,
-		LevelOfQualification: p.Level, OrganizationID: p.OrgID,
+		ProgramID: program.SourcedID, Name: program.Title, Abbreviation: program.Code,
+		LevelOfQualification: program.Level, OrganizationID: program.OrgID,
 	}
 }
 
 // FromResult maps a canonical result.
-func FromResult(r *domain.Result) Result {
+func FromResult(result *domain.Result) Result {
 	return Result{
-		ResultID: r.SourcedID, PersonID: r.PersonID, CourseID: r.CourseID, ProgramID: r.ProgramID,
-		OfferingID: r.OfferingID, State: string(r.Status), Score: r.Grade, ECTS: r.Credits, ResultDate: r.ResultDate,
+		ResultID: result.SourcedID, PersonID: result.PersonID, CourseID: result.CourseID, ProgramID: result.ProgramID,
+		OfferingID: result.OfferingID, State: string(result.Status), Score: result.Grade, ECTS: result.Credits, ResultDate: result.ResultDate,
 	}
 }
 
@@ -200,8 +200,8 @@ func FromBundle(b *domain.Bundle) Bundle {
 		Associations:     mapAll(b.Enrollments, FromAssociation),
 		Results:          mapAll(b.Results, FromResult),
 	}
-	for _, p := range b.Persons {
-		out.Persons = append(out.Persons, FromPerson(p))
+	for _, person := range b.Persons {
+		out.Persons = append(out.Persons, FromPerson(person))
 	}
 	return out
 }
@@ -215,9 +215,9 @@ func mapAll[E, D any](in []E, fn func(E) D) []D {
 }
 
 // FromAssociation maps a canonical enrollment to an OEAPI association.
-func FromAssociation(e *domain.Enrollment) Association {
+func FromAssociation(enrollment *domain.Enrollment) Association {
 	return Association{
-		AssociationID: e.SourcedID, PersonID: e.PersonID, OfferingID: e.OfferingID,
-		Role: string(e.Role), State: string(e.Status),
+		AssociationID: enrollment.SourcedID, PersonID: enrollment.PersonID, OfferingID: enrollment.OfferingID,
+		Role: string(enrollment.Role), State: string(enrollment.Status),
 	}
 }
