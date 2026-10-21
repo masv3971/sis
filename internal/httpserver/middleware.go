@@ -61,7 +61,9 @@ const responseGrace = 5 * time.Second
 // the work and the reply:
 //   - the request context gets that deadline, so database calls and other
 //     ctx-aware work stop when it passes and the handler answers 503
-//     (helpers.WriteError maps context.DeadlineExceeded);
+//     (helpers.WriteError maps context.DeadlineExceeded); this includes
+//     reading the body (helpers.BindJSON), so a body still arriving then
+//     is cut off and its command never runs;
 //   - the connection's write deadline is set grace later (responseGrace in
 //     production), so the 503 still reaches the client, and a route with
 //     its own timeout is not cut off at the server's write timeout.

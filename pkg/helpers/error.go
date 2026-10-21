@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
@@ -187,11 +188,28 @@ func NewErrorFromError(err error) *Error {
 // first value and never reads the rest, so without this a valid object
 // followed by garbage or a second object would be accepted, and trailing
 // bytes past the body limit would never trip the 413.
+//
+// The read is bound by the request context too: when it ends (the request's
+// work deadline, see httpserver.requestTimeout), the connection's read
+// deadline is pulled in to now, which interrupts a body still arriving. It
+// is never pushed later, so sis.httpserver.read_timeout still applies. A
+// request whose context has ended gets its ctx error (deadline: 503), never
+// decoded input, so a command is not dispatched after the deadline.
 func BindJSON(gc *gin.Context, v any) error {
 	if gc.Request == nil || gc.Request.Body == nil {
 		return DecodeJSON(nil, v)
 	}
+	ctx := gc.Request.Context()
+	stop := context.AfterFunc(ctx, func() {
+		// ErrNotSupported outside a real server (httptest recorders);
+		// the ctx check below still applies there.
+		_ = http.NewResponseController(gc.Writer).SetReadDeadline(time.Now())
+	})
 	body, err := io.ReadAll(gc.Request.Body)
+	stop()
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return fmt.Errorf("read request body: %w", ctxErr)
+	}
 	if err != nil {
 		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			return &Error{Title: ErrTooLarge, HTTPStatus: http.StatusRequestEntityTooLarge}

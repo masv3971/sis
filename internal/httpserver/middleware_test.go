@@ -14,6 +14,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/SUNET/sis/internal/auth"
+	"github.com/SUNET/sis/internal/core/port"
 	"github.com/SUNET/sis/pkg/helpers"
 	"github.com/SUNET/sis/pkg/logger"
 	"github.com/SUNET/sis/pkg/model"
@@ -157,5 +159,52 @@ func TestSecurityHeaders(t *testing.T) {
 		assert.Equal(t, "frame-ancestors 'none'", header.Get("Content-Security-Policy"), "tls=%v", tls)
 		assert.Equal(t, "no-referrer", header.Get("Referrer-Policy"), "tls=%v", tls)
 		assert.Equal(t, tls, header.Get("Strict-Transport-Security") != "", "tls=%v: HSTS present", tls)
+	}
+}
+
+// TestRequestTimeoutStopsSlowBody: a body still arriving at the work
+// deadline (write_timeout, shorter than read_timeout) is cut off there,
+// and the request ends with 503 without dispatching the command, both
+// when the body would finish shortly after the deadline and when it
+// never does. Real listener: the read deadline is what interrupts it.
+func TestRequestTimeoutStopsSlowBody(t *testing.T) {
+	log := logger.NewWithWriter("test", false, "error", io.Discard)
+	catalog := memCatalog(time.Now, log)
+	cfg := testCfg("127.0.0.1:0")
+	cfg.SIS.HTTPServer.ReadTimeout = 5 * time.Second
+	cfg.SIS.HTTPServer.WriteTimeout = 100 * time.Millisecond
+	srv, iss := startWithIssuer(t, cfg, catalog)
+	token := iss.Token(t, "svc", auth.ScopeWrite)
+	const person = `{"givenName":"A","familyName":"B","status":"active"}`
+
+	for name, finishAfter := range map[string]time.Duration{"finishes late": 300 * time.Millisecond, "never finishes": 0} {
+		t.Run(name, func(t *testing.T) {
+			body, bodyWriter := io.Pipe()
+			t.Cleanup(func() { _ = bodyWriter.Close() })
+			go func() {
+				_, _ = bodyWriter.Write([]byte(person[:10]))
+				if finishAfter > 0 {
+					time.Sleep(finishAfter)
+					_, _ = bodyWriter.Write([]byte(person[10:]))
+					_ = bodyWriter.Close()
+				}
+			}()
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "http://"+srv.Addr().String()+"/api/v1/persons", body)
+			require.NoError(t, err)
+			req.Header.Set("Authorization", "Bearer "+token)
+			req.Header.Set("Content-Type", "application/json")
+
+			began := time.Now()
+			resp, err := http.DefaultClient.Do(req)
+			require.NoError(t, err, "the 503 must reach the client")
+			defer resp.Body.Close()
+			answer, _ := io.ReadAll(resp.Body)
+			assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode, string(answer))
+			assert.Less(t, time.Since(began), 2*time.Second, "must not wait for read_timeout")
+
+			page, err := catalog.Persons.ListPersons(t.Context(), port.ListParams{})
+			require.NoError(t, err)
+			assert.Zero(t, page.Total, "no person may be stored after the deadline")
+		})
 	}
 }
