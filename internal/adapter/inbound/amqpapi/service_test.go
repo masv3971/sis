@@ -457,20 +457,61 @@ func TestCommandTimeoutIsRetried(t *testing.T) {
 	fx.expect(t, message("stuck", "", `{}`), "retry")
 }
 
-// TestLateSuccessIsRetried: a handler that ignores its deadline and returns
-// nil after it (as the memory store does) is redelivered, not accepted.
-func TestLateSuccessIsRetried(t *testing.T) {
+// TestLateCreateIsAcceptedOnce: a create without id or sourcedId that
+// commits and then runs past command_timeout (e.g. slow event logging) is
+// accepted, so it is not redelivered into a second record under a fresh id.
+func TestLateCreateIsAcceptedOnce(t *testing.T) {
+	fx := newFixture(t)
 	log := logger.NewWithWriter("test", false, "error", io.Discard)
-	fake := newFakeLink()
-	table := map[string]handlerFunc{"late": func(ctx context.Context, _ []byte) error {
-		<-ctx.Done()
-		return nil
+	commands, err := command.New(t.Context(), &model.Cfg{}, fx.catalog, log)
+	require.NoError(t, err)
+	create := newCommandTable(commands, fx.catalog)["person.create"]
+	table := map[string]handlerFunc{"person.create": func(ctx context.Context, body []byte) error {
+		err := create(ctx, body)
+		<-ctx.Done() // the deadline passes after the insert
+		return err
 	}}
+	fake := newFakeLink()
 	amqpCfg := model.AMQPAPI{Prefetch: 1, MaxMessageBytes: 1 << 20, CommandTimeout: 50 * time.Millisecond, Scopes: []string{auth.ScopeWrite}}
 	svc := start(t.Context(), amqpCfg, nil, table, func(context.Context) (link, error) { return fake, nil }, log)
 	t.Cleanup(func() { _ = svc.Close(context.Background()) })
-	fx := &fixture{link: fake}
-	fx.expect(t, message("late", "", `{}`), "retry")
+
+	(&fixture{link: fake}).expect(t, message("person.create", "", `{"givenName":"A","familyName":"B","status":"active"}`), "accepted")
+	page, err := fx.catalog.Persons.ListPersons(t.Context(), port.ListParams{})
+	require.NoError(t, err)
+	assert.Equal(t, 1, page.Total, "one delivery, one record")
+}
+
+// TestStalledDiscoveryFreesSlots: with discovery hanging, concurrent
+// deliveries end at command_timeout and go back to the broker, instead of
+// holding their prefetch slots until the HTTP timeout.
+func TestStalledDiscoveryFreesSlots(t *testing.T) {
+	log := logger.NewWithWriter("test", false, "error", io.Discard)
+	iss := authtest.NewIssuer(t)
+	iss.Stall.Store(true)
+	verifier, err := auth.New(t.Context(), &model.Cfg{SIS: model.SIS{Auth: model.Auth{Issuers: []model.Issuer{iss.Config()}}}}, log)
+	require.NoError(t, err)
+	table := map[string]handlerFunc{"noop": func(context.Context, []byte) error { return nil }}
+	fake := newFakeLink()
+	amqpCfg := model.AMQPAPI{Prefetch: 3, MaxMessageBytes: 1 << 20, CommandTimeout: 100 * time.Millisecond}
+	svc := start(t.Context(), amqpCfg, verifier, table, func(context.Context) (link, error) { return fake, nil }, log)
+	t.Cleanup(func() { _ = svc.Close(context.Background()) })
+
+	token := iss.Token(t, "x", auth.ScopeWrite)
+	msgs := []*amqp.Message{message("noop", token, `{}`), message("noop", token, `{}`), message("noop", token, `{}`)}
+	began := time.Now()
+	for _, msg := range msgs {
+		fake.in <- msg
+	}
+	for range msgs {
+		select {
+		case got := <-fake.settled:
+			assert.Equal(t, "retry", got.outcome)
+		case <-time.After(5 * time.Second):
+			t.Fatal("message not settled")
+		}
+	}
+	assert.Less(t, time.Since(began), 2*time.Second, "deliveries must end at command_timeout")
 }
 
 // TestInternalErrorsAreRetried: an unclassified failure (e.g. the database

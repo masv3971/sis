@@ -228,12 +228,13 @@ func (s *Service) process(ctx context.Context, receiver link, msg *amqp.Message)
 // it is a server-side failure (503): the message is redelivered. Zero means
 // no limit.
 //
-// Cancellation does not force a handler to fail (the memory store ignores
-// ctx), so ctx is checked before dispatch and again after a handler that
-// succeeded: one that finished past its deadline is redelivered, not
-// accepted. Its writes may have landed, so delivery is at-least-once:
-// populate and update converge on redelivery, while a repeated create or
-// delete is rejected (409/404) and dead-lettered, which records the outcome.
+// The outcome follows what the command did, not the clock. A command whose
+// ctx has already ended is not started. One that returns an error is
+// redelivered or rejected by that error. One that returns nil has committed
+// its writes, so it is accepted even when it finished past the deadline
+// (the memory store ignores ctx): redelivering it would run it twice, and a
+// create without id or sourcedId would then store a second record under a
+// fresh id.
 func (s *Service) runCommand(ctx context.Context, msg *amqp.Message) error {
 	if s.cfg.CommandTimeout > 0 {
 		var cancel context.CancelFunc
@@ -243,13 +244,7 @@ func (s *Service) runCommand(ctx context.Context, msg *amqp.Message) error {
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("command not started: %w", err)
 	}
-	if err := s.handle(ctx, msg); err != nil {
-		return err
-	}
-	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("command finished past its deadline: %w", err)
-	}
-	return nil
+	return s.handle(ctx, msg)
 }
 
 // rejection describes a client error for the dead-lettered message. The

@@ -1,12 +1,14 @@
 package auth_test
 
 import (
+	"context"
 	"encoding/pem"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -155,6 +157,40 @@ func TestVerifyRecoversWhenIssuerComesUp(t *testing.T) {
 		require.NoError(t, err, "after recovery")
 	}
 	assert.EqualValues(t, 1, iss.JWKSHits.Load(), "JWKS fetches, want 1 (cached)")
+}
+
+// TestVerifyStalledDiscoveryHonoursCtx checks concurrent callers stop at
+// their own deadline while discovery hangs: the one running it and the ones
+// queued behind it. That failure is the callers', so it is not cached, and
+// the next caller succeeds once the issuer answers.
+func TestVerifyStalledDiscoveryHonoursCtx(t *testing.T) {
+	iss := authtest.NewIssuer(t)
+	verifier := newVerifier(t, iss.Config())
+	token := iss.Token(t, "x", "sis.write")
+	auth.SetRetryDelay(t, time.Hour)
+	iss.Stall.Store(true)
+
+	const callers = 4
+	errs := make([]error, callers)
+	began := time.Now()
+	var wg sync.WaitGroup
+	for i := range callers {
+		wg.Go(func() {
+			ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+			defer cancel()
+			_, errs[i] = verifier.Verify(ctx, token)
+		})
+	}
+	wg.Wait()
+	assert.Less(t, time.Since(began), 2*time.Second, "callers must not wait for the HTTP timeout")
+	for i, err := range errs {
+		assert.ErrorIs(t, err, auth.ErrIssuerUnavailable, "caller %d", i)
+		assert.ErrorIs(t, err, context.DeadlineExceeded, "caller %d", i)
+	}
+
+	iss.Stall.Store(false)
+	_, err := verifier.Verify(t.Context(), token)
+	require.NoError(t, err, "a caller's own timeout must not be cached as an issuer failure")
 }
 
 // TestVerifyKeysUnavailable checks a JWKS endpoint that fails is reported as

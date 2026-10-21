@@ -18,7 +18,6 @@ import (
 	"net/http"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	coreoidc "github.com/coreos/go-oidc/v3/oidc"
@@ -85,7 +84,10 @@ type issuer struct {
 	// httpsOnly (production) rejects an http jwks_uri from discovery.
 	httpsOnly bool
 
-	mu       sync.Mutex
+	// lock (capacity 1) guards the fields below. A channel rather than a
+	// sync.Mutex so a caller queued behind a slow discovery can give up
+	// when its ctx ends.
+	lock     chan struct{}
 	verifier *coreoidc.IDTokenVerifier
 	failErr  error
 	failedAt time.Time
@@ -105,7 +107,7 @@ func New(_ context.Context, cfg *model.Cfg, log *logger.Log) (*Verifier, error) 
 		if _, dup := v.issuers[issuerCfg.Issuer]; dup {
 			return nil, fmt.Errorf("auth: issuer %q listed twice", issuerCfg.Issuer)
 		}
-		v.issuers[issuerCfg.Issuer] = &issuer{cfg: issuerCfg, httpClient: httpClient, httpsOnly: httpsOnly}
+		v.issuers[issuerCfg.Issuer] = &issuer{cfg: issuerCfg, httpClient: httpClient, httpsOnly: httpsOnly, lock: make(chan struct{}, 1)}
 		log.Info("trusting token issuer", "issuer", issuerCfg.Issuer, "audience", issuerCfg.Audience)
 	}
 	if len(v.issuers) == 0 {
@@ -164,7 +166,7 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (*Claims, error) {
 	idVerifier, err := trusted.tokenVerifier(ctx)
 	if err != nil {
 		v.log.Warn("token issuer unavailable", "issuer", trusted.cfg.Issuer, "err", err)
-		return nil, fmt.Errorf("%w: %v", ErrIssuerUnavailable, err)
+		return nil, fmt.Errorf("%w: %w", ErrIssuerUnavailable, err)
 	}
 	ctx, cancel := context.WithTimeout(coreoidc.ClientContext(ctx, trusted.httpClient), httpTimeout)
 	defer cancel()
@@ -200,10 +202,17 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (*Claims, error) {
 
 // tokenVerifier returns the issuer's verifier, building it on first success.
 // A failed discovery is reused for retryDelay, then retried. Callers that
-// queue on mu meanwhile get that one attempt's result.
+// queue behind an attempt get its result, and every caller stops waiting
+// (for the lock or for discovery) when its ctx ends. A failure caused by
+// the caller's own ctx says nothing about the issuer, so it is not cached:
+// the next caller tries again.
 func (i *issuer) tokenVerifier(ctx context.Context) (*coreoidc.IDTokenVerifier, error) {
-	i.mu.Lock()
-	defer i.mu.Unlock()
+	select {
+	case i.lock <- struct{}{}:
+	case <-ctx.Done():
+		return nil, fmt.Errorf("waiting for issuer discovery: %w", ctx.Err())
+	}
+	defer func() { <-i.lock }()
 	if i.verifier != nil {
 		return i.verifier, nil
 	}
@@ -212,7 +221,9 @@ func (i *issuer) tokenVerifier(ctx context.Context) (*coreoidc.IDTokenVerifier, 
 	}
 	idVerifier, err := i.newTokenVerifier(ctx)
 	if err != nil {
-		i.failErr, i.failedAt = err, time.Now()
+		if ctx.Err() == nil {
+			i.failErr, i.failedAt = err, time.Now()
+		}
 		return nil, err
 	}
 	i.verifier, i.failErr = idVerifier, nil
@@ -220,14 +231,11 @@ func (i *issuer) tokenVerifier(ctx context.Context) (*coreoidc.IDTokenVerifier, 
 }
 
 func (i *issuer) newTokenVerifier(ctx context.Context) (*coreoidc.IDTokenVerifier, error) {
-	// Key sets refresh in the background on an unknown key id, long after
-	// this request: they keep the HTTP client from ctx, so detach from its
-	// cancellation but keep the timeout-bound client.
-	keyCtx := coreoidc.ClientContext(context.WithoutCancel(ctx), i.httpClient)
 	jwksURL := i.cfg.JWKSURL
 	if jwksURL == "" {
+		// Discovery is part of this request, so it ends with ctx.
 		var err error
-		if jwksURL, err = discoverJWKS(keyCtx, i.httpClient, i.cfg.Issuer); err != nil {
+		if jwksURL, err = discoverJWKS(ctx, i.httpClient, i.cfg.Issuer); err != nil {
 			return nil, err
 		}
 		// The keys decide who gets in: in production they must not come
@@ -236,6 +244,10 @@ func (i *issuer) newTokenVerifier(ctx context.Context) (*coreoidc.IDTokenVerifie
 			return nil, fmt.Errorf("discovered jwks_uri %s: https is required in production", jwksURL)
 		}
 	}
+	// The key set refreshes in the background on an unknown key id, long
+	// after this request: it keeps the HTTP client from keyCtx, so detach
+	// from ctx's cancellation but keep the timeout-bound client.
+	keyCtx := coreoidc.ClientContext(context.WithoutCancel(ctx), i.httpClient)
 	return coreoidc.NewVerifier(i.cfg.Issuer, keySet{coreoidc.NewRemoteKeySet(keyCtx, jwksURL)}, &coreoidc.Config{
 		ClientID: i.cfg.Audience,
 		// Without an audience every token of the issuer is accepted;
