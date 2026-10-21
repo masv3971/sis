@@ -227,13 +227,29 @@ func (s *Service) process(ctx context.Context, receiver link, msg *amqp.Message)
 // so a stuck command cannot hold a prefetch slot until shutdown. Running past
 // it is a server-side failure (503): the message is redelivered. Zero means
 // no limit.
+//
+// Cancellation does not force a handler to fail (the memory store ignores
+// ctx), so ctx is checked before dispatch and again after a handler that
+// succeeded: one that finished past its deadline is redelivered, not
+// accepted. Its writes may have landed, so delivery is at-least-once:
+// populate and update converge on redelivery, while a repeated create or
+// delete is rejected (409/404) and dead-lettered, which records the outcome.
 func (s *Service) runCommand(ctx context.Context, msg *amqp.Message) error {
 	if s.cfg.CommandTimeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, s.cfg.CommandTimeout)
 		defer cancel()
 	}
-	return s.handle(ctx, msg)
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("command not started: %w", err)
+	}
+	if err := s.handle(ctx, msg); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("command finished past its deadline: %w", err)
+	}
+	return nil
 }
 
 // rejection describes a client error for the dead-lettered message. The

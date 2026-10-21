@@ -457,6 +457,22 @@ func TestCommandTimeoutIsRetried(t *testing.T) {
 	fx.expect(t, message("stuck", "", `{}`), "retry")
 }
 
+// TestLateSuccessIsRetried: a handler that ignores its deadline and returns
+// nil after it (as the memory store does) is redelivered, not accepted.
+func TestLateSuccessIsRetried(t *testing.T) {
+	log := logger.NewWithWriter("test", false, "error", io.Discard)
+	fake := newFakeLink()
+	table := map[string]handlerFunc{"late": func(ctx context.Context, _ []byte) error {
+		<-ctx.Done()
+		return nil
+	}}
+	amqpCfg := model.AMQPAPI{Prefetch: 1, MaxMessageBytes: 1 << 20, CommandTimeout: 50 * time.Millisecond, Scopes: []string{auth.ScopeWrite}}
+	svc := start(t.Context(), amqpCfg, nil, table, func(context.Context) (link, error) { return fake, nil }, log)
+	t.Cleanup(func() { _ = svc.Close(context.Background()) })
+	fx := &fixture{link: fake}
+	fx.expect(t, message("late", "", `{}`), "retry")
+}
+
 // TestInternalErrorsAreRetried: an unclassified failure (e.g. the database
 // is down) is not the message's fault, so it goes back to the broker.
 func TestInternalErrorsAreRetried(t *testing.T) {

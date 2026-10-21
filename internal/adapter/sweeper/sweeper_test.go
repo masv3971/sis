@@ -1,6 +1,7 @@
 package sweeper
 
 import (
+	"context"
 	"io"
 	"testing"
 	"time"
@@ -71,11 +72,52 @@ func TestSweepBoundedStopsAtTimeout(t *testing.T) {
 	now = expiry
 
 	// The deadline has passed before the first type: nothing is swept.
-	s := &Service{catalog: catalog, timeout: time.Nanosecond, log: log}
+	s := &Service{sweeps: sweepsOf(catalog), timeout: time.Nanosecond, log: log}
 	assert.Zero(t, s.sweepBounded(t.Context()))
 	// Without a limit the same pass deletes it.
 	s.timeout = 0
 	assert.Equal(t, 1, s.sweepBounded(t.Context()))
+}
+
+// TestSweepTimeoutRotatesStart: a type that always uses up the pass timeout
+// does not starve the types after it. The next pass starts after it, and a
+// full pass returns to the dependants-first order.
+func TestSweepTimeoutRotatesStart(t *testing.T) {
+	log := logger.NewWithWriter("test", false, "error", io.Discard)
+	var ran []string
+	sweep := func(typ string, slow bool) sweepFunc {
+		return sweepFunc{typ, func(ctx context.Context) ([]string, error) {
+			ran = append(ran, typ)
+			if slow {
+				<-ctx.Done()
+				return nil, ctx.Err()
+			}
+			return []string{typ}, nil
+		}}
+	}
+	s := &Service{
+		sweeps:  []sweepFunc{sweep("result", true), sweep("enrollment", false), sweep("person", false)},
+		timeout: 50 * time.Millisecond,
+		log:     log,
+	}
+
+	// result times out; nothing after it runs this pass.
+	assert.Zero(t, s.sweepBounded(t.Context()))
+	assert.Equal(t, []string{"result"}, ran)
+
+	// The later types get their turn first, then result times out again.
+	ran = nil
+	assert.Equal(t, 2, s.sweepBounded(t.Context()))
+	assert.Equal(t, []string{"enrollment", "person", "result"}, ran)
+
+	// Without the slow type a full pass resets to dependants first.
+	s.sweeps[0] = sweep("result", false)
+	ran = nil
+	assert.Equal(t, 3, s.sweepBounded(t.Context()))
+	assert.Equal(t, []string{"enrollment", "person", "result"}, ran)
+	ran = nil
+	assert.Equal(t, 3, s.sweepBounded(t.Context()))
+	assert.Equal(t, []string{"result", "enrollment", "person"}, ran)
 }
 
 func TestNewRejectsZeroInterval(t *testing.T) {

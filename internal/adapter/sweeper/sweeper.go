@@ -18,7 +18,11 @@ import (
 
 // Service runs the sweep loop.
 type Service struct {
-	catalog *readmodel.Client
+	// sweeps is one pass, dependants first (see sweepsOf).
+	sweeps []sweepFunc
+	// next is where the next pass starts: 0 (dependants first) unless the
+	// last pass ran out of time. Only the loop goroutine touches it.
+	next int
 	// timeout bounds one pass of the loop; 0 means no limit.
 	timeout time.Duration
 	cancel  context.CancelFunc
@@ -40,7 +44,7 @@ func New(ctx context.Context, cfg *model.Cfg, catalog *readmodel.Client, log *lo
 		return nil, errors.New("sweeper: sis.adapter.sweeper.interval must be positive")
 	}
 	loopCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
-	s := &Service{catalog: catalog, timeout: cfg.SIS.Adapter.Sweeper.Timeout, cancel: cancel, done: make(chan struct{}), log: log.New("sweeper")}
+	s := &Service{sweeps: sweepsOf(catalog), timeout: cfg.SIS.Adapter.Sweeper.Timeout, cancel: cancel, done: make(chan struct{}), log: log.New("sweeper")}
 	go s.loop(loopCtx, interval)
 	s.log.Info("sweeper started", "interval", interval.String())
 	return s, nil
@@ -72,15 +76,12 @@ func (s *Service) sweepBounded(ctx context.Context) int {
 	return s.Sweep(ctx)
 }
 
-// Sweep runs one pass over every entity type and returns the number of
-// records deleted. Failures are logged and the pass continues with the next
-// type; the next tick retries.
-func (s *Service) Sweep(ctx context.Context) int {
-	catalog := s.catalog
-	// Dependants first, so a pass never leaves a reference to a record it
-	// just deleted while the referrer survives until the next tick. (Records
-	// populated together share an expiry, so they normally go together.)
-	sweeps := []sweepFunc{
+// sweepsOf lists one pass over every entity type, dependants first, so a
+// pass never leaves a reference to a record it just deleted while the
+// referrer survives until the next tick. (Records populated together share
+// an expiry, so they normally go together.)
+func sweepsOf(catalog *readmodel.Client) []sweepFunc {
+	return []sweepFunc{
 		{"result", catalog.Results.DeleteExpired},
 		{"enrollment", catalog.Enrollments.DeleteExpired},
 		{"person", catalog.Persons.DeleteExpiredPersons},
@@ -90,26 +91,56 @@ func (s *Service) Sweep(ctx context.Context) int {
 		{"academicSession", catalog.AcademicSessions.DeleteExpired},
 		{"organization", catalog.Organizations.DeleteExpired},
 	}
+}
+
+// Sweep runs one pass over every entity type and returns the number of
+// records deleted. Failures are logged and the pass continues with the next
+// type; the next tick retries.
+//
+// A pass that runs out of time stops, and the next one starts at the type
+// after the one it stopped in (wrapping around), so a type that always uses
+// up the timeout cannot starve the types after it: they get their turn
+// first and it goes last. A full pass returns to dependants first. A
+// rotated pass may delete a record before its expired referrers; that is
+// harmless, as expired records are already invisible to every API and
+// readers drop dangling references.
+//
+// Not safe for concurrent use; the loop is its only caller.
+func (s *Service) Sweep(ctx context.Context) int {
 	total := 0
-	for _, sweep := range sweeps {
-		if err := ctx.Err(); err != nil {
-			// Close cancels silently; running out of time is worth a note.
-			if errors.Is(err, context.DeadlineExceeded) {
-				s.log.Warn("sweep timed out; the next one continues", "next_type", sweep.typ)
-			}
+	start, count := s.next, len(s.sweeps)
+	s.next = 0
+	for step := range count {
+		index := (start + step) % count
+		sweep := s.sweeps[index]
+		if ctx.Err() != nil {
+			s.stopped(ctx, index)
 			break
 		}
 		ids, err := sweep.run(ctx)
 		total += len(ids)
-		if err != nil {
+		switch {
+		case ctx.Err() != nil:
+			// Out of time (or closed) in this type: it goes last next time.
+			s.stopped(ctx, (index+1)%count)
+			return total
+		case err != nil:
 			s.log.Error("sweep failed", "type", sweep.typ, "err", err)
-			continue
-		}
-		if len(ids) > 0 {
+		case len(ids) > 0:
 			s.log.Info("expired records deleted", "type", sweep.typ, "count", len(ids))
 		}
 	}
 	return total
+}
+
+// stopped records that a pass ended early and the next one starts at
+// s.sweeps[next].
+func (s *Service) stopped(ctx context.Context, next int) {
+	s.next = next
+	// Close cancels silently; running out of time is worth a note.
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		s.log.Warn("sweep timed out; the next one continues", "next_type", s.sweeps[next].typ)
+	}
 }
 
 // Close stops the loop, waiting for an in-progress sweep until ctx is done.
