@@ -91,18 +91,29 @@ sis() {
         fail "GET ${SIS_URL}${path} failed"
 }
 
+# header NAME: the value of response header NAME in $tmp/headers.
+header() {
+    tr -d '\r' <"$tmp/headers" |
+        awk -F': *' -v h="$1" 'tolower($1) == tolower(h) {print $2}'
+}
+
 # edu_list TYPE: every TYPE record modified since T0, one JSON per line.
+# SIS clamps limit to sis.adapter.inbound.eduapi.max_limit, so the offset
+# advances by the page size it applied (X-Limit), not by PAGE or by the
+# items returned (orphans are left out of a page).
 edu_list() {
-    local typ=$1 offset=0 total
+    local typ=$1 offset=0 total limit
     while :; do
         sis "/eduapi/${typ}?limit=${PAGE}&offset=${offset}" \
             -D "$tmp/headers" -o "$tmp/page" >/dev/null
         jq -c --arg k "$typ" --arg t "$T0" \
             '.[$k][]? | select((.dateLastModified // "") >= $t)' "$tmp/page"
-        total="$(tr -d '\r' <"$tmp/headers" |
-            awk -F': *' 'tolower($1) == "x-total-count" {print $2}')"
-        offset=$((offset + PAGE))
-        ((offset < ${total:-0})) || break
+        total="$(header X-Total-Count)"
+        limit="$(header X-Limit)"
+        [[ "$total" =~ ^[0-9]+$ ]] || fail "/eduapi/${typ}: no X-Total-Count header"
+        [[ "$limit" =~ ^[1-9][0-9]*$ ]] || fail "/eduapi/${typ}: no X-Limit header"
+        offset=$((offset + limit))
+        ((offset < total)) || break
     done
 }
 

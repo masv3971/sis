@@ -344,6 +344,13 @@ messages appear in `sis.commands.dlq`.
 `persons`, `orgs`, `academicSessions`, `courses`, `classes`, `enrollments`,
 `programs`, `results`
 
+A list response carries `X-Total-Count` (stored records) and `X-Limit` (the
+page size applied: `limit` capped at `sis.adapter.inbound.eduapi.max_limit`).
+To read everything, add `X-Limit` to `offset` until it reaches
+`X-Total-Count`. Don't count the items instead: records whose required
+references are gone are left out, so a page can be short without being the
+last.
+
 Both standards APIs address resources by `sourcedId`, not by canonical id:
 
 ```bash
