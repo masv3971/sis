@@ -127,8 +127,8 @@ func TestUpdateSourcedIDCollisionIsConflict(t *testing.T) {
 	}
 
 	courses := postgres.NewDocRepo[domain.Course](svc)
-	ca := &domain.Course{Base: domain.Base{ID: "ca-" + suffix, SourcedID: "csa-" + suffix, CreatedAt: now, UpdatedAt: now}, Title: "A"}
-	cb := &domain.Course{Base: domain.Base{ID: "cb-" + suffix, SourcedID: "csb-" + suffix, CreatedAt: now, UpdatedAt: now}, Title: "B"}
+	ca := &domain.Course{ID: "ca-" + suffix, SourcedID: "csa-" + suffix, CreatedAt: now, UpdatedAt: now, Title: "A"}
+	cb := &domain.Course{ID: "cb-" + suffix, SourcedID: "csb-" + suffix, CreatedAt: now, UpdatedAt: now, Title: "B"}
 	t.Cleanup(func() { _ = courses.Delete(ctx, ca.ID); _ = courses.Delete(ctx, cb.ID) })
 	if err := courses.Create(ctx, ca); err != nil {
 		t.Fatalf("create ca: %v", err)
@@ -176,7 +176,7 @@ func TestGetByIDs(t *testing.T) {
 	}
 
 	courses := postgres.NewDocRepo[domain.Course](svc)
-	ca := &domain.Course{Base: domain.Base{ID: "gca-" + suffix, SourcedID: "gcsa-" + suffix, CreatedAt: now, UpdatedAt: now}, Title: "A"}
+	ca := &domain.Course{ID: "gca-" + suffix, SourcedID: "gcsa-" + suffix, CreatedAt: now, UpdatedAt: now, Title: "A"}
 	t.Cleanup(func() { _ = courses.Delete(ctx, ca.ID) })
 	if err := courses.Create(ctx, ca); err != nil {
 		t.Fatalf("create course: %v", err)
@@ -212,7 +212,7 @@ func TestListTotalMatchesPageUnderInserts(t *testing.T) {
 			now := time.Now().UTC()
 			id := fmt.Sprintf("lt-%s-%03d", suffix, i)
 			p := domain.Person{ID: id, SourcedID: "s" + id, Status: domain.StatusActive, GivenName: "L", FamilyName: "L", CreatedAt: now, UpdatedAt: now}
-			c := &domain.Course{Base: domain.Base{ID: id, SourcedID: "s" + id, CreatedAt: now, UpdatedAt: now}, Title: "L"}
+			c := &domain.Course{ID: id, SourcedID: "s" + id, CreatedAt: now, UpdatedAt: now, Title: "L"}
 			_ = persons.Create(ctx, p)
 			_ = courses.Create(ctx, c)
 		}

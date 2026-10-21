@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/SUNET/sis/internal/command"
 	"github.com/SUNET/sis/internal/core/domain"
 	"github.com/SUNET/sis/internal/core/port"
 	"github.com/SUNET/sis/internal/readmodel"
@@ -18,22 +19,23 @@ import (
 	"github.com/SUNET/sis/pkg/model"
 )
 
-// Client bundles the /api/v1 handlers with the read-model Client (through
-// which it reaches both the person service and the generic entity resources)
-// and a logger. It is a "Client" rather than a "Service" because it owns no
-// runtime resources and has nothing to shut down.
+// Client bundles the /api/v1 handlers with the read-model Client (reads) and
+// the command Client (writes, shared with the AMQP consumer) and a logger. It
+// is a "Client" rather than a "Service" because it owns no runtime resources
+// and has nothing to shut down.
 //
 // The receiver is named c to match the vc convention; the gin.Context
 // parameter is therefore named gc to avoid shadowing.
 type Client struct {
-	cfg     *model.Cfg
-	catalog *readmodel.Client
-	log     *logger.Log
+	cfg      *model.Cfg
+	catalog  *readmodel.Client
+	commands *command.Client
+	log      *logger.Log
 }
 
 // New builds the restadmin Client.
-func New(_ context.Context, cfg *model.Cfg, catalog *readmodel.Client, log *logger.Log) (*Client, error) {
-	return &Client{cfg: cfg, catalog: catalog, log: log.New("restadmin")}, nil
+func New(_ context.Context, cfg *model.Cfg, catalog *readmodel.Client, commands *command.Client, log *logger.Log) (*Client, error) {
+	return &Client{cfg: cfg, catalog: catalog, commands: commands, log: log.New("restadmin")}, nil
 }
 
 // PersonListReply is the response envelope of GET /api/v1/persons.
@@ -105,7 +107,7 @@ func (c *Client) CreatePerson(gc *gin.Context) {
 		helpers.WriteError(gc, err)
 		return
 	}
-	created, err := c.catalog.Persons.CreatePerson(gc.Request.Context(), p)
+	created, err := c.commands.CreatePerson(gc.Request.Context(), p)
 	if err != nil {
 		helpers.WriteError(gc, err)
 		return
@@ -163,8 +165,7 @@ func (c *Client) UpdatePerson(gc *gin.Context) {
 		helpers.WriteError(gc, err)
 		return
 	}
-	p.ID = gc.Param("id")
-	updated, err := c.catalog.Persons.UpdatePerson(gc.Request.Context(), p)
+	updated, err := c.commands.UpdatePerson(gc.Request.Context(), gc.Param("id"), p)
 	if err != nil {
 		helpers.WriteError(gc, err)
 		return
@@ -188,7 +189,7 @@ func (c *Client) UpdatePerson(gc *gin.Context) {
 //	@Failure		500	{object}	helpers.ErrorResponse	"Internal Server Error"
 //	@Router			/persons/{id} [delete]
 func (c *Client) DeletePerson(gc *gin.Context) {
-	if err := c.catalog.Persons.DeletePerson(gc.Request.Context(), gc.Param("id")); err != nil {
+	if err := c.commands.DeletePerson(gc.Request.Context(), gc.Param("id")); err != nil {
 		helpers.WriteError(gc, err)
 		return
 	}

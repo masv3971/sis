@@ -3,6 +3,7 @@ module github.com/SUNET/sis
 go 1.27.2
 
 require (
+	github.com/Azure/go-amqp v1.7.0
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/creasty/defaults v1.11.0
 	github.com/gin-gonic/gin v1.12.0

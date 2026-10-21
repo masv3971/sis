@@ -2155,7 +2155,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/convertapi.PopulateRequest"
+                            "$ref": "#/definitions/command.PopulateRequest"
                         }
                     }
                 ],
@@ -2163,7 +2163,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Stored records",
                         "schema": {
-                            "$ref": "#/definitions/convertapi.PopulateReply"
+                            "$ref": "#/definitions/command.PopulateReply"
                         }
                     },
                     "400": {
@@ -2901,7 +2901,7 @@ const docTemplate = `{
                 }
             }
         },
-        "convertapi.Metadata": {
+        "command.Metadata": {
             "type": "object",
             "required": [
                 "input_format"
@@ -2919,6 +2919,51 @@ const docTemplate = `{
                 }
             }
         },
+        "command.PopulateReply": {
+            "type": "object",
+            "properties": {
+                "expiresAt": {
+                    "description": "ExpiresAt is when the loaded records stop being served. Absent when no\nttl was given. A record that already existed without expiry keeps\nnone.",
+                    "type": "string"
+                },
+                "items": {
+                    "description": "Items lists every stored record, in the order written.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/readmodel.PopulateItem"
+                    }
+                },
+                "metadata": {
+                    "$ref": "#/definitions/command.Metadata"
+                },
+                "warnings": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "command.PopulateRequest": {
+            "type": "object",
+            "required": [
+                "data"
+            ],
+            "properties": {
+                "data": {
+                    "description": "Data is the document to load, e.g. an ELM v3 credential (JSON-LD).",
+                    "type": "object"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/command.Metadata"
+                },
+                "ttl": {
+                    "description": "TTL is how long the records are served, as a Go duration (\"24h\",\n\"90m\"). Omitted: they never expire.",
+                    "type": "string",
+                    "example": "24h"
+                }
+            }
+        },
         "convertapi.ParseReply": {
             "type": "object",
             "properties": {
@@ -2927,7 +2972,7 @@ const docTemplate = `{
                     "type": "object"
                 },
                 "metadata": {
-                    "$ref": "#/definitions/convertapi.Metadata"
+                    "$ref": "#/definitions/command.Metadata"
                 },
                 "warnings": {
                     "description": "Warnings name the parts of the document that were not converted.",
@@ -2949,52 +2994,7 @@ const docTemplate = `{
                     "type": "object"
                 },
                 "metadata": {
-                    "$ref": "#/definitions/convertapi.Metadata"
-                }
-            }
-        },
-        "convertapi.PopulateReply": {
-            "type": "object",
-            "properties": {
-                "expiresAt": {
-                    "description": "ExpiresAt is when the loaded records stop being served. Absent when no\nttl was given. A record that already existed without expiry keeps\nnone.",
-                    "type": "string"
-                },
-                "items": {
-                    "description": "Items lists every stored record, in the order written.",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/readmodel.PopulateItem"
-                    }
-                },
-                "metadata": {
-                    "$ref": "#/definitions/convertapi.Metadata"
-                },
-                "warnings": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                }
-            }
-        },
-        "convertapi.PopulateRequest": {
-            "type": "object",
-            "required": [
-                "data"
-            ],
-            "properties": {
-                "data": {
-                    "description": "Data is the document to load, e.g. an ELM v3 credential (JSON-LD).",
-                    "type": "object"
-                },
-                "metadata": {
-                    "$ref": "#/definitions/convertapi.Metadata"
-                },
-                "ttl": {
-                    "description": "TTL is how long the records are served, as a Go duration (\"24h\",\n\"90m\"). Omitted: they never expire.",
-                    "type": "string",
-                    "example": "24h"
+                    "$ref": "#/definitions/command.Metadata"
                 }
             }
         },

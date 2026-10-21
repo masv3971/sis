@@ -38,7 +38,8 @@ func New(_ context.Context, cfg *model.Cfg, catalog *readmodel.Client, log *logg
 	return &Client{cfg: cfg, catalog: catalog, log: log.New("eduapi")}, nil
 }
 
-// ListPersons publishes persons in Edu-API shape with an X-Total-Count header.
+// ListPersons publishes persons in Edu-API shape with X-Total-Count and
+// X-Limit headers (see pageHeaders).
 func (c *Client) ListPersons(gc *gin.Context) {
 	params, err := c.limitOffset(gc)
 	if err != nil {
@@ -54,7 +55,7 @@ func (c *Client) ListPersons(gc *gin.Context) {
 	for _, p := range page.Items {
 		out = append(out, dto.FromPerson(p))
 	}
-	gc.Header("X-Total-Count", strconv.Itoa(page.Total))
+	pageHeaders(gc, params, page.Total)
 	gc.JSON(http.StatusOK, gin.H{"persons": out})
 }
 
@@ -95,7 +96,7 @@ func List[T any, PT domain.EntityPtr[T], D any](c *Client, svc *service.Resource
 		for _, e := range items {
 			out = append(out, mapFn(e))
 		}
-		gc.Header("X-Total-Count", strconv.Itoa(page.Total))
+		pageHeaders(gc, params, page.Total)
 		gc.JSON(http.StatusOK, gin.H{key: out})
 	}
 }
@@ -144,6 +145,16 @@ func publishRefs[PT domain.Entity](c *Client, gc *gin.Context, items ...PT) ([]P
 		}
 	}
 	return out, nil
+}
+
+// pageHeaders sets X-Total-Count (stored records) and X-Limit (the page size
+// actually applied, after clamping to max_limit). A client pages with
+// offset += X-Limit while offset < X-Total-Count. It must not count the
+// returned items instead: orphans are dropped from a page (publishRefs), so
+// a page can be short without being the last.
+func pageHeaders(gc *gin.Context, params port.ListParams, total int) {
+	gc.Header("X-Total-Count", strconv.Itoa(total))
+	gc.Header("X-Limit", strconv.Itoa(params.Limit))
 }
 
 // limitOffset parses OneRoster-style limit/offset query parameters. An

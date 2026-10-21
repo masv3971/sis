@@ -96,8 +96,7 @@ func Check(s any) error {
 		return err
 	}
 	if err := validate.Struct(s); err != nil {
-		var verrs validator.ValidationErrors
-		if errors.As(err, &verrs) {
+		if verrs, ok := errors.AsType[validator.ValidationErrors](err); ok {
 			return fmt.Errorf("validation failed: %s", formatValidationErrors(verrs))
 		}
 		return err

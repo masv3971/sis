@@ -30,7 +30,7 @@ func TestPersonRejectsUndeclaredStatus(t *testing.T) {
 
 func TestEntityStatusOptionalButChecked(t *testing.T) {
 	var verr *domain.ValidationError
-	bad := &domain.Organization{Name: "X", Base: domain.Base{Status: "bogus"}}
+	bad := &domain.Organization{Name: "X", Status: "bogus"}
 	if err := bad.Validate(); !errors.As(err, &verr) || verr.Field != "status" {
 		t.Fatalf("expected status validation error, got %v", err)
 	}

@@ -37,11 +37,11 @@ func TestResource_UpsertIsIdempotent(t *testing.T) {
 	svc := newOrgResource()
 	ctx := context.Background()
 
-	first, err := svc.UpsertBySourcedID(ctx, &domain.Organization{Base: domain.Base{SourcedID: "org-1"}, Name: "Dept A"})
+	first, err := svc.UpsertBySourcedID(ctx, &domain.Organization{SourcedID: "org-1", Name: "Dept A"})
 	if err != nil {
 		t.Fatalf("first upsert: %v", err)
 	}
-	second, err := svc.UpsertBySourcedID(ctx, &domain.Organization{Base: domain.Base{SourcedID: "org-1"}, Name: "Dept A (renamed)"})
+	second, err := svc.UpsertBySourcedID(ctx, &domain.Organization{SourcedID: "org-1", Name: "Dept A (renamed)"})
 	if err != nil {
 		t.Fatalf("second upsert: %v", err)
 	}
@@ -71,29 +71,29 @@ func TestResource_UpsertWithExpiry(t *testing.T) {
 	svc := service.NewResource(memory.NewDocRepo[domain.Organization]().WithClock(clock), nil, clock, nil)
 
 	exp1 := now.Add(time.Hour)
-	first, created, err := svc.UpsertWithExpiry(ctx, &domain.Organization{Base: domain.Base{SourcedID: "o"}, Name: "A"}, &exp1)
+	first, created, err := svc.UpsertWithExpiry(ctx, &domain.Organization{SourcedID: "o", Name: "A"}, &exp1)
 	if err != nil || !created || first.ExpiresAt == nil || !first.ExpiresAt.Equal(exp1) {
 		t.Fatalf("first: %+v created=%v err=%v", first, created, err)
 	}
 
 	exp2 := now.Add(2 * time.Hour)
-	second, created, err := svc.UpsertWithExpiry(ctx, &domain.Organization{Base: domain.Base{SourcedID: "o"}, Name: "B"}, &exp2)
+	second, created, err := svc.UpsertWithExpiry(ctx, &domain.Organization{SourcedID: "o", Name: "B"}, &exp2)
 	if err != nil || created || second.GetID() != first.GetID() || !second.ExpiresAt.Equal(exp2) {
 		t.Fatalf("refresh: %+v created=%v err=%v", second, created, err)
 	}
 
 	// Update keeps the stored expiry whatever the body says.
-	upd, err := svc.Update(ctx, &domain.Organization{Base: domain.Base{ID: first.GetID(), SourcedID: "o"}, Name: "C"})
+	upd, err := svc.Update(ctx, &domain.Organization{ID: first.GetID(), SourcedID: "o", Name: "C"})
 	if err != nil || upd.ExpiresAt == nil || !upd.ExpiresAt.Equal(exp2) {
 		t.Fatalf("update must keep expiry: %+v %v", upd, err)
 	}
 
 	// A permanent record stays permanent.
-	perm, err := svc.Create(ctx, &domain.Organization{Base: domain.Base{SourcedID: "p", ExpiresAt: &exp1}, Name: "P"})
+	perm, err := svc.Create(ctx, &domain.Organization{SourcedID: "p", ExpiresAt: &exp1, Name: "P"})
 	if err != nil || perm.ExpiresAt != nil {
 		t.Fatalf("Create must drop caller expiry: %+v %v", perm, err)
 	}
-	again, _, err := svc.UpsertWithExpiry(ctx, &domain.Organization{Base: domain.Base{SourcedID: "p"}, Name: "P2"}, &exp1)
+	again, _, err := svc.UpsertWithExpiry(ctx, &domain.Organization{SourcedID: "p", Name: "P2"}, &exp1)
 	if err != nil || again.ExpiresAt != nil || again.Name != "P2" {
 		t.Fatalf("permanent record must stay permanent but take the data: %+v %v", again, err)
 	}
@@ -126,16 +126,16 @@ func TestResource_UpsertWithExpiryRace(t *testing.T) {
 	svc := service.NewResource(repo, nil, clock, nil)
 
 	exp := now.Add(time.Hour)
-	if _, _, err := svc.UpsertWithExpiry(ctx, &domain.Organization{Base: domain.Base{SourcedID: "o"}, Name: "A"}, &exp); err != nil {
+	if _, _, err := svc.UpsertWithExpiry(ctx, &domain.Organization{SourcedID: "o", Name: "A"}, &exp); err != nil {
 		t.Fatal(err)
 	}
 	repo.before = func() {
-		if _, err := svc.UpsertBySourcedID(ctx, &domain.Organization{Base: domain.Base{SourcedID: "o"}, Name: "Permanent"}); err != nil {
+		if _, err := svc.UpsertBySourcedID(ctx, &domain.Organization{SourcedID: "o", Name: "Permanent"}); err != nil {
 			t.Errorf("concurrent permanent upsert: %v", err)
 		}
 	}
 	later := now.Add(2 * time.Hour)
-	out, _, err := svc.UpsertWithExpiry(ctx, &domain.Organization{Base: domain.Base{SourcedID: "o"}, Name: "Late"}, &later)
+	out, _, err := svc.UpsertWithExpiry(ctx, &domain.Organization{SourcedID: "o", Name: "Late"}, &later)
 	if err != nil {
 		t.Fatal(err)
 	}

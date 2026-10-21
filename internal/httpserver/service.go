@@ -25,6 +25,7 @@ import (
 	"github.com/SUNET/sis/internal/adapter/inbound/oeapi"
 	"github.com/SUNET/sis/internal/adapter/inbound/restadmin"
 	"github.com/SUNET/sis/internal/auth"
+	"github.com/SUNET/sis/internal/command"
 	"github.com/SUNET/sis/internal/core/domain"
 	"github.com/SUNET/sis/internal/core/service"
 	"github.com/SUNET/sis/internal/readmodel"
@@ -69,7 +70,7 @@ func (s *Service) Addr() net.Addr { return s.addr }
 // background. It returns once the listener is accepting connections. Each
 // inbound package exposes a *Client built here (passing cfg + log so handlers
 // can log and read config); routes are wired to its methods.
-func New(ctx context.Context, cfg *model.Cfg, verifier *auth.Verifier, catalog *readmodel.Client, log *logger.Log) (*Service, error) {
+func New(ctx context.Context, cfg *model.Cfg, verifier *auth.Verifier, catalog *readmodel.Client, commands *command.Client, log *logger.Log) (*Service, error) {
 	// Inbound handler clients. Each New returns (*Client, error) and the
 	// handlers are methods on the returned Client, so routes read as
 	// `engine.GET(path, authH.Config)` rather than passing deps per route.
@@ -77,7 +78,7 @@ func New(ctx context.Context, cfg *model.Cfg, verifier *auth.Verifier, catalog *
 	if err != nil {
 		return nil, err
 	}
-	adminH, err := restadmin.New(ctx, cfg, catalog, log)
+	adminH, err := restadmin.New(ctx, cfg, catalog, commands, log)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +90,7 @@ func New(ctx context.Context, cfg *model.Cfg, verifier *auth.Verifier, catalog *
 	if err != nil {
 		return nil, err
 	}
-	convH, err := convertapi.New(ctx, cfg, catalog, log)
+	convH, err := convertapi.New(ctx, cfg, commands, log)
 	if err != nil {
 		return nil, err
 	}

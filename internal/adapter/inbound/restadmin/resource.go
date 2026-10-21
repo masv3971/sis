@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/SUNET/sis/internal/command"
 	"github.com/SUNET/sis/internal/core/domain"
 	"github.com/SUNET/sis/internal/core/service"
 	"github.com/SUNET/sis/pkg/helpers"
@@ -61,11 +62,7 @@ func ResourceCreate[T any, PT domain.EntityPtr[T]](c *Client, svc *service.Resou
 			helpers.WriteError(gc, err)
 			return
 		}
-		if err := c.catalog.CheckRefs(gc.Request.Context(), e); err != nil {
-			helpers.WriteError(gc, err)
-			return
-		}
-		created, err := svc.Create(gc.Request.Context(), e)
+		created, err := command.Create(gc.Request.Context(), c.commands, svc, e)
 		if err != nil {
 			helpers.WriteError(gc, err)
 			return
@@ -95,12 +92,7 @@ func ResourceUpdate[T any, PT domain.EntityPtr[T]](c *Client, svc *service.Resou
 			helpers.WriteError(gc, err)
 			return
 		}
-		e.SetID(gc.Param("id"))
-		if err := c.catalog.CheckRefs(gc.Request.Context(), e); err != nil {
-			helpers.WriteError(gc, err)
-			return
-		}
-		updated, err := svc.Update(gc.Request.Context(), e)
+		updated, err := command.Update(gc.Request.Context(), c.commands, svc, gc.Param("id"), e)
 		if err != nil {
 			helpers.WriteError(gc, err)
 			return
@@ -110,9 +102,9 @@ func ResourceUpdate[T any, PT domain.EntityPtr[T]](c *Client, svc *service.Resou
 }
 
 // ResourceDelete removes an entity of type T by id.
-func ResourceDelete[T any, PT domain.EntityPtr[T]](_ *Client, svc *service.Resource[T, PT]) gin.HandlerFunc {
+func ResourceDelete[T any, PT domain.EntityPtr[T]](c *Client, svc *service.Resource[T, PT]) gin.HandlerFunc {
 	return func(gc *gin.Context) {
-		if err := svc.Delete(gc.Request.Context(), gc.Param("id")); err != nil {
+		if err := command.Delete(gc.Request.Context(), c.commands, svc, gc.Param("id")); err != nil {
 			helpers.WriteError(gc, err)
 			return
 		}

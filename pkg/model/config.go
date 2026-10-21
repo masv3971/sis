@@ -127,6 +127,40 @@ type Inbound struct {
 	OEAPI      OEAPI      `yaml:"oeapi"`
 	EduAPI     EduAPI     `yaml:"eduapi"`
 	ConvertAPI ConvertAPI `yaml:"convertapi"`
+	AMQPAPI    AMQPAPI    `yaml:"amqpapi"`
+}
+
+// AMQPAPI consumes write commands from an AMQP 1.0 broker (e.g. RabbitMQ 4,
+// Azure Service Bus, ActiveMQ Artemis), as an alternative to the /api/v1
+// writes. SIS declares no queues: the broker admin creates the address, and
+// should give it a delivery limit and a dead-letter target. A message's
+// subject names the command (person.create, course.update, populate, ...).
+type AMQPAPI struct {
+	Enabled bool `yaml:"enabled"`
+	// URL of the broker, amqp://user:password@host:5672 or amqps://... (TLS).
+	// Without user and password SIS logs in anonymously. Must be amqps in
+	// production.
+	URL string `yaml:"url" validate:"required_if=Enabled true"`
+	// CAFiles are extra PEM CA certificates, added to the system roots, for
+	// verifying the broker's certificate (amqps only).
+	CAFiles []string `yaml:"ca_files" validate:"dive,required"`
+	// Address is the queue to consume, e.g. /queues/sis.commands (RabbitMQ
+	// 4) or sis.commands (Service Bus, Artemis).
+	Address string `yaml:"address" validate:"required_if=Enabled true"`
+	// Prefetch is how many commands run at once.
+	Prefetch int `yaml:"prefetch" default:"10" validate:"gt=0,lte=1000"`
+	// MaxMessageBytes caps a command's body; larger ones are rejected. The
+	// whole encoded message may be 64 KiB larger (properties, token); a
+	// message above that closes the link, and the broker hands it back
+	// until its delivery limit dead-letters it. Give the broker a matching
+	// publish limit (RabbitMQ: max_message_size) so it refuses such
+	// messages up front.
+	MaxMessageBytes int64 `yaml:"max_message_bytes" default:"5242880" validate:"gt=0"`
+	// Scopes are granted to messages without an authorization property
+	// ("Bearer <token>", checked like an API token). Empty requires a token
+	// on every message; [sis.write] trusts everyone who may publish to the
+	// address, so limit that at the broker.
+	Scopes []string `yaml:"scopes" validate:"dive,oneof=sis.write"`
 }
 
 // ConvertAPI configures POST /api/v1/parse and /api/v1/populate, which take

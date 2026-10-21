@@ -92,6 +92,9 @@ func resolveImportPaths(cfg *model.Cfg, dir string) {
 	for i := range cfg.SIS.Auth.CAFiles {
 		resolve(&cfg.SIS.Auth.CAFiles[i])
 	}
+	for i := range cfg.SIS.Adapter.Inbound.AMQPAPI.CAFiles {
+		resolve(&cfg.SIS.Adapter.Inbound.AMQPAPI.CAFiles[i])
+	}
 }
 
 func loadFile(path string, cfg *model.Cfg) error {
@@ -152,6 +155,11 @@ func checkProduction(cfg *model.Cfg) error {
 		}
 		if iss.Audience == "" {
 			return fmt.Errorf("%s.audience is required when common.production is true", field)
+		}
+	}
+	if a := cfg.SIS.Adapter.Inbound.AMQPAPI; a.Enabled {
+		if u, err := url.Parse(a.URL); err != nil || !strings.EqualFold(u.Scheme, "amqps") {
+			return errors.New("sis.adapter.inbound.amqpapi.url must use amqps when common.production is true")
 		}
 	}
 	return nil

@@ -1,0 +1,130 @@
+package amqpapi
+
+import (
+	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"errors"
+	"fmt"
+	"math"
+	"net/url"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/Azure/go-amqp"
+
+	"github.com/SUNET/sis/pkg/model"
+)
+
+var dialTimeout = 10 * time.Second
+
+// envelopeBytes is what a message may carry on top of its body: header,
+// properties, annotations and the authorization token.
+const envelopeBytes = 64 << 10
+
+// link is the receiver side of a broker connection; *amqp.Receiver plus a
+// Close that also closes the connection. Tests replace it with a fake.
+type link interface {
+	Receive(ctx context.Context, opts *amqp.ReceiveOptions) (*amqp.Message, error)
+	AcceptMessage(ctx context.Context, msg *amqp.Message) error
+	RejectMessage(ctx context.Context, msg *amqp.Message, e *amqp.Error) error
+	ModifyMessage(ctx context.Context, msg *amqp.Message, opts *amqp.ModifyMessageOptions) error
+	Close(ctx context.Context) error
+}
+
+// dialFunc opens a connection and a receiver link on the configured address.
+type dialFunc func(ctx context.Context) (link, error)
+
+type brokerLink struct {
+	*amqp.Receiver
+	conn *amqp.Conn
+}
+
+func (b brokerLink) Close(ctx context.Context) error {
+	return errors.Join(b.Receiver.Close(ctx), b.conn.Close())
+}
+
+// newDialer checks the settings and returns the dialer. Credentials come from
+// the URL's userinfo (SASL PLAIN); without them SASL ANONYMOUS is used.
+func newDialer(ac model.AMQPAPI) (dialFunc, error) {
+	u, err := url.Parse(ac.URL)
+	if err != nil || (u.Scheme != "amqp" && u.Scheme != "amqps") || u.Hostname() == "" {
+		return nil, errors.New("amqpapi: url must be amqp:// or amqps://host[:port]")
+	}
+	if ac.Prefetch <= 0 || ac.Prefetch > math.MaxInt32 {
+		return nil, errors.New("amqpapi: prefetch must be positive")
+	}
+	opts := &amqp.ConnOptions{}
+	if u.User == nil {
+		opts.SASLType = amqp.SASLTypeAnonymous()
+	}
+	if len(ac.CAFiles) > 0 {
+		if !strings.EqualFold(u.Scheme, "amqps") {
+			return nil, errors.New("amqpapi: ca_files need an amqps:// url")
+		}
+		pool, err := certPool(ac.CAFiles)
+		if err != nil {
+			return nil, err
+		}
+		opts.TLSConfig = &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}
+	}
+	rcvOpts := receiverOptions(ac)
+	return func(ctx context.Context) (link, error) {
+		ctx, cancel := context.WithTimeout(ctx, dialTimeout)
+		defer cancel()
+		conn, err := amqp.Dial(ctx, ac.URL, opts)
+		if err != nil {
+			return nil, fmt.Errorf("dial %s: %w", u.Redacted(), err)
+		}
+		sess, err := conn.NewSession(ctx, nil)
+		if err != nil {
+			_ = conn.Close()
+			return nil, fmt.Errorf("begin session: %w", err)
+		}
+		rcv, err := sess.NewReceiver(ctx, ac.Address, rcvOpts)
+		if err != nil {
+			_ = conn.Close()
+			return nil, fmt.Errorf("attach receiver to %s: %w", ac.Address, err)
+		}
+		return brokerLink{Receiver: rcv, conn: conn}, nil
+	}, nil
+}
+
+// receiverOptions sets the credit to prefetch and caps the encoded message at
+// max_message_bytes plus envelopeBytes. go-amqp buffers a whole delivery
+// before Receive returns it, so without a wire cap a large message would be
+// read into memory before the body cap or the token is checked. A delivery
+// above the cap closes the link (message-size-exceeded): the broker returns
+// the message, and its delivery limit dead-letters it.
+//
+// The sender (broker) must send deliveries unsettled: settlement is how SIS
+// reports the outcome, and go-amqp's Accept/Reject/Modify are silent no-ops
+// on a message that arrived settled, so a failed command would be lost while
+// logged as redelivered. Requesting the mode makes the attach fail when the
+// broker cannot honour it.
+func receiverOptions(ac model.AMQPAPI) *amqp.ReceiverOptions {
+	return &amqp.ReceiverOptions{
+		Credit:                    int32(ac.Prefetch),                         //nolint:gosec // bounded by newDialer
+		MaxMessageSize:            uint64(ac.MaxMessageBytes) + envelopeBytes, //nolint:gosec // validated gt=0
+		RequestedSenderSettleMode: new(amqp.SenderSettleModeUnsettled),
+	}
+}
+
+// certPool returns the system roots plus the PEM certificates in files.
+func certPool(files []string) (*x509.CertPool, error) {
+	pool, err := x509.SystemCertPool()
+	if err != nil {
+		pool = x509.NewCertPool()
+	}
+	for _, f := range files {
+		pemData, err := os.ReadFile(f) //nolint:gosec // path comes from operator config
+		if err != nil {
+			return nil, fmt.Errorf("amqpapi: read ca file: %w", err)
+		}
+		if !pool.AppendCertsFromPEM(pemData) {
+			return nil, fmt.Errorf("amqpapi: ca file %s holds no PEM certificate", f)
+		}
+	}
+	return pool, nil
+}
