@@ -16,16 +16,19 @@ import (
 	"github.com/SUNET/sis/pkg/model"
 )
 
-// TestBroker runs the consumer against a real AMQP 1.0 broker with the dev
-// topology (developer_tools/rabbitmq/definitions.json): /queues/sis.commands
-// with a delivery limit, dead-lettering to /queues/sis.commands.dlq.
+// TestBroker runs the consumer against a real AMQP 1.0 broker. It uses its
+// own queues from developer_tools/rabbitmq/definitions.json,
+// /queues/sis.test.commands (delivery limit, dead-lettering through
+// sis.test.dlx) and /queues/sis.test.commands.dlq, never the dev
+// application's sis.commands: SIS may be consuming that queue, and draining
+// its dead-letter queue would destroy dev traffic.
 // Set SIS_TEST_AMQP_URL, e.g. amqp://sis:sis@rabbitmq:5672.
 func TestBroker(t *testing.T) {
 	url := os.Getenv("SIS_TEST_AMQP_URL")
 	if url == "" {
 		t.Skip("SIS_TEST_AMQP_URL not set")
 	}
-	const queue, dlq = "/queues/sis.commands", "/queues/sis.commands.dlq"
+	const queue, dlq = "/queues/sis.test.commands", "/queues/sis.test.commands.dlq"
 	ctx := t.Context()
 	conn, err := amqp.Dial(ctx, url, nil)
 	if err != nil {

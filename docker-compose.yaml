@@ -53,7 +53,8 @@ services:
       - sisnet
 
   # AMQP 1.0 broker for sis.adapter.inbound.amqpapi. Topology (sis.commands,
-  # dead-lettering to sis.commands.dlq) and the user sis/sis come from
+  # dead-lettering to sis.commands.dlq; sis.test.commands and its DLQ for
+  # amqpapi's TestBroker only) and the user sis/sis come from
   # developer_tools/rabbitmq/definitions.json. Management UI:
   # http://localhost:15673 (sis/sis).
   rabbitmq:

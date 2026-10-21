@@ -184,6 +184,7 @@ func (s *Service) process(ctx context.Context, l link, msg *amqp.Message) error 
 	defer cancel()
 	var outcome string
 	var settleErr error
+	var rej *amqp.Error
 	switch {
 	case e == nil:
 		outcome = "accepted"
@@ -193,7 +194,8 @@ func (s *Service) process(ctx context.Context, l link, msg *amqp.Message) error 
 		settleErr = l.ModifyMessage(settleCtx, msg, &amqp.ModifyMessageOptions{DeliveryFailed: true})
 	default:
 		outcome = "rejected"
-		settleErr = l.RejectMessage(settleCtx, msg, rejection(e))
+		rej = rejection(e)
+		settleErr = l.RejectMessage(settleCtx, msg, rej)
 	}
 
 	props := msg.Properties
@@ -212,7 +214,9 @@ func (s *Service) process(ctx context.Context, l link, msg *amqp.Message) error 
 	case outcome == "retry":
 		s.log.Error("command failed; redelivering", append(attrs, "err", err)...)
 	case outcome == "rejected":
-		s.log.Warn("command rejected", append(attrs, "error", e.Title)...)
+		// The same bounded description the broker got, so the log names
+		// the field and the reason (e.g. an invalid ttl), not just a title.
+		s.log.Warn("command rejected", append(attrs, "condition", string(rej.Condition), "error", rej.Description)...)
 	default:
 		s.log.Info("command", attrs...)
 	}

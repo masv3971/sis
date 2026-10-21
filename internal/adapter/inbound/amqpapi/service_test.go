@@ -1,11 +1,13 @@
 package amqpapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -440,6 +442,36 @@ func TestBackoffGrowsOverShortLivedLinks(t *testing.T) {
 	// Delays 10, 20, 40, 80 ms: the fourth gap is at least 80 ms.
 	if gap := at[4].Sub(at[3]); gap < maxRetryDelay {
 		t.Fatalf("fourth redial after %s, want >= %s", gap, maxRetryDelay)
+	}
+}
+
+// TestRejectionIsLogged: the log carries the description the broker got
+// (field and reason), so an operator can tell why a command was
+// dead-lettered.
+func TestRejectionIsLogged(t *testing.T) {
+	var buf bytes.Buffer
+	log := logger.NewWithWriter("test", false, "warn", &buf)
+	l := newFakeLink()
+	table := map[string]handlerFunc{"bad": func(context.Context, []byte) error {
+		return &domain.ValidationError{Field: "ttl", Msg: "must be a positive Go duration"}
+	}}
+	ac := model.AMQPAPI{Prefetch: 1, MaxMessageBytes: 1 << 20, Scopes: []string{auth.ScopeWrite}}
+	s := start(t.Context(), ac, nil, table, func(context.Context) (link, error) { return l, nil }, log)
+	f := &fixture{link: l}
+	got := f.expect(t, message("bad", "", `{}`), "rejected")
+	// Close waits for process to finish, so the log line is written.
+	if err := s.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	for _, want := range []string{"command rejected", "ttl", "must be a positive Go duration", string(amqp.ErrCondInvalidField)} {
+		if !strings.Contains(out, want) {
+			t.Errorf("log lacks %q:\n%s", want, out)
+		}
+	}
+	// The text handler quotes the value.
+	if !strings.Contains(out, "error="+strconv.Quote(got.err.Description)) {
+		t.Errorf("log lacks the broker's description %q:\n%s", got.err.Description, out)
 	}
 }
 

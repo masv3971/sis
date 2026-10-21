@@ -328,7 +328,14 @@ http://localhost:15673, sis/sis; AMQP on localhost:5673). With the
 disabled). To send a command, open the queue
 `sis.commands` in the UI and use **Publish message**: set the property
 `type` to `person.create` and paste a person as the payload. Rejected
-messages appear in `sis.commands.dlq`.
+messages appear in `sis.commands.dlq`, and the SIS log (`docker compose
+logs sis`) has a `command rejected` line with the reason.
+
+The broker integration test uses its own queues, `sis.test.commands` and
+`sis.test.commands.dlq`, so it never touches dev traffic:
+`SIS_TEST_AMQP_URL=amqp://sis:sis@rabbitmq:5672 go test -run TestBroker ./internal/adapter/inbound/amqpapi/`.
+If the broker was started before these queues were added, recreate it
+(`make restart`) so it loads the current definitions.
 
 ### `/oeapi`: Open Education API v6.0 (read-only)
 

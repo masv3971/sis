@@ -12,7 +12,8 @@
     { "user": "sis", "vhost": "/", "configure": ".*", "write": ".*", "read": ".*" }
   ],
   "exchanges": [
-    { "name": "sis.dlx", "vhost": "/", "type": "fanout", "durable": true, "auto_delete": false, "internal": false, "arguments": {} }
+    { "name": "sis.dlx", "vhost": "/", "type": "fanout", "durable": true, "auto_delete": false, "internal": false, "arguments": {} },
+    { "name": "sis.test.dlx", "vhost": "/", "type": "fanout", "durable": true, "auto_delete": false, "internal": false, "arguments": {} }
   ],
   "queues": [
     {
@@ -34,9 +35,30 @@
       "durable": true,
       "auto_delete": false,
       "arguments": { "x-queue-type": "quorum" }
+    },
+    {
+      "name": "sis.test.commands",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-delivery-limit": 5,
+        "x-dead-letter-exchange": "sis.test.dlx",
+        "x-dead-letter-strategy": "at-least-once",
+        "x-overflow": "reject-publish"
+      }
+    },
+    {
+      "name": "sis.test.commands.dlq",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": { "x-queue-type": "quorum" }
     }
   ],
   "bindings": [
-    { "source": "sis.dlx", "vhost": "/", "destination": "sis.commands.dlq", "destination_type": "queue", "routing_key": "", "arguments": {} }
+    { "source": "sis.dlx", "vhost": "/", "destination": "sis.commands.dlq", "destination_type": "queue", "routing_key": "", "arguments": {} },
+    { "source": "sis.test.dlx", "vhost": "/", "destination": "sis.test.commands.dlq", "destination_type": "queue", "routing_key": "", "arguments": {} }
   ]
 }
