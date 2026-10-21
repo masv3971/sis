@@ -68,7 +68,9 @@ func main() {
 	stopSignals() // a second signal now kills the process at once
 	mainLog.Info("shutdown signal received")
 
-	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cfg.SIS.HTTPServer.ShutdownTimeout)
+	// One budget, sis.shutdown_timeout, bounds the whole teardown of every
+	// Service (for the adapter: inbound drain, sweeper, postgres pool).
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cfg.SIS.ShutdownTimeout)
 	defer cancel()
 	for name, svc := range services {
 		if err := svc.Close(shutdownCtx); err != nil {

@@ -170,7 +170,8 @@ func New(ctx context.Context, cfg *model.Cfg, log *logger.Log) (*Service, error)
 // taking work at once and drain within the same grace period, so a long HTTP
 // request cannot use it up while AMQP keeps dispatching commands.
 //
-// The whole teardown is bounded by ctx: if a drain hits the deadline,
+// The whole teardown is bounded by ctx (main sets its deadline from
+// sis.shutdown_timeout): if a drain hits the deadline,
 // httpserver.Close cancels in-flight request contexts (aborting their
 // postgres queries) and force-closes connections, amqpapi.Close cancels the
 // commands in flight (the broker redelivers them), and postgres.Close returns

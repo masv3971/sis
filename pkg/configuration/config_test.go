@@ -41,6 +41,7 @@ func TestNewLoadsFileAndDefaults(t *testing.T) {
 	// Defaults fill unset fields.
 	assert.Equal(t, ":8080", cfg.SIS.HTTPServer.Addr)
 	assert.Equal(t, 2*time.Minute, cfg.SIS.StartupTimeout)
+	assert.Equal(t, 10*time.Second, cfg.SIS.ShutdownTimeout)
 	inbound := cfg.SIS.Adapter.Inbound
 	assert.Equal(t, 50, inbound.RestAdmin.DefaultLimit)
 	assert.Equal(t, 500, inbound.RestAdmin.MaxLimit)
@@ -70,6 +71,8 @@ func TestNewTimeoutRules(t *testing.T) {
 		{"sweep may take the whole interval", "sis:\n  adapter:\n    sweeper:\n      interval: 1m\n      timeout: 1m\n", ""},
 		{"sweep longer than interval", "sis:\n  adapter:\n    sweeper:\n      interval: 1m\n      timeout: 2m\n", "sweeper.timeout"},
 		{"zero startup timeout", "sis:\n  startup_timeout: 0s\n", "sis.startup_timeout"},
+		{"zero shutdown timeout", "sis:\n  shutdown_timeout: 0s\n", "sis.shutdown_timeout"},
+		{"shutdown timeout is not under httpserver", "sis:\n  httpserver:\n    shutdown_timeout: 10s\n", "shutdown_timeout"},
 		{"zero command timeout", "sis:\n  adapter:\n    inbound:\n      amqpapi:\n        command_timeout: 0s\n", "amqpapi.command_timeout"},
 		{"postgres timeouts may be 0", "sis:\n  adapter:\n    outbound:\n      postgres:\n        connect_timeout: 0s\n        statement_timeout: 0s\n", ""},
 		{"negative statement timeout", "sis:\n  adapter:\n    outbound:\n      postgres:\n        statement_timeout: -1s\n", "postgres.statement_timeout"},

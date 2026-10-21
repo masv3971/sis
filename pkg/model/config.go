@@ -26,10 +26,16 @@ type SIS struct {
 	// database, the file import and binding the listener. SIGINT/SIGTERM
 	// during startup stops it at once.
 	StartupTimeout time.Duration `yaml:"startup_timeout" default:"2m" validate:"gt=0"`
-	HTTPServer     HTTPServer    `yaml:"httpserver"`
-	Auth           Auth          `yaml:"auth"`
-	Adapter        Adapter       `yaml:"adapter"`
-	FileImport     FileImport    `yaml:"file_import"`
+	// ShutdownTimeout bounds the whole shutdown after SIGINT/SIGTERM:
+	// draining HTTP requests and AMQP commands in flight, stopping the
+	// expiry sweeper and closing the database pool. When it passes, HTTP
+	// requests still running are cancelled and AMQP commands still running
+	// are returned to the broker for redelivery.
+	ShutdownTimeout time.Duration `yaml:"shutdown_timeout" default:"10s" validate:"gt=0"`
+	HTTPServer      HTTPServer    `yaml:"httpserver"`
+	Auth            Auth          `yaml:"auth"`
+	Adapter         Adapter       `yaml:"adapter"`
+	FileImport      FileImport    `yaml:"file_import"`
 }
 
 // FileImport loads records from files at every startup, e.g. fake students
@@ -50,11 +56,9 @@ type HTTPServer struct {
 	// calls stop and the request ends with 503. Sending the response may take 5s more, so
 	// that 503 reaches the client.
 	WriteTimeout time.Duration `yaml:"write_timeout" default:"15s" validate:"gt=0"`
-	// ShutdownTimeout is the grace period for in-flight requests on SIGTERM.
-	ShutdownTimeout time.Duration `yaml:"shutdown_timeout" default:"10s" validate:"gt=0"`
-	Web             Web           `yaml:"web"`
-	Swagger         Swagger       `yaml:"swagger"`
-	TLS             TLS           `yaml:"tls"`
+	Web          Web           `yaml:"web"`
+	Swagger      Swagger       `yaml:"swagger"`
+	TLS          TLS           `yaml:"tls"`
 }
 
 // TLS makes the listener serve https from a certificate and key file. Both

@@ -30,6 +30,10 @@ sis:
   # Max time from start to serving: database connect + migrations, file
   # import, listener. SIGINT/SIGTERM during startup stops it at once.
   startup_timeout: 2m
+  # Max time from SIGINT/SIGTERM to exit: drain HTTP requests and AMQP
+  # commands, stop the sweeper, close the database pool. Past it, requests
+  # still running are cancelled and AMQP commands go back to the broker.
+  shutdown_timeout: 10s
 
   # -- internal/httpserver -----------------------------------------------------
   # One listener serves every API and the admin web UI.
@@ -40,7 +44,6 @@ sis:
     # handler is cancelled (database calls stop) and the reply is 503, which
     # may take 5s more to send.
     write_timeout: 15s
-    shutdown_timeout: 10s   # grace period for in-flight requests on SIGTERM
     web:
       # Directory with the built admin UI (index.html + assets/). The Docker
       # image ships it at /web. Empty serves the APIs only.
