@@ -1,6 +1,7 @@
 package fileimport
 
 import (
+	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -112,6 +113,19 @@ func TestImportStoresNothingOnBadReference(t *testing.T) {
 	require.ErrorContains(t, err, "nowhere", "expected an unknown-reference error")
 	page, _ := catalog.Persons.ListPersons(ctx, port.ListParams{})
 	assert.Zero(t, page.Total, "stored persons from a rejected file")
+}
+
+// TestImportStopsOnCancel checks a cancelled startup ctx (signal or
+// startup_timeout) stops the import with nothing stored.
+func TestImportStopsOnCancel(t *testing.T) {
+	catalog := newCatalog()
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, err := Import(ctx, catalog, fakeStudents)
+	require.ErrorIs(t, err, context.Canceled)
+	page, err := catalog.Persons.ListPersons(t.Context(), port.ListParams{})
+	require.NoError(t, err)
+	assert.Zero(t, page.Total, "stored persons after cancel")
 }
 
 func TestRunNamesFailingFile(t *testing.T) {

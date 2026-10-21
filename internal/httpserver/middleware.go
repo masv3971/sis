@@ -2,6 +2,7 @@ package httpserver
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -50,27 +51,35 @@ func securityHeaders(tls bool) gin.HandlerFunc {
 	}
 }
 
+// responseGrace is how long a response may still take to send after the
+// request's work deadline, so a handler stopped by that deadline can deliver
+// its 503 instead of the client seeing the connection close.
+const responseGrace = 5 * time.Second
+
 // requestTimeout gives the request defaultTimeout, or perRoute[route] for a
 // matched route pattern (gin's FullPath), counted from now. It bounds both
 // the work and the reply:
 //   - the request context gets that deadline, so database calls and other
 //     ctx-aware work stop when it passes and the handler answers 503
 //     (helpers.WriteError maps context.DeadlineExceeded);
-//   - a per-route timeout also replaces the server's write timeout, so a
-//     slow route is not cut off at the global deadline. The default needs
-//     no extension: it equals the server's write timeout.
+//   - the connection's write deadline is set grace later (responseGrace in
+//     production), so the 503 still reaches the client, and a route with
+//     its own timeout is not cut off at the server's write timeout.
 //
 // Global middleware runs after routing, so the pattern is known here.
-func requestTimeout(defaultTimeout time.Duration, perRoute map[string]time.Duration, log *logger.Log) gin.HandlerFunc {
+func requestTimeout(defaultTimeout time.Duration, perRoute map[string]time.Duration, grace time.Duration, log *logger.Log) gin.HandlerFunc {
 	return func(gc *gin.Context) {
 		timeout := defaultTimeout
 		if routeTimeout, ok := perRoute[gc.FullPath()]; ok {
 			timeout = routeTimeout
-			if err := http.NewResponseController(gc.Writer).SetWriteDeadline(time.Now().Add(timeout)); err != nil {
-				log.Warn("set write deadline", "path", gc.FullPath(), "err", err)
-			}
 		}
-		ctx, cancel := context.WithTimeout(gc.Request.Context(), timeout)
+		workDeadline := time.Now().Add(timeout)
+		// ErrNotSupported only outside a real server (httptest recorders).
+		err := http.NewResponseController(gc.Writer).SetWriteDeadline(workDeadline.Add(grace))
+		if err != nil && !errors.Is(err, http.ErrNotSupported) {
+			log.Warn("set write deadline", "path", gc.FullPath(), "err", err)
+		}
+		ctx, cancel := context.WithDeadline(gc.Request.Context(), workDeadline)
 		defer cancel()
 		gc.Request = gc.Request.WithContext(ctx)
 		gc.Next()

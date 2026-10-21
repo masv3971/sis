@@ -45,9 +45,10 @@ type FileImport struct {
 type HTTPServer struct {
 	Addr        string        `yaml:"addr" default:":8080" validate:"required"`
 	ReadTimeout time.Duration `yaml:"read_timeout" default:"15s" validate:"gt=0"`
-	// WriteTimeout is the max time to send a response. It also bounds the
-	// request's work: when it passes, the handler's context is cancelled,
-	// so database calls stop and the request ends with 503.
+	// WriteTimeout bounds the request's work: when it passes, the
+	// handler's context is cancelled, so database calls stop and the
+	// request ends with 503. Sending the response may take 5s more, so
+	// that 503 reaches the client.
 	WriteTimeout time.Duration `yaml:"write_timeout" default:"15s" validate:"gt=0"`
 	// ShutdownTimeout is the grace period for in-flight requests on SIGTERM.
 	ShutdownTimeout time.Duration `yaml:"shutdown_timeout" default:"10s" validate:"gt=0"`

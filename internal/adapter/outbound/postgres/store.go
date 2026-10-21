@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -58,8 +59,10 @@ func poolConfig(cfg model.Postgres) (*pgxpool.Config, error) {
 	}
 	if cfg.StatementTimeout > 0 {
 		// A startup parameter, so it is the session default that
-		// RESET statement_timeout returns to.
-		poolCfg.ConnConfig.RuntimeParams["statement_timeout"] = strconv.FormatInt(cfg.StatementTimeout.Milliseconds(), 10)
+		// RESET statement_timeout returns to. Rounded up to whole
+		// milliseconds: truncating 0 < t < 1ms to 0 would disable it.
+		millis := (cfg.StatementTimeout + time.Millisecond - 1) / time.Millisecond
+		poolCfg.ConnConfig.RuntimeParams["statement_timeout"] = strconv.FormatInt(int64(millis), 10)
 	}
 	return poolCfg, nil
 }

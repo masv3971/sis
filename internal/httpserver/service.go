@@ -124,7 +124,7 @@ func New(ctx context.Context, cfg *model.Cfg, verifier *auth.Verifier, catalog *
 		requestTimeout(cfg.SIS.HTTPServer.WriteTimeout, map[string]time.Duration{
 			parsePath:    docTimeout,
 			populatePath: docTimeout,
-		}, reqLog),
+		}, responseGrace, reqLog),
 	)
 
 	engine.GET("/healthz", func(gc *gin.Context) {
@@ -228,10 +228,12 @@ func start(ctx context.Context, httpCfg model.HTTPServer, handler http.Handler, 
 		log:            log,
 		cancelRequests: cancel,
 		server: &http.Server{
-			Addr:         httpCfg.Addr,
-			Handler:      handler,
-			ReadTimeout:  httpCfg.ReadTimeout,
-			WriteTimeout: httpCfg.WriteTimeout,
+			Addr:        httpCfg.Addr,
+			Handler:     handler,
+			ReadTimeout: httpCfg.ReadTimeout,
+			// requestTimeout sets each request's write deadline; this
+			// backstop matches it for the default timeout.
+			WriteTimeout: httpCfg.WriteTimeout + responseGrace,
 			BaseContext:  func(net.Listener) context.Context { return baseCtx },
 		},
 	}

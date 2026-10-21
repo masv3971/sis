@@ -1,6 +1,7 @@
 package readmodel
 
 import (
+	"context"
 	"strconv"
 	"testing"
 	"time"
@@ -125,6 +126,20 @@ func TestPopulateBatchesStoredRefs(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "pstu3", enrollment.PersonID)
 	assert.Equal(t, "f-id", enrollment.OfferingID)
+}
+
+// TestPopulateStopsOnCancel checks a cancelled ctx stops Populate before any
+// write, even on the memory store, which ignores ctx.
+func TestPopulateStopsOnCancel(t *testing.T) {
+	catalog := newFixture(t).catalog
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	items, err := catalog.Populate(ctx, sampleBundle(), nil)
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Empty(t, items)
+	page, err := catalog.Organizations.List(t.Context(), port.ListParams{})
+	require.NoError(t, err)
+	assert.Zero(t, page.Total, "nothing must be written")
 }
 
 // TestPopulateRejectsBeforeWriting checks a bad bundle stores nothing.

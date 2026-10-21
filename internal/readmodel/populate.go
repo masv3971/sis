@@ -41,6 +41,10 @@ type PopulateItem struct {
 // records written so far, and since every write is an upsert by sourcedId,
 // retrying the same request converges.
 //
+// Populate checks ctx before every write, so a cancelled or expired ctx
+// stops it even on a store that ignores ctx (memory); the error wraps
+// ctx.Err().
+//
 // Populate consumes b: it assigns ids and rewrites references in place.
 func (c *Client) Populate(ctx context.Context, b *domain.Bundle, expiresAt *time.Time) ([]PopulateItem, error) {
 	p := &populator{client: c, ids: map[refKey]string{}, inBundle: map[refKey]bool{}, expiresAt: expiresAt}
@@ -66,6 +70,9 @@ func (c *Client) Populate(ctx context.Context, b *domain.Bundle, expiresAt *time
 		func() error { return upsertAll(ctx, p, c.Offerings, b.Offerings, add) },
 		func() error {
 			for _, person := range b.Persons {
+				if err := ctx.Err(); err != nil {
+					return fmt.Errorf("populate person %s: %w", person.SourcedID, err)
+				}
 				out, created, err := c.Persons.UpsertPersonWithExpiry(ctx, person, expiresAt)
 				if err != nil {
 					return fmt.Errorf("populate person %s: %w", person.SourcedID, err)
@@ -277,6 +284,9 @@ func orderOrgs(orgs []*domain.Organization) ([]*domain.Organization, error) {
 // it. A free function because it is generic over the entity type.
 func upsertAll[T any, PT domain.EntityPtr[T]](ctx context.Context, p *populator, svc *service.Resource[T, PT], records []PT, add func(typ, sourcedID, id string, created bool)) error {
 	for _, e := range records {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("populate %s %s: %w", svc.TypeName(), e.GetSourcedID(), err)
+		}
 		for _, reference := range refsOf(e) {
 			if *reference.target != "" {
 				*reference.target = p.ids[refKey{reference.typ, *reference.target}]

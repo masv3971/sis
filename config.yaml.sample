@@ -36,8 +36,8 @@ sis:
   httpserver:
     addr: ":8080"           # host:port; startup fails if it is taken
     read_timeout: 15s       # max time to receive a request
-    # Max time to send a response. Also the request's work budget: past it
-    # the handler is cancelled (database calls stop) and the reply is 503.
+    # The request's work budget: past it the handler is cancelled (database
+    # calls stop) and the reply is 503, which may take 5s more to send.
     write_timeout: 15s
     shutdown_timeout: 10s   # grace period for in-flight requests on SIGTERM
     web:

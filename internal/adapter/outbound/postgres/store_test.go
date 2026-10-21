@@ -29,6 +29,16 @@ func TestPoolConfigAppliesTimeouts(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 3*time.Second, poolCfg.ConnConfig.ConnectTimeout, "the URL's connect_timeout")
 	assert.NotContains(t, poolCfg.ConnConfig.RuntimeParams, "statement_timeout")
+
+	// Under a millisecond rounds up: 0 would mean no limit at all.
+	for _, timeout := range []time.Duration{time.Nanosecond, 999 * time.Microsecond} {
+		poolCfg, err = poolConfig(model.Postgres{ConnectionString: url, StatementTimeout: timeout})
+		require.NoError(t, err)
+		assert.Equal(t, "1", poolCfg.ConnConfig.RuntimeParams["statement_timeout"], timeout)
+	}
+	poolCfg, err = poolConfig(model.Postgres{ConnectionString: url, StatementTimeout: 1500*time.Millisecond + time.Microsecond})
+	require.NoError(t, err)
+	assert.Equal(t, "1501", poolCfg.ConnConfig.RuntimeParams["statement_timeout"], "never shorter than configured")
 }
 
 // TestStatementTimeoutReachesPool: after migrations (which lift the limit on
@@ -44,18 +54,21 @@ func TestStatementTimeoutReachesPool(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = svc.Close(context.Background()) })
 
-	// More than one connection, so the migration's one is among them.
+	// More than one connection, so the migration's one is among them. Each
+	// is released by its own cleanup, registered as soon as it is held: a
+	// failure stops the test, and the pool cleanup above (run after these)
+	// would otherwise wait forever for a borrowed connection.
 	conns := make([]*pgxpool.Conn, 0, 3)
 	for range 3 {
 		conn, err := svc.pool.Acquire(t.Context())
 		require.NoError(t, err)
+		t.Cleanup(conn.Release)
 		conns = append(conns, conn)
 	}
 	for _, conn := range conns {
 		var setting string
 		require.NoError(t, conn.QueryRow(t.Context(), `SHOW statement_timeout`).Scan(&setting))
 		assert.Equal(t, "1234ms", setting)
-		conn.Release()
 	}
 }
 

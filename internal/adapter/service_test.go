@@ -48,3 +48,17 @@ func TestNewMemorySmoke(t *testing.T) {
 		assert.Fail(t, "server still answering after Close")
 	}
 }
+
+// TestNewStopsOnCancelledStartup checks a startup cancelled by a signal or
+// sis.startup_timeout fails New instead of serving, also on the memory store
+// (which ignores ctx).
+func TestNewStopsOnCancelledStartup(t *testing.T) {
+	cfg := &model.Cfg{SIS: model.SIS{
+		HTTPServer: model.HTTPServer{Addr: "127.0.0.1:0", ReadTimeout: time.Second, WriteTimeout: time.Second},
+		Adapter:    model.Adapter{Sweeper: model.Sweeper{Interval: time.Minute}},
+	}}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, err := New(ctx, cfg, logger.NewWithWriter("test", false, "error", io.Discard))
+	require.ErrorIs(t, err, context.Canceled)
+}

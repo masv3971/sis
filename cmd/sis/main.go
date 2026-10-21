@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -51,6 +52,10 @@ func main() {
 	// bounded by sis.startup_timeout.
 	startupCtx, cancelStartup := context.WithTimeout(ctx, cfg.SIS.StartupTimeout)
 	adapterSvc, err := adapter.New(startupCtx, cfg, log)
+	if err == nil && startupCtx.Err() != nil {
+		// Finished, but after a signal or the deadline: do not serve.
+		err = fmt.Errorf("startup: %w", startupCtx.Err())
+	}
 	cancelStartup()
 	if err != nil {
 		mainLog.Error("adapter init failed", "err", err)

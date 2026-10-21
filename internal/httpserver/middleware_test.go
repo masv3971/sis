@@ -47,53 +47,89 @@ func TestRequestLoggerRecordsRedactedCause(t *testing.T) {
 	assert.NotContains(t, out, "err=")
 }
 
-// TestRequestTimeoutExtendsWriteDeadline checks a route with its own timeout
-// outlives the server's write timeout, while a route without one is still
-// cut off.
-func TestRequestTimeoutExtendsWriteDeadline(t *testing.T) {
+// serveTimeouts serves router behind requestTimeout over a real listener
+// (an httptest.ResponseRecorder does not enforce write deadlines).
+// requestTimeout's write deadline replaces the server's for each request.
+func serveTimeouts(t *testing.T, defaultTimeout time.Duration, perRoute map[string]time.Duration, grace time.Duration, routes map[string]gin.HandlerFunc) string {
+	t.Helper()
 	gin.SetMode(gin.TestMode)
 	log := logger.NewWithWriter("test", false, "error", io.Discard)
-	slow := func(gc *gin.Context) {
-		time.Sleep(300 * time.Millisecond)
-		gc.String(http.StatusOK, "done")
-	}
 	router := gin.New()
-	// The default (ctx) timeout is generous so only the write deadline
-	// matters for /other.
-	router.Use(requestTimeout(5*time.Second, map[string]time.Duration{"/doc": 5 * time.Second}, log))
-	router.GET("/doc", slow)
-	router.GET("/other", slow)
-	httpCfg := model.HTTPServer{Addr: "127.0.0.1:0", ReadTimeout: time.Second, WriteTimeout: 100 * time.Millisecond}
+	router.Use(requestTimeout(defaultTimeout, perRoute, grace, log))
+	for path, handler := range routes {
+		router.GET(path, handler)
+	}
+	httpCfg := model.HTTPServer{Addr: "127.0.0.1:0", ReadTimeout: time.Second, WriteTimeout: 10 * time.Millisecond}
 	s, err := start(t.Context(), httpCfg, router, log)
 	require.NoError(t, err)
 	// t.Context is already cancelled when Cleanup runs.
 	t.Cleanup(func() { _ = s.Close(context.Background()) })
-	base := "http://" + s.Addr().String()
+	return "http://" + s.Addr().String()
+}
 
-	resp, err := http.Get(base + "/doc")
+// get fetches url, returning the status and body, or the transport error.
+func get(t *testing.T, url string) (int, string, error) {
+	t.Helper()
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, url, nil)
 	require.NoError(t, err)
-	body, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	assert.Equal(t, "done", string(body))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return 0, "", err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(body), err
+}
 
-	if resp, err := http.Get(base + "/other"); err == nil {
-		resp.Body.Close()
-		t.Fatalf("/other: want the connection cut at the server write timeout, got %d", resp.StatusCode)
+// TestRequestTimeoutDelivers503 checks a handler stopped by the request
+// deadline still delivers its 503 over a real connection, both on the
+// default timeout and on a route with its own.
+func TestRequestTimeoutDelivers503(t *testing.T) {
+	waitThenFail := func(gc *gin.Context) {
+		<-gc.Request.Context().Done()
+		helpers.WriteError(gc, gc.Request.Context().Err())
+	}
+	base := serveTimeouts(t, 100*time.Millisecond, map[string]time.Duration{"/doc": 300 * time.Millisecond}, 2*time.Second,
+		map[string]gin.HandlerFunc{"/default": waitThenFail, "/doc": waitThenFail})
+
+	for path, timeout := range map[string]time.Duration{"/default": 100 * time.Millisecond, "/doc": 300 * time.Millisecond} {
+		began := time.Now()
+		status, body, err := get(t, base+path)
+		require.NoError(t, err, "%s: the 503 must reach the client", path)
+		assert.Equal(t, http.StatusServiceUnavailable, status, path)
+		assert.Contains(t, body, helpers.ErrUnavailable, path)
+		assert.GreaterOrEqual(t, time.Since(began), timeout, "%s: work ran until its own deadline", path)
 	}
 }
 
-// TestRequestTimeoutCancelsWork checks the handler's context ends at the
-// route's timeout and the client gets 503 rather than a hung request.
-func TestRequestTimeoutCancelsWork(t *testing.T) {
+// TestRequestTimeoutBoundsWrite checks the write deadline: a route with its
+// own timeout may reply after the default one, while a reply later than
+// timeout + grace is cut off.
+func TestRequestTimeoutBoundsWrite(t *testing.T) {
+	ignoreCtx := func(gc *gin.Context) {
+		time.Sleep(300 * time.Millisecond)
+		gc.String(http.StatusOK, "done")
+	}
+	base := serveTimeouts(t, 50*time.Millisecond, map[string]time.Duration{"/doc": 5 * time.Second}, 50*time.Millisecond,
+		map[string]gin.HandlerFunc{"/doc": ignoreCtx, "/other": ignoreCtx})
+
+	status, body, err := get(t, base+"/doc")
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, status)
+	assert.Equal(t, "done", body)
+
+	if _, _, err := get(t, base+"/other"); err == nil {
+		t.Fatal("/other: want the connection cut at timeout + grace")
+	}
+}
+
+// TestRequestTimeoutSetsDeadline checks every request context gets the
+// default deadline.
+func TestRequestTimeoutSetsDeadline(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	log := logger.NewWithWriter("test", false, "error", io.Discard)
 	router := gin.New()
-	router.Use(requestTimeout(time.Hour, map[string]time.Duration{"/slow": 50 * time.Millisecond}, log))
-	router.GET("/slow", func(gc *gin.Context) {
-		<-gc.Request.Context().Done()
-		helpers.WriteError(gc, gc.Request.Context().Err())
-	})
+	router.Use(requestTimeout(time.Hour, nil, time.Second, log))
 	router.GET("/fast", func(gc *gin.Context) {
 		deadline, ok := gc.Request.Context().Deadline()
 		assert.True(t, ok, "every request gets a deadline")
@@ -102,13 +138,6 @@ func TestRequestTimeoutCancelsWork(t *testing.T) {
 	})
 
 	w := httptest.NewRecorder()
-	began := time.Now()
-	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/slow", nil))
-	assert.Less(t, time.Since(began), 5*time.Second)
-	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
-	assert.Contains(t, w.Body.String(), helpers.ErrUnavailable)
-
-	w = httptest.NewRecorder()
 	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/fast", nil))
 	assert.Equal(t, http.StatusNoContent, w.Code)
 }

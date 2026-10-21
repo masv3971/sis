@@ -15,6 +15,7 @@ package adapter
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 
 	"github.com/SUNET/sis/internal/adapter/inbound/amqpapi"
@@ -122,6 +123,11 @@ func New(ctx context.Context, cfg *model.Cfg, log *logger.Log) (*Service, error)
 	// HTTP server starts so the APIs never serve a partly imported state.
 	if err := fileimport.Run(ctx, cfg, s.inbound.readmodel, log); err != nil {
 		return nil, err
+	}
+	// Stop before any listener starts if startup was cancelled or ran out
+	// of time meanwhile (steps that ignore ctx do not report it).
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("startup: %w", err)
 	}
 
 	// Write commands, shared by every inbound transport.
