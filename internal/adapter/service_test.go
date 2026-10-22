@@ -35,16 +35,16 @@ func TestNewMemorySmoke(t *testing.T) {
 	require.NotZero(t, page.Total, "want the file import in the catalog")
 
 	url := "http://" + svc.inbound.http.Addr().String() + "/healthz"
-	resp, err := http.Get(url)
+	resp, err := http.Get(url) // #nosec G107 -- the test's own listener
 	require.NoError(t, err, "GET /healthz")
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode, "GET /healthz")
 
 	closeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	require.NoError(t, svc.Close(closeCtx), "Close")
-	if resp, err := http.Get(url); err == nil {
-		resp.Body.Close()
+	if resp, err := http.Get(url); err == nil { // #nosec G107 -- the test's own listener
+		_ = resp.Body.Close()
 		assert.Fail(t, "server still answering after Close")
 	}
 }

@@ -16,7 +16,7 @@ func CertPool(caFiles []string) (*x509.CertPool, error) {
 		pool = x509.NewCertPool()
 	}
 	for _, caFile := range caFiles {
-		pemData, err := os.ReadFile(caFile) //nolint:gosec // path comes from operator config
+		pemData, err := os.ReadFile(caFile) // #nosec G304 -- path comes from operator config
 		if err != nil {
 			return nil, fmt.Errorf("read ca file: %w", err)
 		}
