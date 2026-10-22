@@ -33,7 +33,15 @@ import (
 // name, activities of a qualification) are skipped with a warning; records
 // that are mapped but invalid (e.g. a subject without a name) fail the whole
 // conversion with a domain.ValidationError naming the document path.
+//
+// The credential may come plain or in an EDCI envelope (uploadable or
+// sealed, see unwrapELM); paths in errors and warnings then name its place
+// inside the envelope (e.g. data.payload.credentialSubject).
 func parseELM(data []byte, path string) (*Parsed, error) {
+	data, path, envelopeWarnings, err := unwrapELM(data, path)
+	if err != nil {
+		return nil, err
+	}
 	doc, err := elm.Parse(data, path)
 	if err != nil {
 		return nil, err
@@ -44,7 +52,7 @@ func parseELM(data []byte, path string) (*Parsed, error) {
 		return nil, &domain.ValidationError{Field: path + ".credentialSubject", Msg: "required: data must be an ELM credential"}
 	}
 
-	b := &elmBuilder{base: root.ID(), memo: map[string]string{}, inProgress: map[string]bool{}}
+	b := &elmBuilder{base: root.ID(), memo: map[string]string{}, inProgress: map[string]bool{}, warnings: envelopeWarnings}
 	if b.base == "" {
 		sum := sha256.Sum256(data)
 		b.base = "elm:sha256:" + hex.EncodeToString(sum[:16])

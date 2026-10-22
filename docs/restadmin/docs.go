@@ -1726,7 +1726,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Converts data from metadata.input_format (elm: an ELM v3 / European Digital Credential JSON-LD document) to metadata.output_format (eduapi or oeapi) and returns it. Nothing is stored. Records keep the document's ids as sourcedIds; references between them are sourcedIds. Requires scope sis.read.",
+                "description": "Converts data from metadata.input_format (elm: an ELM v3 / European Digital Credential JSON-LD document, plain, in EDCI's {\"credential\": ...} upload wrapper, or sealed as {\"payload\": ..., \"signatures\": ...}; the seal is not verified) to metadata.output_format (eduapi or oeapi) and returns it. Nothing is stored. Records keep the document's ids as sourcedIds; references between them are sourcedIds. Requires scope sis.read.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2136,7 +2136,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Converts data from metadata.input_format (elm) and upserts every record by sourcedId, so /eduapi and /oeapi (and /api/v1) serve them. With ttl the records stop being served after that duration and are then deleted; re-populating refreshes the expiry, but a record that already existed without expiry keeps none. References in the document must resolve within it or to stored records. The document is checked completely before anything is stored; a storage failure part-way leaves earlier records stored, and retrying the same request converges. Requires scope sis.write.",
+                "description": "Converts data from metadata.input_format (elm, plain or in an EDCI envelope as for parse) and upserts every record by sourcedId, so /eduapi and /oeapi (and /api/v1) serve them. With ttl the records stop being served after that duration and are then deleted; re-populating refreshes the expiry, but a record that already existed without expiry keeps none. References in the document must resolve within it or to stored records. The document is checked completely before anything is stored; a storage failure part-way leaves earlier records stored, and retrying the same request converges. Requires scope sis.write.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2951,7 +2951,7 @@ const docTemplate = `{
             ],
             "properties": {
                 "data": {
-                    "description": "Data is the document to load, e.g. an ELM v3 credential (JSON-LD).",
+                    "description": "Data is the document to load, e.g. an ELM v3 credential (JSON-LD),\nplain or as EDCI issues it ({\"credential\": ...} or sealed\n{\"payload\": ..., \"signatures\": ...}; the seal is not verified).",
                     "type": "object"
                 },
                 "metadata": {
@@ -2990,7 +2990,7 @@ const docTemplate = `{
             ],
             "properties": {
                 "data": {
-                    "description": "Data is the document to convert, e.g. an ELM v3 credential (JSON-LD).",
+                    "description": "Data is the document to convert, e.g. an ELM v3 credential (JSON-LD),\nplain or as EDCI issues it ({\"credential\": ...} or sealed\n{\"payload\": ..., \"signatures\": ...}).",
                     "type": "object"
                 },
                 "metadata": {
