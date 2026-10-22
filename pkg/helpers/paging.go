@@ -32,19 +32,19 @@ func ParseLimitOffset(gc *gin.Context, defaultLimit, maxLimit int) (port.ListPar
 		}
 	}
 	params := port.ListParams{Limit: defaultLimit}
-	if v, ok := gc.GetQuery("limit"); ok {
-		n, err := strconv.Atoi(v)
-		if err != nil || n < 1 {
+	if raw, ok := gc.GetQuery("limit"); ok {
+		limit, err := strconv.Atoi(raw)
+		if err != nil || limit < 1 {
 			return port.ListParams{}, pagingError("limit", "must be a positive integer")
 		}
-		params.Limit = min(n, maxLimit)
+		params.Limit = min(limit, maxLimit)
 	}
-	if v, ok := gc.GetQuery("offset"); ok {
-		n, err := strconv.Atoi(v)
-		if err != nil || n < 0 {
+	if raw, ok := gc.GetQuery("offset"); ok {
+		offset, err := strconv.Atoi(raw)
+		if err != nil || offset < 0 {
 			return port.ListParams{}, pagingError("offset", "must be a non-negative integer")
 		}
-		params.Offset = n
+		params.Offset = offset
 	}
 	return params, nil
 }
@@ -64,19 +64,19 @@ func ParsePageNumberSize(gc *gin.Context, defaultPageSize, maxPageSize int) (pag
 		return 0, 0, port.ListParams{}, err
 	}
 	pageNumber, pageSize = 1, defaultPageSize
-	if v, ok := gc.GetQuery("pageNumber"); ok {
-		n, convErr := strconv.Atoi(v)
-		if convErr != nil || n < 1 {
+	if raw, ok := gc.GetQuery("pageNumber"); ok {
+		number, convErr := strconv.Atoi(raw)
+		if convErr != nil || number < 1 {
 			return 0, 0, port.ListParams{}, pagingError("pageNumber", "must be a positive integer")
 		}
-		pageNumber = n
+		pageNumber = number
 	}
-	if v, ok := gc.GetQuery("pageSize"); ok {
-		n, convErr := strconv.Atoi(v)
-		if convErr != nil || n < 1 {
+	if raw, ok := gc.GetQuery("pageSize"); ok {
+		size, convErr := strconv.Atoi(raw)
+		if convErr != nil || size < 1 {
 			return 0, 0, port.ListParams{}, pagingError("pageSize", "must be a positive integer")
 		}
-		pageSize = min(n, maxPageSize)
+		pageSize = min(size, maxPageSize)
 	}
 	if pageNumber-1 > math.MaxInt/pageSize {
 		return 0, 0, port.ListParams{}, pagingError("pageNumber", "out of range")
@@ -89,14 +89,14 @@ func ParsePageNumberSize(gc *gin.Context, defaultPageSize, maxPageSize int) (pag
 // read as "unbounded") and clamps the default into [1, max]. Config
 // validation already enforces both > 0; this guards callers that build a
 // model.Cfg by hand (e.g. tests) without defaults applied.
-func checkBounds(def, maxSize int) (int, int, error) {
+func checkBounds(defaultSize, maxSize int) (int, int, error) {
 	if maxSize < 1 {
 		return 0, 0, NewErrorWithStatus(ErrInternal, http.StatusInternalServerError)
 	}
-	if def < 1 || def > maxSize {
-		def = maxSize
+	if defaultSize < 1 || defaultSize > maxSize {
+		defaultSize = maxSize
 	}
-	return def, maxSize, nil
+	return defaultSize, maxSize, nil
 }
 
 func pagingError(field, msg string) *Error {

@@ -3,17 +3,16 @@ package amqpapi
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"errors"
 	"fmt"
 	"math"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/Azure/go-amqp"
 
+	"github.com/SUNET/sis/pkg/helpers"
 	"github.com/SUNET/sis/pkg/model"
 )
 
@@ -47,47 +46,47 @@ func (b brokerLink) Close(ctx context.Context) error {
 
 // newDialer checks the settings and returns the dialer. Credentials come from
 // the URL's userinfo (SASL PLAIN); without them SASL ANONYMOUS is used.
-func newDialer(ac model.AMQPAPI) (dialFunc, error) {
-	u, err := url.Parse(ac.URL)
-	if err != nil || (u.Scheme != "amqp" && u.Scheme != "amqps") || u.Hostname() == "" {
+func newDialer(cfg model.AMQPAPI) (dialFunc, error) {
+	brokerURL, err := url.Parse(cfg.URL)
+	if err != nil || (brokerURL.Scheme != "amqp" && brokerURL.Scheme != "amqps") || brokerURL.Hostname() == "" {
 		return nil, errors.New("amqpapi: url must be amqp:// or amqps://host[:port]")
 	}
-	if ac.Prefetch <= 0 || ac.Prefetch > math.MaxInt32 {
+	if cfg.Prefetch <= 0 || cfg.Prefetch > math.MaxInt32 {
 		return nil, errors.New("amqpapi: prefetch must be positive")
 	}
-	opts := &amqp.ConnOptions{}
-	if u.User == nil {
-		opts.SASLType = amqp.SASLTypeAnonymous()
+	connOpts := &amqp.ConnOptions{}
+	if brokerURL.User == nil {
+		connOpts.SASLType = amqp.SASLTypeAnonymous()
 	}
-	if len(ac.CAFiles) > 0 {
-		if !strings.EqualFold(u.Scheme, "amqps") {
+	if len(cfg.CAFiles) > 0 {
+		if !strings.EqualFold(brokerURL.Scheme, "amqps") {
 			return nil, errors.New("amqpapi: ca_files need an amqps:// url")
 		}
-		pool, err := certPool(ac.CAFiles)
+		pool, err := helpers.CertPool(cfg.CAFiles)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("amqpapi: %w", err)
 		}
-		opts.TLSConfig = &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}
+		connOpts.TLSConfig = &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}
 	}
-	rcvOpts := receiverOptions(ac)
+	receiverOpts := receiverOptions(cfg)
 	return func(ctx context.Context) (link, error) {
 		ctx, cancel := context.WithTimeout(ctx, dialTimeout)
 		defer cancel()
-		conn, err := amqp.Dial(ctx, ac.URL, opts)
+		conn, err := amqp.Dial(ctx, cfg.URL, connOpts)
 		if err != nil {
-			return nil, fmt.Errorf("dial %s: %w", u.Redacted(), err)
+			return nil, fmt.Errorf("dial %s: %w", brokerURL.Redacted(), err)
 		}
-		sess, err := conn.NewSession(ctx, nil)
+		session, err := conn.NewSession(ctx, nil)
 		if err != nil {
 			_ = conn.Close()
 			return nil, fmt.Errorf("begin session: %w", err)
 		}
-		rcv, err := sess.NewReceiver(ctx, ac.Address, rcvOpts)
+		receiver, err := session.NewReceiver(ctx, cfg.Address, receiverOpts)
 		if err != nil {
 			_ = conn.Close()
-			return nil, fmt.Errorf("attach receiver to %s: %w", ac.Address, err)
+			return nil, fmt.Errorf("attach receiver to %s: %w", cfg.Address, err)
 		}
-		return brokerLink{Receiver: rcv, conn: conn}, nil
+		return brokerLink{Receiver: receiver, conn: conn}, nil
 	}, nil
 }
 
@@ -103,28 +102,10 @@ func newDialer(ac model.AMQPAPI) (dialFunc, error) {
 // on a message that arrived settled, so a failed command would be lost while
 // logged as redelivered. Requesting the mode makes the attach fail when the
 // broker cannot honour it.
-func receiverOptions(ac model.AMQPAPI) *amqp.ReceiverOptions {
+func receiverOptions(cfg model.AMQPAPI) *amqp.ReceiverOptions {
 	return &amqp.ReceiverOptions{
-		Credit:                    int32(ac.Prefetch),                         //nolint:gosec // bounded by newDialer
-		MaxMessageSize:            uint64(ac.MaxMessageBytes) + envelopeBytes, //nolint:gosec // validated gt=0
+		Credit:                    int32(cfg.Prefetch),                         // #nosec G115 -- newDialer bounds it to (0, MaxInt32]
+		MaxMessageSize:            uint64(cfg.MaxMessageBytes) + envelopeBytes, // #nosec G115 -- config validates gt=0
 		RequestedSenderSettleMode: new(amqp.SenderSettleModeUnsettled),
 	}
-}
-
-// certPool returns the system roots plus the PEM certificates in files.
-func certPool(files []string) (*x509.CertPool, error) {
-	pool, err := x509.SystemCertPool()
-	if err != nil {
-		pool = x509.NewCertPool()
-	}
-	for _, f := range files {
-		pemData, err := os.ReadFile(f) //nolint:gosec // path comes from operator config
-		if err != nil {
-			return nil, fmt.Errorf("amqpapi: read ca file: %w", err)
-		}
-		if !pool.AppendCertsFromPEM(pemData) {
-			return nil, fmt.Errorf("amqpapi: ca file %s holds no PEM certificate", f)
-		}
-	}
-	return pool, nil
 }

@@ -161,7 +161,10 @@ sis:
 #### Example: LiU writes, SUNET vc reads
 
 With the local test issuer from `docker compose` (mellon, `realm.json`),
-`liu` gets both scopes and `sunet-vc` only `sis.read`:
+`liu` gets both scopes and `sunet-vc` only `sis.read`. Both tokens carry
+`aud: "sis"`. A client that asks for a scope it was not given, e.g.
+`sunet-vc` with `-d scope=sis.write`, gets `invalid_scope` from mellon
+and no token:
 
 ```bash
 MELLON=https://localhost:9443/realms/sis/protocol/openid-connect
@@ -368,7 +371,8 @@ curl -s --cacert developer_tools/pki/rootCA.crt -H "Authorization: Bearer $TOKEN
 
 ```bash
 make build        # ./bin/sis
-make test         # go test ./...
+make test         # go test ./... (extra flags: GOTEST_FLAGS="-race -count=1")
+make lint         # gofmt, vet, staticcheck, govulncheck, swagger-check
 make web          # npm install + build the SPA into web/dist
 make swagger      # regenerate docs/restadmin
 make docker-build # docker.sunet.se/iam_vc/sis:local
@@ -382,4 +386,24 @@ An empty `sis.adapter.outbound.postgres.connection_string` keeps all data in
 memory, which is fine for trying SIS out but is lost on restart.
 
 The Postgres integration tests are skipped unless `SIS_TEST_DATABASE_URL`
-is set.
+is set, and the AMQP broker test unless `SIS_TEST_AMQP_URL` is set.
+
+### CI
+
+GitHub Actions (`.github/workflows/ci.yaml`) runs on pushes to `main`, on
+pull requests and on demand. Each job is a make target, so a failure
+reproduces locally with the same command:
+
+| Job | Command | Notes |
+| --- | --- | --- |
+| `lint` | `make lint` | fails on unformatted code, findings, or stale Swagger docs |
+| `test` | `make test GOTEST_FLAGS="-race -count=1"` | with Postgres 17 and RabbitMQ (`developer_tools/rabbitmq`), so no integration test is skipped |
+| `build` | `make build` | |
+| `web` | `make web-ci` | `npm ci` from the lockfile, as the Dockerfile does |
+| `docker-build` | `make docker-build` | built, never pushed |
+
+staticcheck and govulncheck run pinned through `go run pkg@version`
+(`STATICCHECK_VERSION`, `GOVULNCHECK_VERSION` in the Makefile), so no
+separate install is needed. gosec is not in CI: its v2.29.0 release cannot
+load Go 1.27 packages. `make gosec` still runs an installed gosec; suppress
+a finding with `// #nosec G<nnn> -- reason`.

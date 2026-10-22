@@ -21,13 +21,13 @@ type Metadata struct {
 
 // Check rejects unsupported formats. withOutput requires an output format
 // (parse); without it, one must not be given (populate).
-func (m Metadata) Check(conv *convert.Client, withOutput bool) error {
-	if !conv.HasInput(m.InputFormat) {
-		return &domain.ValidationError{Field: "metadata.input_format", Msg: "must be one of " + strings.Join(conv.InputFormats(), ", ")}
+func (m Metadata) Check(converter *convert.Client, withOutput bool) error {
+	if !converter.HasInput(m.InputFormat) {
+		return &domain.ValidationError{Field: "metadata.input_format", Msg: "must be one of " + strings.Join(converter.InputFormats(), ", ")}
 	}
 	switch {
-	case withOutput && !conv.HasOutput(m.OutputFormat):
-		return &domain.ValidationError{Field: "metadata.output_format", Msg: "must be one of " + strings.Join(conv.OutputFormats(), ", ")}
+	case withOutput && !converter.HasOutput(m.OutputFormat):
+		return &domain.ValidationError{Field: "metadata.output_format", Msg: "must be one of " + strings.Join(converter.OutputFormats(), ", ")}
 	case !withOutput && m.OutputFormat != "":
 		return &domain.ValidationError{Field: "metadata.output_format", Msg: "not used by populate; the records are served by /eduapi and /oeapi"}
 	}
@@ -40,7 +40,9 @@ type PopulateRequest struct {
 	// TTL is how long the records are served, as a Go duration ("24h",
 	// "90m"). Omitted: they never expire.
 	TTL string `json:"ttl,omitempty" example:"24h"`
-	// Data is the document to load, e.g. an ELM v3 credential (JSON-LD).
+	// Data is the document to load, e.g. an ELM v3 credential (JSON-LD),
+	// plain or as EDCI issues it ({"credential": ...} or sealed
+	// {"payload": ..., "signatures": ...}; the seal is not verified).
 	Data json.RawMessage `json:"data" binding:"required" swaggertype:"object"`
 }
 
@@ -59,7 +61,7 @@ type PopulateReply struct {
 // Populate converts req.Data and upserts its records by sourcedId (see
 // readmodel.Populate).
 func (c *Client) Populate(ctx context.Context, req PopulateRequest) (*PopulateReply, error) {
-	if err := req.Metadata.Check(c.convert, false); err != nil {
+	if err := req.Metadata.Check(c.converter, false); err != nil {
 		return nil, err
 	}
 	var expiresAt *time.Time
@@ -68,10 +70,10 @@ func (c *Client) Populate(ctx context.Context, req PopulateRequest) (*PopulateRe
 		if err != nil || ttl <= 0 {
 			return nil, &domain.ValidationError{Field: "ttl", Msg: `must be a positive Go duration, e.g. "24h" or "90m"`}
 		}
-		t := c.now().UTC().Add(ttl).Truncate(time.Microsecond) // Postgres precision
-		expiresAt = &t
+		expiry := c.now().UTC().Add(ttl).Truncate(time.Microsecond) // Postgres precision
+		expiresAt = &expiry
 	}
-	parsed, err := c.convert.Parse(req.Metadata.InputFormat, req.Data, "data")
+	parsed, err := c.converter.Parse(req.Metadata.InputFormat, req.Data, "data")
 	if err != nil {
 		return nil, err
 	}

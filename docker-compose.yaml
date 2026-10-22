@@ -80,6 +80,8 @@ services:
 
   # Keycloak-compatible OIDC provider for local OIDC RP testing.
   mellon:
+    # Needs v0.0.8 or later: grants a client only its default/optional
+    # scopes and runs realm.json's audience mappers (aud=sis).
     image: docker.sunet.se/iam_vc/mellon:latest
     # Loopback only: realm.json ships publicly known test identities
     # (admin/password) and the sis-secret client credential, so this IdP

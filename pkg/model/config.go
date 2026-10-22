@@ -22,10 +22,20 @@ type Log struct {
 }
 
 type SIS struct {
-	HTTPServer HTTPServer `yaml:"httpserver"`
-	Auth       Auth       `yaml:"auth"`
-	Adapter    Adapter    `yaml:"adapter"`
-	FileImport FileImport `yaml:"file_import"`
+	// StartupTimeout bounds startup: connecting to and migrating the
+	// database, the file import and binding the listener. SIGINT/SIGTERM
+	// during startup stops it at once.
+	StartupTimeout time.Duration `yaml:"startup_timeout" default:"2m" validate:"gt=0"`
+	// ShutdownTimeout bounds the whole shutdown after SIGINT/SIGTERM:
+	// draining HTTP requests and AMQP commands in flight, stopping the
+	// expiry sweeper and closing the database pool. When it passes, HTTP
+	// requests still running are cancelled and AMQP commands still running
+	// are returned to the broker for redelivery.
+	ShutdownTimeout time.Duration `yaml:"shutdown_timeout" default:"10s" validate:"gt=0"`
+	HTTPServer      HTTPServer    `yaml:"httpserver"`
+	Auth            Auth          `yaml:"auth"`
+	Adapter         Adapter       `yaml:"adapter"`
+	FileImport      FileImport    `yaml:"file_import"`
 }
 
 // FileImport loads records from files at every startup, e.g. fake students
@@ -39,14 +49,16 @@ type FileImport struct {
 }
 
 type HTTPServer struct {
-	Addr         string        `yaml:"addr" default:":8080" validate:"required"`
-	ReadTimeout  time.Duration `yaml:"read_timeout" default:"15s" validate:"gt=0"`
+	Addr        string        `yaml:"addr" default:":8080" validate:"required"`
+	ReadTimeout time.Duration `yaml:"read_timeout" default:"15s" validate:"gt=0"`
+	// WriteTimeout bounds the request's work, reading its body included:
+	// when it passes, the handler's context is cancelled, so database
+	// calls stop and the request ends with 503. Sending the response may take 5s more, so
+	// that 503 reaches the client.
 	WriteTimeout time.Duration `yaml:"write_timeout" default:"15s" validate:"gt=0"`
-	// ShutdownTimeout is the grace period for in-flight requests on SIGTERM.
-	ShutdownTimeout time.Duration `yaml:"shutdown_timeout" default:"10s" validate:"gt=0"`
-	Web             Web           `yaml:"web"`
-	Swagger         Swagger       `yaml:"swagger"`
-	TLS             TLS           `yaml:"tls"`
+	Web          Web           `yaml:"web"`
+	Swagger      Swagger       `yaml:"swagger"`
+	TLS          TLS           `yaml:"tls"`
 }
 
 // TLS makes the listener serve https from a certificate and key file. Both
@@ -117,6 +129,8 @@ type Adapter struct {
 type Sweeper struct {
 	// Interval between sweeps.
 	Interval time.Duration `yaml:"interval" default:"1m" validate:"gt=0"`
+	// Timeout bounds one sweep; what is left is deleted by the next one.
+	Timeout time.Duration `yaml:"timeout" default:"30s" validate:"gt=0,ltefield=Interval"`
 }
 
 // Inbound holds the API settings. Page sizes above the max are clamped to
@@ -156,6 +170,9 @@ type AMQPAPI struct {
 	// publish limit (RabbitMQ: max_message_size) so it refuses such
 	// messages up front.
 	MaxMessageBytes int64 `yaml:"max_message_bytes" default:"5242880" validate:"gt=0"`
+	// CommandTimeout bounds one command. A command that runs past it is
+	// cancelled and its message redelivered, like any server-side failure.
+	CommandTimeout time.Duration `yaml:"command_timeout" default:"2m" validate:"gt=0"`
 	// Scopes are granted to messages without an authorization property
 	// ("Bearer <token>", checked like an API token). Empty requires a token
 	// on every message; [sis.write] trusts everyone who may publish to the
@@ -215,6 +232,13 @@ type Postgres struct {
 	// ConnectionString is a PostgreSQL URL. Empty uses an in-memory store
 	// that is lost on restart.
 	ConnectionString string `yaml:"connection_string"`
+	// ConnectTimeout bounds opening one connection. 0 keeps the
+	// connection string's connect_timeout (default: none).
+	ConnectTimeout time.Duration `yaml:"connect_timeout" default:"10s" validate:"gte=0"`
+	// StatementTimeout makes the server abort a statement that runs
+	// longer (PostgreSQL statement_timeout). 0 keeps the server's setting.
+	// Migrations at startup are not limited by it.
+	StatementTimeout time.Duration `yaml:"statement_timeout" default:"30s" validate:"gte=0"`
 }
 
 // Events are currently only logged; the NATS settings are not used yet.

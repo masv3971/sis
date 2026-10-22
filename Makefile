@@ -15,12 +15,12 @@ CURRENT_BRANCH          = $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
 # Phony Targets Declaration
 # ==============================================================================
 
-.PHONY: update gosec staticcheck vulncheck \
+.PHONY: update gosec staticcheck vulncheck lint \
 	pki start stop restart \
 	vscode gh-install gh-auth \
-	build test fmt docker-build docker-push \
+	build test vet fmt fmt-check docker-build docker-push \
 	swagger swagger-restadmin swagger-fmt swagger-check \
-	web-install web-dev web-build web \
+	web-install web-dev web-build web web-ci \
 	diagram \
 	release check_current_branch
 
@@ -43,17 +43,28 @@ update: ## Update all Go dependencies and pinned GitHub Actions to their latest 
 # Code Quality & Security
 # ==============================================================================
 
+# staticcheck and govulncheck run pinned through `go run pkg@version`, so
+# local runs and CI use the same versions without an install step and their
+# dependencies stay out of go.mod.
+STATICCHECK_VERSION ?= v0.8.2
+GOVULNCHECK_VERSION ?= v1.9.0
+
+# Not part of lint/CI: the gosec v2.29.0 release cannot load Go 1.27
+# packages. Suppress a finding with `// #nosec G<nnn> -- reason` (gosec
+# ignores golangci-lint's //nolint).
 gosec: ## Run gosec security scanner
 	$(info Running gosec)
-	gosec -color -tests -exclude-dir=internal/gen ./...
+	gosec -color -tests ./...
 
 staticcheck: ## Run staticcheck linter
 	$(info Running staticcheck)
-	staticcheck ./...
+	go run honnef.co/go/tools/cmd/staticcheck@$(STATICCHECK_VERSION) ./...
 
 vulncheck: ## Run vulnerability checker
 	$(info Running vulncheck)
-	govulncheck -scan package ./...
+	go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) -scan package ./...
+
+lint: fmt-check vet staticcheck vulncheck swagger-check ## Run every CI check
 
 
 # ==============================================================================
@@ -176,12 +187,25 @@ docker-push: ## Push the sis Docker image (refuses :latest unless FORCE=true)
 	@echo "Pushing $(DOCKER_IMAGE):$(VERSION)"
 	docker push $(DOCKER_IMAGE):$(VERSION)
 
-test: ## Run all Go tests
+# Extra `go test` flags, e.g. GOTEST_FLAGS="-race -count=1" (CI). The
+# Postgres and AMQP integration tests run only when SIS_TEST_DATABASE_URL /
+# SIS_TEST_AMQP_URL are set.
+GOTEST_FLAGS ?=
+
+test: ## Run all Go tests (override GOTEST_FLAGS)
 	$(info Running tests)
-	go test ./...
+	go test $(GOTEST_FLAGS) ./...
+
+vet: ## Run go vet
+	go vet ./...
 
 fmt: ## Format Go code with gofumpt
 	gofumpt -l -w .
+
+fmt-check: ## Fail if any Go file is not gofmt-formatted
+	@out="$$(gofmt -l .)"; if [ -n "$$out" ]; then \
+		echo "Not gofmt-formatted (run 'gofmt -w .'):"; echo "$$out"; exit 1; \
+	fi
 
 # ==============================================================================
 # Web (React + TypeScript SPA)
@@ -197,6 +221,9 @@ web-build: ## Build the SPA for production
 	cd web && npm run build
 
 web: web-install web-build ## Install SPA dependencies and build (one-shot)
+
+web-ci: ## Install SPA dependencies from the lockfile and build (CI, as in the Dockerfile)
+	cd web && npm ci && npm run build
 
 # ==============================================================================
 # Release Management

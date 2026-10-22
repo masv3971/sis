@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/SUNET/sis/internal/core/domain"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewPage(t *testing.T) {
@@ -20,12 +22,12 @@ func TestNewPage(t *testing.T) {
 		{"past the end", 5, 10, 25, 3, true, false},
 		{"zero page size", 1, 0, 25, 0, false, false},
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			p := NewPage([]int{}, c.number, c.size, c.total)
-			if p.TotalPages != c.wantPages || p.HasPreviousPage != c.wantPrevious || p.HasNextPage != c.wantNext {
-				t.Fatalf("got pages=%d prev=%v next=%v", p.TotalPages, p.HasPreviousPage, p.HasNextPage)
-			}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			page := NewPage([]int{}, tc.number, tc.size, tc.total)
+			assert.Equal(t, tc.wantPages, page.TotalPages, "totalPages")
+			assert.Equal(t, tc.wantPrevious, page.HasPreviousPage, "hasPreviousPage")
+			assert.Equal(t, tc.wantNext, page.HasNextPage, "hasNextPage")
 		})
 	}
 }
@@ -40,13 +42,13 @@ func TestFromPerson(t *testing.T) {
 		{"family only", domain.Person{FamilyName: "Lovelace"}, "Lovelace", ""},
 		{"given only", domain.Person{GivenName: "Ada"}, "Ada", ""},
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			c.in.SourcedID = "stu"
-			got := FromPerson(c.in)
-			if got.PersonID != "stu" || got.DisplayName != c.display || got.Mail != c.mail {
-				t.Fatalf("got %+v", got)
-			}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.in.SourcedID = "stu"
+			got := FromPerson(tc.in)
+			assert.Equal(t, "stu", got.PersonID)
+			assert.Equal(t, tc.display, got.DisplayName)
+			assert.Equal(t, tc.mail, got.Mail)
 		})
 	}
 }
@@ -54,22 +56,24 @@ func TestFromPerson(t *testing.T) {
 // TestMappersUseSourcedIDs checks every resource is identified by its
 // sourcedId, never its canonical id.
 func TestMappersUseSourcedIDs(t *testing.T) {
-	b := func(sid string) domain.Base {
+	base := func(sid string) domain.Base {
 		return domain.Base{ID: "id-" + sid, SourcedID: sid, Status: domain.StatusActive}
 	}
-	r := FromResult(&domain.Result{Base: b("r"), PersonID: "stu", CourseID: "c", Grade: "A", Credits: 7.5})
-	if r.ResultID != "r" || r.State != "active" || r.Score != "A" || r.ECTS != 7.5 {
-		t.Fatalf("result = %+v", r)
-	}
-	a := FromAssociation(&domain.Enrollment{Base: b("e"), PersonID: "stu", OfferingID: "o", Role: domain.RoleStudent})
-	if a.AssociationID != "e" || a.Role != string(domain.RoleStudent) || a.State != "active" {
-		t.Fatalf("association = %+v", a)
-	}
+	result := FromResult(&domain.Result{Base: base("r"), PersonID: "stu", CourseID: "c", Grade: "A", Credits: 7.5})
+	assert.Equal(t, "r", result.ResultID)
+	assert.Equal(t, "active", result.State)
+	assert.Equal(t, "A", result.Score)
+	assert.Equal(t, 7.5, result.ECTS)
+	association := FromAssociation(&domain.Enrollment{Base: base("e"), PersonID: "stu", OfferingID: "o", Role: domain.RoleStudent})
+	assert.Equal(t, "e", association.AssociationID)
+	assert.Equal(t, string(domain.RoleStudent), association.Role)
+	assert.Equal(t, "active", association.State)
 	out := FromBundle(&domain.Bundle{
 		Persons:       []domain.Person{{SourcedID: "stu"}},
-		Organizations: []*domain.Organization{{Base: b("uni"), Name: "U"}},
+		Organizations: []*domain.Organization{{Base: base("uni"), Name: "U"}},
 	})
-	if len(out.Persons) != 1 || out.Organizations[0].OrganizationID != "uni" || out.Courses == nil {
-		t.Fatalf("bundle = %+v", out)
-	}
+	assert.Len(t, out.Persons, 1)
+	require.Len(t, out.Organizations, 1)
+	assert.Equal(t, "uni", out.Organizations[0].OrganizationID)
+	assert.NotNil(t, out.Courses, "empty lists must be non-nil")
 }

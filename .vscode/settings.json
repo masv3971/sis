@@ -34,6 +34,7 @@
         "fysik",
         "gonic",
         "gosec",
+        "GOTEST",
         "gsub",
         "healthcheck",
         "healthz",
