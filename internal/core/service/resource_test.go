@@ -9,6 +9,8 @@ import (
 	"github.com/SUNET/sis/internal/core/domain"
 	"github.com/SUNET/sis/internal/core/port"
 	"github.com/SUNET/sis/internal/core/service"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func newOrgResource() *service.Resource[domain.Organization, *domain.Organization] {
@@ -18,47 +20,32 @@ func newOrgResource() *service.Resource[domain.Organization, *domain.Organizatio
 
 func TestResource_CreateValidationAndID(t *testing.T) {
 	svc := newOrgResource()
-	ctx := context.Background()
+	ctx := t.Context()
 
-	if _, err := svc.Create(ctx, &domain.Organization{}); err == nil {
-		t.Fatal("expected validation error for missing name")
-	}
+	_, err := svc.Create(ctx, &domain.Organization{})
+	require.Error(t, err, "expected validation error for missing name")
 
 	org, err := svc.Create(ctx, &domain.Organization{Name: "Uppsala University", Type: "institution"})
-	if err != nil {
-		t.Fatalf("create: %v", err)
-	}
-	if org.GetID() == "" || org.GetSourcedID() != org.GetID() {
-		t.Fatalf("expected generated id with sourcedId defaulting to it: %+v", org)
-	}
+	require.NoError(t, err, "create")
+	assert.NotEmpty(t, org.GetID(), "expected generated id")
+	assert.Equal(t, org.GetID(), org.GetSourcedID(), "expected sourcedId defaulting to id")
 }
 
 func TestResource_UpsertIsIdempotent(t *testing.T) {
 	svc := newOrgResource()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	first, err := svc.UpsertBySourcedID(ctx, &domain.Organization{SourcedID: "org-1", Name: "Dept A"})
-	if err != nil {
-		t.Fatalf("first upsert: %v", err)
-	}
+	require.NoError(t, err, "first upsert")
 	second, err := svc.UpsertBySourcedID(ctx, &domain.Organization{SourcedID: "org-1", Name: "Dept A (renamed)"})
-	if err != nil {
-		t.Fatalf("second upsert: %v", err)
-	}
-	if first.GetID() != second.GetID() {
-		t.Fatalf("upsert must reuse id: %s != %s", first.GetID(), second.GetID())
-	}
+	require.NoError(t, err, "second upsert")
+	assert.Equal(t, first.GetID(), second.GetID(), "upsert must reuse id")
 
 	page, err := svc.List(ctx, port.ListParams{Limit: 10})
-	if err != nil {
-		t.Fatalf("list: %v", err)
-	}
-	if page.Total != 1 {
-		t.Fatalf("expected 1 org after repeated upsert, got %d", page.Total)
-	}
-	if page.Items[0].Name != "Dept A (renamed)" {
-		t.Fatalf("expected updated name, got %q", page.Items[0].Name)
-	}
+	require.NoError(t, err, "list")
+	assert.Equal(t, 1, page.Total, "expected 1 org after repeated upsert")
+	require.NotEmpty(t, page.Items)
+	assert.Equal(t, "Dept A (renamed)", page.Items[0].Name, "expected updated name")
 }
 
 // TestResource_UpsertWithExpiry checks expiry is set on create, refreshed on
@@ -72,31 +59,33 @@ func TestResource_UpsertWithExpiry(t *testing.T) {
 
 	exp1 := now.Add(time.Hour)
 	first, created, err := svc.UpsertWithExpiry(ctx, &domain.Organization{SourcedID: "o", Name: "A"}, &exp1)
-	if err != nil || !created || first.ExpiresAt == nil || !first.ExpiresAt.Equal(exp1) {
-		t.Fatalf("first: %+v created=%v err=%v", first, created, err)
-	}
+	require.NoError(t, err, "first")
+	assert.True(t, created, "first")
+	require.NotNil(t, first.ExpiresAt, "first")
+	assert.True(t, first.ExpiresAt.Equal(exp1), "first: expiresAt = %v, want %v", first.ExpiresAt, exp1)
 
 	exp2 := now.Add(2 * time.Hour)
 	second, created, err := svc.UpsertWithExpiry(ctx, &domain.Organization{SourcedID: "o", Name: "B"}, &exp2)
-	if err != nil || created || second.GetID() != first.GetID() || !second.ExpiresAt.Equal(exp2) {
-		t.Fatalf("refresh: %+v created=%v err=%v", second, created, err)
-	}
+	require.NoError(t, err, "refresh")
+	assert.False(t, created, "refresh")
+	assert.Equal(t, first.GetID(), second.GetID(), "refresh")
+	require.NotNil(t, second.ExpiresAt, "refresh")
+	assert.True(t, second.ExpiresAt.Equal(exp2), "refresh: expiresAt = %v, want %v", second.ExpiresAt, exp2)
 
 	// Update keeps the stored expiry whatever the body says.
-	upd, err := svc.Update(ctx, &domain.Organization{ID: first.GetID(), SourcedID: "o", Name: "C"})
-	if err != nil || upd.ExpiresAt == nil || !upd.ExpiresAt.Equal(exp2) {
-		t.Fatalf("update must keep expiry: %+v %v", upd, err)
-	}
+	updated, err := svc.Update(ctx, &domain.Organization{ID: first.GetID(), SourcedID: "o", Name: "C"})
+	require.NoError(t, err, "update")
+	require.NotNil(t, updated.ExpiresAt, "update must keep expiry")
+	assert.True(t, updated.ExpiresAt.Equal(exp2), "update must keep expiry: %v", updated.ExpiresAt)
 
 	// A permanent record stays permanent.
 	perm, err := svc.Create(ctx, &domain.Organization{SourcedID: "p", ExpiresAt: &exp1, Name: "P"})
-	if err != nil || perm.ExpiresAt != nil {
-		t.Fatalf("Create must drop caller expiry: %+v %v", perm, err)
-	}
+	require.NoError(t, err, "create")
+	assert.Nil(t, perm.ExpiresAt, "Create must drop caller expiry")
 	again, _, err := svc.UpsertWithExpiry(ctx, &domain.Organization{SourcedID: "p", Name: "P2"}, &exp1)
-	if err != nil || again.ExpiresAt != nil || again.Name != "P2" {
-		t.Fatalf("permanent record must stay permanent but take the data: %+v %v", again, err)
-	}
+	require.NoError(t, err)
+	assert.Nil(t, again.ExpiresAt, "permanent record must stay permanent")
+	assert.Equal(t, "P2", again.Name, "permanent record must take the data")
 }
 
 // interleavedDocs runs before once, just ahead of the first Update, to
@@ -106,12 +95,12 @@ type interleavedDocs struct {
 	before func()
 }
 
-func (r *interleavedDocs) Update(ctx context.Context, e *domain.Organization, prev *time.Time) error {
-	if f := r.before; f != nil {
-		r.before = nil
-		f()
+func (repo *interleavedDocs) Update(ctx context.Context, entity *domain.Organization, prev *time.Time) error {
+	if before := repo.before; before != nil {
+		repo.before = nil
+		before()
 	}
-	return r.DocRepo.Update(ctx, e, prev)
+	return repo.DocRepo.Update(ctx, entity, prev)
 }
 
 // TestResource_UpsertWithExpiryRace is the race from the PR #2 review: a TTL
@@ -126,37 +115,28 @@ func TestResource_UpsertWithExpiryRace(t *testing.T) {
 	svc := service.NewResource(repo, nil, clock, nil)
 
 	exp := now.Add(time.Hour)
-	if _, _, err := svc.UpsertWithExpiry(ctx, &domain.Organization{SourcedID: "o", Name: "A"}, &exp); err != nil {
-		t.Fatal(err)
-	}
+	_, _, err := svc.UpsertWithExpiry(ctx, &domain.Organization{SourcedID: "o", Name: "A"}, &exp)
+	require.NoError(t, err)
 	repo.before = func() {
-		if _, err := svc.UpsertBySourcedID(ctx, &domain.Organization{SourcedID: "o", Name: "Permanent"}); err != nil {
-			t.Errorf("concurrent permanent upsert: %v", err)
-		}
+		_, err := svc.UpsertBySourcedID(ctx, &domain.Organization{SourcedID: "o", Name: "Permanent"})
+		assert.NoError(t, err, "concurrent permanent upsert")
 	}
 	later := now.Add(2 * time.Hour)
 	out, _, err := svc.UpsertWithExpiry(ctx, &domain.Organization{SourcedID: "o", Name: "Late"}, &later)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if out.ExpiresAt != nil {
-		t.Fatalf("late TTL write restored expiry %v on a permanent record", out.ExpiresAt)
-	}
+	require.NoError(t, err)
+	assert.Nil(t, out.ExpiresAt, "late TTL write restored expiry on a permanent record")
 	stored, err := svc.GetBySourcedID(ctx, "o")
-	if err != nil || stored.ExpiresAt != nil || stored.Name != "Late" {
-		t.Fatalf("stored = %+v, %v; want permanent with the late data", stored, err)
-	}
+	require.NoError(t, err)
+	assert.Nil(t, stored.ExpiresAt, "want permanent")
+	assert.Equal(t, "Late", stored.Name, "want the late data")
 }
 
 func TestMergeExpiry(t *testing.T) {
-	a, b := time.Unix(1, 0), time.Unix(2, 0)
-	if service.MergeExpiry(nil, &a) != nil {
-		t.Fatal("permanent stays permanent")
+	earlier, later := time.Unix(1, 0), time.Unix(2, 0)
+	assert.Nil(t, service.MergeExpiry(nil, &earlier), "permanent stays permanent")
+	got := service.MergeExpiry(&earlier, &later)
+	if assert.NotNil(t, got, "incoming refreshes") {
+		assert.True(t, got.Equal(later), "incoming refreshes")
 	}
-	if got := service.MergeExpiry(&a, &b); got == nil || !got.Equal(b) {
-		t.Fatal("incoming refreshes")
-	}
-	if service.MergeExpiry(&a, nil) != nil {
-		t.Fatal("nil incoming makes permanent")
-	}
+	assert.Nil(t, service.MergeExpiry(&earlier, nil), "nil incoming makes permanent")
 }

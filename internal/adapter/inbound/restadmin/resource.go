@@ -57,12 +57,12 @@ func ResourceList[T any, PT domain.EntityPtr[T]](c *Client, svc *service.Resourc
 // to other records must be their canonical ids (see readmodel.CheckRefs).
 func ResourceCreate[T any, PT domain.EntityPtr[T]](c *Client, svc *service.Resource[T, PT]) gin.HandlerFunc {
 	return func(gc *gin.Context) {
-		e := PT(new(T))
-		if err := helpers.BindJSON(gc, e); err != nil {
+		entity := PT(new(T))
+		if err := helpers.BindJSON(gc, entity); err != nil {
 			helpers.WriteError(gc, err)
 			return
 		}
-		created, err := command.Create(gc.Request.Context(), c.commands, svc, e)
+		created, err := command.Create(gc.Request.Context(), c.commands, svc, entity)
 		if err != nil {
 			helpers.WriteError(gc, err)
 			return
@@ -74,12 +74,12 @@ func ResourceCreate[T any, PT domain.EntityPtr[T]](c *Client, svc *service.Resou
 // ResourceGet returns a single entity of type T by id.
 func ResourceGet[T any, PT domain.EntityPtr[T]](_ *Client, svc *service.Resource[T, PT]) gin.HandlerFunc {
 	return func(gc *gin.Context) {
-		e, err := svc.Get(gc.Request.Context(), gc.Param("id"))
+		entity, err := svc.Get(gc.Request.Context(), gc.Param("id"))
 		if err != nil {
 			helpers.WriteError(gc, err)
 			return
 		}
-		gc.JSON(http.StatusOK, e)
+		gc.JSON(http.StatusOK, entity)
 	}
 }
 
@@ -87,12 +87,12 @@ func ResourceGet[T any, PT domain.EntityPtr[T]](_ *Client, svc *service.Resource
 // body. References are checked as in ResourceCreate.
 func ResourceUpdate[T any, PT domain.EntityPtr[T]](c *Client, svc *service.Resource[T, PT]) gin.HandlerFunc {
 	return func(gc *gin.Context) {
-		e := PT(new(T))
-		if err := helpers.BindJSON(gc, e); err != nil {
+		entity := PT(new(T))
+		if err := helpers.BindJSON(gc, entity); err != nil {
 			helpers.WriteError(gc, err)
 			return
 		}
-		updated, err := command.Update(gc.Request.Context(), c.commands, svc, gc.Param("id"), e)
+		updated, err := command.Update(gc.Request.Context(), c.commands, svc, gc.Param("id"), entity)
 		if err != nil {
 			helpers.WriteError(gc, err)
 			return

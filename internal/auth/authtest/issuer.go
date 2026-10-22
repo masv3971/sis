@@ -34,6 +34,11 @@ type Issuer struct {
 	JWKSHits atomic.Int64
 	// Down makes discovery and JWKS answer 503.
 	Down atomic.Bool
+	// Stall makes discovery never answer: it returns only when the client
+	// gives up.
+	Stall atomic.Bool
+	// DiscoveryHits counts discovery requests.
+	DiscoveryHits atomic.Int64
 	// JWKSURI, when set before the first request, replaces the jwks_uri
 	// that discovery advertises.
 	JWKSURI string
@@ -80,7 +85,12 @@ func newIssuer(t testing.TB, useTLS bool) *Issuer {
 	}
 	t.Cleanup(srv.Close)
 	iss.URL = srv.URL + "/realms/sis"
-	mux.HandleFunc("/realms/sis/.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/realms/sis/.well-known/openid-configuration", func(w http.ResponseWriter, r *http.Request) {
+		iss.DiscoveryHits.Add(1)
+		if iss.Stall.Load() {
+			<-r.Context().Done()
+			return
+		}
 		if iss.Down.Load() {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			return

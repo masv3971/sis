@@ -7,11 +7,13 @@ package helpers
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
@@ -26,9 +28,11 @@ const (
 	ErrValidation   = "validation_error"
 	ErrBadRequest   = "invalid_request"
 	ErrUnauthorized = "unauthorized"
+	ErrForbidden    = "forbidden"
 	ErrNotFound     = "not_found"
 	ErrConflict     = "conflict"
 	ErrTooLarge     = "request_too_large"
+	ErrUnavailable  = "unavailable"
 	ErrInternal     = "internal_server_error"
 )
 
@@ -97,12 +101,16 @@ func (e *Error) Status() int {
 		return http.StatusBadRequest
 	case ErrUnauthorized:
 		return http.StatusUnauthorized
+	case ErrForbidden:
+		return http.StatusForbidden
 	case ErrNotFound:
 		return http.StatusNotFound
 	case ErrConflict:
 		return http.StatusConflict
 	case ErrTooLarge:
 		return http.StatusRequestEntityTooLarge
+	case ErrUnavailable:
+		return http.StatusServiceUnavailable
 	default:
 		return http.StatusInternalServerError
 	}
@@ -158,6 +166,10 @@ func NewErrorFromError(err error) *Error {
 		return &Error{Title: ErrNotFound, HTTPStatus: http.StatusNotFound}
 	case errors.Is(err, domain.ErrConflict):
 		return &Error{Title: ErrConflict, HTTPStatus: http.StatusConflict}
+	case errors.Is(err, context.DeadlineExceeded):
+		// The operation's deadline (request, command) passed; retrying may
+		// succeed, so 503 rather than 500.
+		return &Error{Title: ErrUnavailable, Err: MsgTimedOut, HTTPStatus: http.StatusServiceUnavailable}
 	}
 
 	return &Error{Title: ErrInternal, Err: err.Error(), HTTPStatus: http.StatusInternalServerError, unclassified: true}
@@ -176,11 +188,28 @@ func NewErrorFromError(err error) *Error {
 // first value and never reads the rest, so without this a valid object
 // followed by garbage or a second object would be accepted, and trailing
 // bytes past the body limit would never trip the 413.
+//
+// The read is bound by the request context too: when it ends (the request's
+// work deadline, see httpserver.requestTimeout), the connection's read
+// deadline is pulled in to now, which interrupts a body still arriving. It
+// is never pushed later, so sis.httpserver.read_timeout still applies. A
+// request whose context has ended gets its ctx error (deadline: 503), never
+// decoded input, so a command is not dispatched after the deadline.
 func BindJSON(gc *gin.Context, v any) error {
 	if gc.Request == nil || gc.Request.Body == nil {
 		return DecodeJSON(nil, v)
 	}
+	ctx := gc.Request.Context()
+	stop := context.AfterFunc(ctx, func() {
+		// ErrNotSupported outside a real server (httptest recorders);
+		// the ctx check below still applies there.
+		_ = http.NewResponseController(gc.Writer).SetReadDeadline(time.Now())
+	})
 	body, err := io.ReadAll(gc.Request.Body)
+	stop()
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return fmt.Errorf("read request body: %w", ctxErr)
+	}
 	if err != nil {
 		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			return &Error{Title: ErrTooLarge, HTTPStatus: http.StatusRequestEntityTooLarge}
@@ -204,8 +233,8 @@ func DecodeJSON(body []byte, v any) error {
 // decodeError classifies a body read or decode failure, which is always the
 // client's fault (400).
 func decodeError(err error) error {
-	if e := NewErrorFromError(err); !e.IsUnclassified() {
-		return e
+	if apiErr := NewErrorFromError(err); !apiErr.IsUnclassified() {
+		return apiErr
 	}
 	// The decoder's own messages name the offending field or value and carry
 	// no server internals, so they are safe to return.
@@ -248,27 +277,27 @@ func decodeSingleJSON(body []byte, v any) error {
 // generic title. Before redacting, the original error is attached to the gin
 // context (gc.Errors) so the request logger records it server-side; otherwise
 // a database failure would surface only as an unexplained 500.
-func WriteError(c *gin.Context, err error) {
-	e := NewErrorFromError(err)
-	if e == nil {
-		e = NewErrorWithStatus(ErrInternal, http.StatusInternalServerError)
+func WriteError(gc *gin.Context, err error) {
+	apiErr := NewErrorFromError(err)
+	if apiErr == nil {
+		apiErr = NewErrorWithStatus(ErrInternal, http.StatusInternalServerError)
 	}
-	if e.IsUnclassified() {
-		_ = c.Error(err)
-		e = NewErrorWithStatus(e.Title, e.Status())
+	if apiErr.IsUnclassified() {
+		_ = gc.Error(err)
+		apiErr = NewErrorWithStatus(apiErr.Title, apiErr.Status())
 	}
-	c.JSON(e.Status(), ErrorResponse{Error: e})
+	gc.JSON(apiErr.Status(), ErrorResponse{Error: apiErr})
 }
 
 // validationDetails renders validator field failures as structured, safe detail.
 func validationDetails(fieldErrors validator.ValidationErrors) []map[string]any {
 	out := make([]map[string]any, 0, len(fieldErrors))
-	for _, e := range fieldErrors {
+	for _, fieldErr := range fieldErrors {
 		out = append(out, map[string]any{
-			"field":      e.Field(),
-			"namespace":  e.Namespace(),
-			"validation": e.Tag(),
-			"param":      e.Param(),
+			"field":      fieldErr.Field(),
+			"namespace":  fieldErr.Namespace(),
+			"validation": fieldErr.Tag(),
+			"param":      fieldErr.Param(),
 		})
 	}
 	return out

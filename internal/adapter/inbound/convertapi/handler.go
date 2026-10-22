@@ -28,26 +28,28 @@ import (
 // The receiver is named c to match the vc convention; the gin.Context
 // parameter is therefore named gc to avoid shadowing.
 type Client struct {
-	cfg      *model.Cfg
-	commands *command.Client
-	convert  *convert.Client
-	log      *logger.Log
+	cfg       *model.Cfg
+	commands  *command.Client
+	converter *convert.Client
+	log       *logger.Log
 }
 
 // New builds the convertapi Client, with its own convert Client (pure, so
 // nothing is shared or shut down).
 func New(ctx context.Context, cfg *model.Cfg, commands *command.Client, log *logger.Log) (*Client, error) {
-	conv, err := convert.New(ctx, cfg, log)
+	converter, err := convert.New(ctx, cfg, log)
 	if err != nil {
 		return nil, err
 	}
-	return &Client{cfg: cfg, commands: commands, convert: conv, log: log.New("convertapi")}, nil
+	return &Client{cfg: cfg, commands: commands, converter: converter, log: log.New("convertapi")}, nil
 }
 
 // ParseRequest is the body of POST /api/v1/parse.
 type ParseRequest struct {
 	Metadata command.Metadata `json:"metadata"`
-	// Data is the document to convert, e.g. an ELM v3 credential (JSON-LD).
+	// Data is the document to convert, e.g. an ELM v3 credential (JSON-LD),
+	// plain or as EDCI issues it ({"credential": ...} or sealed
+	// {"payload": ..., "signatures": ...}).
 	Data json.RawMessage `json:"data" binding:"required" swaggertype:"object"`
 }
 
@@ -69,7 +71,7 @@ type ParseReply struct {
 //
 //	@Summary		Convert a document
 //	@ID				parse
-//	@Description	Converts data from metadata.input_format (elm: an ELM v3 / European Digital Credential JSON-LD document) to metadata.output_format (eduapi or oeapi) and returns it. Nothing is stored. Records keep the document's ids as sourcedIds; references between them are sourcedIds. Requires scope sis.read.
+//	@Description	Converts data from metadata.input_format (elm: an ELM v3 / European Digital Credential JSON-LD document, plain, in EDCI's {"credential": ...} upload wrapper, or sealed as {"payload": ..., "signatures": ...}; the seal is not verified) to metadata.output_format (eduapi or oeapi) and returns it. Nothing is stored. Records keep the document's ids as sourcedIds; references between them are sourcedIds. Requires scope sis.read.
 //	@Tags			convert
 //	@Accept			json
 //	@Produce		json
@@ -88,16 +90,16 @@ func (c *Client) Parse(gc *gin.Context) {
 		helpers.WriteError(gc, err)
 		return
 	}
-	if err := req.Metadata.Check(c.convert, true); err != nil {
+	if err := req.Metadata.Check(c.converter, true); err != nil {
 		helpers.WriteError(gc, err)
 		return
 	}
-	parsed, err := c.convert.Parse(req.Metadata.InputFormat, req.Data, "data")
+	parsed, err := c.converter.Parse(req.Metadata.InputFormat, req.Data, "data")
 	if err != nil {
 		helpers.WriteError(gc, err)
 		return
 	}
-	out, err := c.convert.Render(req.Metadata.OutputFormat, parsed.Bundle)
+	out, err := c.converter.Render(req.Metadata.OutputFormat, parsed.Bundle)
 	if err != nil {
 		helpers.WriteError(gc, err)
 		return
@@ -109,7 +111,7 @@ func (c *Client) Parse(gc *gin.Context) {
 //
 //	@Summary		Load a document
 //	@ID				populate
-//	@Description	Converts data from metadata.input_format (elm) and upserts every record by sourcedId, so /eduapi and /oeapi (and /api/v1) serve them. With ttl the records stop being served after that duration and are then deleted; re-populating refreshes the expiry, but a record that already existed without expiry keeps none. References in the document must resolve within it or to stored records. The document is checked completely before anything is stored; a storage failure part-way leaves earlier records stored, and retrying the same request converges. Requires scope sis.write.
+//	@Description	Converts data from metadata.input_format (elm, plain or in an EDCI envelope as for parse) and upserts every record by sourcedId, so /eduapi and /oeapi (and /api/v1) serve them. With ttl the records stop being served after that duration and are then deleted; re-populating refreshes the expiry, but a record that already existed without expiry keeps none. References in the document must resolve within it or to stored records. The document is checked completely before anything is stored; a storage failure part-way leaves earlier records stored, and retrying the same request converges. Requires scope sis.write.
 //	@Tags			convert
 //	@Accept			json
 //	@Produce		json

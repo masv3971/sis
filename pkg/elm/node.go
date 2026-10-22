@@ -34,9 +34,9 @@ type Document struct {
 // Node is one JSON-LD node (a JSON object) of a Document, with the path it
 // was reached by for error messages.
 type Node struct {
-	doc  *Document
-	obj  map[string]any
-	Path string
+	doc   *Document
+	props map[string]any
+	Path  string
 }
 
 // Parse decodes data, which must hold a single JSON object, into a Document.
@@ -52,10 +52,10 @@ func Parse(data []byte, path string) (*Document, error) {
 	if !ok {
 		return nil, fmt.Errorf("%s: must be a JSON object", path)
 	}
-	d := &Document{index: map[string]map[string]any{}, Languages: []string{"en"}}
-	d.indexNodes(obj)
-	d.Root = &Node{doc: d, obj: obj, Path: path}
-	return d, nil
+	doc := &Document{index: map[string]map[string]any{}, Languages: []string{"en"}}
+	doc.indexNodes(obj)
+	doc.Root = &Node{doc: doc, props: obj, Path: path}
+	return doc, nil
 }
 
 // indexNodes records every object with an id. Where the same id is defined
@@ -111,19 +111,19 @@ func (d *Document) complete(obj map[string]any) map[string]any {
 
 // ID returns the node's id, or "".
 func (n *Node) ID() string {
-	s, _ := n.obj["id"].(string)
+	s, _ := n.props["id"].(string)
 	return s
 }
 
 // Types returns the node's type values (from "type" or "@type").
 func (n *Node) Types() []string {
-	v, ok := n.obj["type"]
+	v, ok := n.props["type"]
 	if !ok {
-		v = n.obj["@type"]
+		v = n.props["@type"]
 	}
 	var out []string
-	for _, x := range many(v) {
-		if s, ok := x.(string); ok {
+	for _, item := range many(v) {
+		if s, ok := item.(string); ok {
 			out = append(out, s)
 		}
 	}
@@ -134,7 +134,7 @@ func (n *Node) Types() []string {
 func (n *Node) Is(t string) bool { return slices.Contains(n.Types(), t) }
 
 // Has reports whether the property is present and not null.
-func (n *Node) Has(prop string) bool { return n.obj[prop] != nil }
+func (n *Node) Has(prop string) bool { return n.props[prop] != nil }
 
 // Nodes returns the nodes held by prop, one or many. Inline objects with an
 // id are completed from the document's definition of that id: a typed
@@ -144,21 +144,21 @@ func (n *Node) Has(prop string) bool { return n.obj[prop] != nil }
 // in the document become nodes holding only their id.
 func (n *Node) Nodes(prop string) []*Node {
 	var out []*Node
-	vals := many(n.obj[prop])
+	vals := many(n.props[prop])
 	for i, v := range vals {
-		p := n.Path + "." + prop
-		if len(vals) > 1 || isArray(n.obj[prop]) {
-			p += "[" + strconv.Itoa(i) + "]"
+		path := n.Path + "." + prop
+		if len(vals) > 1 || isArray(n.props[prop]) {
+			path += "[" + strconv.Itoa(i) + "]"
 		}
 		switch t := v.(type) {
 		case map[string]any:
-			out = append(out, &Node{doc: n.doc, obj: n.doc.complete(t), Path: p})
+			out = append(out, &Node{doc: n.doc, props: n.doc.complete(t), Path: path})
 		case string:
 			obj, ok := n.doc.index[t]
 			if !ok {
 				obj = map[string]any{"id": t}
 			}
-			out = append(out, &Node{doc: n.doc, obj: obj, Path: p})
+			out = append(out, &Node{doc: n.doc, props: obj, Path: path})
 		}
 	}
 	return out
@@ -166,8 +166,8 @@ func (n *Node) Nodes(prop string) []*Node {
 
 // Node returns the first node held by prop, or nil.
 func (n *Node) Node(prop string) *Node {
-	if ns := n.Nodes(prop); len(ns) > 0 {
-		return ns[0]
+	if nodes := n.Nodes(prop); len(nodes) > 0 {
+		return nodes[0]
 	}
 	return nil
 }
@@ -175,15 +175,15 @@ func (n *Node) Node(prop string) *Node {
 // String returns prop as plain text: a string, a number, or (for a language
 // map) the preferred language's text. Empty if absent.
 func (n *Node) String(prop string) string {
-	return n.doc.text(n.obj[prop])
+	return n.doc.text(n.props[prop])
 }
 
 // Literal returns prop only when it is a scalar (string, number, bool), so a
 // property that may be either a literal or a node can be told apart.
 func (n *Node) Literal(prop string) string {
-	switch n.obj[prop].(type) {
+	switch n.props[prop].(type) {
 	case string, json.Number, bool:
-		return n.doc.text(n.obj[prop])
+		return n.doc.text(n.props[prop])
 	}
 	return ""
 }
@@ -203,8 +203,8 @@ func (d *Document) text(v any) string {
 	case bool:
 		return strconv.FormatBool(t)
 	case []any:
-		for _, x := range t {
-			if s := d.text(x); s != "" {
+		for _, item := range t {
+			if s := d.text(item); s != "" {
 				return s
 			}
 		}

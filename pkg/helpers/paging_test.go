@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // testMax is the max_limit passed to the parsers under test.
@@ -39,21 +41,19 @@ func TestParseLimitOffset(t *testing.T) {
 		{"filter=status%3D%27active%27", true, 0, 0},
 		{"sort=&filter=", false, 50, 0}, // empty means "not requested"
 	}
-	for _, c := range cases {
-		p, err := ParseLimitOffset(ctxWithQuery(c.query), 50, testMax)
-		if (err != nil) != c.wantErr {
-			t.Errorf("%q: err=%v, wantErr=%v", c.query, err, c.wantErr)
-			continue
-		}
-		if c.wantErr {
-			if e := NewErrorFromError(err); e.Status() != 400 {
-				t.Errorf("%q: expected 400, got %d", c.query, e.Status())
+	for _, tc := range cases {
+		params, err := ParseLimitOffset(ctxWithQuery(tc.query), 50, testMax)
+		if tc.wantErr {
+			if assert.Error(t, err, "%q", tc.query) {
+				assert.Equal(t, 400, NewErrorFromError(err).Status(), "%q: status", tc.query)
 			}
 			continue
 		}
-		if !c.wantErr && (p.Limit != c.limit || p.Offset != c.offset) {
-			t.Errorf("%q: got limit=%d offset=%d, want %d %d", c.query, p.Limit, p.Offset, c.limit, c.offset)
+		if !assert.NoError(t, err, "%q", tc.query) {
+			continue
 		}
+		assert.Equal(t, tc.limit, params.Limit, "%q: limit", tc.query)
+		assert.Equal(t, tc.offset, params.Offset, "%q: offset", tc.query)
 	}
 }
 
@@ -75,48 +75,45 @@ func TestParsePageNumberSize(t *testing.T) {
 		{"pageNumber=", true, 0, 0, 0}, // empty value is present, not absent
 		{"pageSize=", true, 0, 0, 0},
 	}
-	for _, c := range cases {
-		n, s, p, err := ParsePageNumberSize(ctxWithQuery(c.query), 10, testMax)
-		if (err != nil) != c.wantErr {
-			t.Errorf("%q: err=%v, wantErr=%v", c.query, err, c.wantErr)
-			continue
-		}
-		if c.wantErr {
-			if e := NewErrorFromError(err); e.Status() != 400 {
-				t.Errorf("%q: expected 400, got %d", c.query, e.Status())
+	for _, tc := range cases {
+		number, size, params, err := ParsePageNumberSize(ctxWithQuery(tc.query), 10, testMax)
+		if tc.wantErr {
+			if assert.Error(t, err, "%q", tc.query) {
+				assert.Equal(t, 400, NewErrorFromError(err).Status(), "%q: status", tc.query)
 			}
 			continue
 		}
-		if n != c.number || s != c.size || p.Offset != c.offset || p.Limit != c.size {
-			t.Errorf("%q: got n=%d s=%d off=%d lim=%d", c.query, n, s, p.Offset, p.Limit)
+		if !assert.NoError(t, err, "%q", tc.query) {
+			continue
 		}
+		assert.Equal(t, tc.number, number, "%q: pageNumber", tc.query)
+		assert.Equal(t, tc.size, size, "%q: pageSize", tc.query)
+		assert.Equal(t, tc.offset, params.Offset, "%q: offset", tc.query)
+		assert.Equal(t, tc.size, params.Limit, "%q: limit", tc.query)
 	}
 }
 
 // TestNonPositiveMaxFailsClosed guards against a hand-built config with
 // max_limit 0 turning into an unbounded repository query.
 func TestNonPositiveMaxFailsClosed(t *testing.T) {
-	if _, err := ParseLimitOffset(ctxWithQuery(""), 50, 0); err == nil {
-		t.Fatal("limit/offset: expected error for max 0")
-	}
-	if _, _, _, err := ParsePageNumberSize(ctxWithQuery(""), 10, 0); err == nil {
-		t.Fatal("pageNumber/pageSize: expected error for max 0")
-	}
+	_, err := ParseLimitOffset(ctxWithQuery(""), 50, 0)
+	assert.Error(t, err, "limit/offset: expected error for max 0")
+	_, _, _, err = ParsePageNumberSize(ctxWithQuery(""), 10, 0)
+	assert.Error(t, err, "pageNumber/pageSize: expected error for max 0")
 	// A zero default falls back to max rather than to "unbounded".
-	if p, err := ParseLimitOffset(ctxWithQuery(""), 0, 7); err != nil || p.Limit != 7 {
-		t.Fatalf("zero default: got %d, %v; want 7", p.Limit, err)
-	}
+	params, err := ParseLimitOffset(ctxWithQuery(""), 0, 7)
+	require.NoError(t, err, "zero default")
+	assert.Equal(t, 7, params.Limit, "zero default")
 }
 
 // TestDefaultsClampedToMax checks that an operator-set max_limit below the
 // handler's built-in default still bounds requests that omit limit/pageSize.
 func TestDefaultsClampedToMax(t *testing.T) {
-	p, err := ParseLimitOffset(ctxWithQuery(""), 100, 20)
-	if err != nil || p.Limit != 20 {
-		t.Fatalf("limit/offset: got %d, %v; want 20", p.Limit, err)
-	}
-	_, size, lp, err := ParsePageNumberSize(ctxWithQuery(""), 100, 20)
-	if err != nil || size != 20 || lp.Limit != 20 {
-		t.Fatalf("pageNumber/pageSize: got %d/%d, %v; want 20", size, lp.Limit, err)
-	}
+	params, err := ParseLimitOffset(ctxWithQuery(""), 100, 20)
+	require.NoError(t, err, "limit/offset")
+	assert.Equal(t, 20, params.Limit, "limit/offset")
+	_, size, pageParams, err := ParsePageNumberSize(ctxWithQuery(""), 100, 20)
+	require.NoError(t, err, "pageNumber/pageSize")
+	assert.Equal(t, 20, size, "pageNumber/pageSize: size")
+	assert.Equal(t, 20, pageParams.Limit, "pageNumber/pageSize: limit")
 }

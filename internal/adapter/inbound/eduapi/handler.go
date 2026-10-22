@@ -52,8 +52,8 @@ func (c *Client) ListPersons(gc *gin.Context) {
 		return
 	}
 	out := make([]dto.Person, 0, len(page.Items))
-	for _, p := range page.Items {
-		out = append(out, dto.FromPerson(p))
+	for _, person := range page.Items {
+		out = append(out, dto.FromPerson(person))
 	}
 	pageHeaders(gc, params, page.Total)
 	gc.JSON(http.StatusOK, gin.H{"persons": out})
@@ -61,12 +61,12 @@ func (c *Client) ListPersons(gc *gin.Context) {
 
 // GetPerson publishes a single person by sourcedId in Edu-API shape.
 func (c *Client) GetPerson(gc *gin.Context) {
-	p, err := c.catalog.Persons.GetPersonBySourcedID(gc.Request.Context(), gc.Param("id"))
+	person, err := c.catalog.Persons.GetPersonBySourcedID(gc.Request.Context(), gc.Param("id"))
 	if err != nil {
 		helpers.WriteError(gc, err)
 		return
 	}
-	gc.JSON(http.StatusOK, gin.H{"person": dto.FromPerson(p)})
+	gc.JSON(http.StatusOK, gin.H{"person": dto.FromPerson(person)})
 }
 
 // The generic handlers below could not be methods on *Client: Go does not
@@ -75,7 +75,7 @@ func (c *Client) GetPerson(gc *gin.Context) {
 // httpserver can mount directly.
 
 // List builds a list handler for an entity type, mapping each item under key.
-func List[T any, PT domain.EntityPtr[T], D any](c *Client, svc *service.Resource[T, PT], key string, mapFn func(PT) D) gin.HandlerFunc {
+func List[T any, PT domain.EntityPtr[T], D any](c *Client, svc *service.Resource[T, PT], key string, toDTO func(PT) D) gin.HandlerFunc {
 	return func(gc *gin.Context) {
 		params, err := c.limitOffset(gc)
 		if err != nil {
@@ -94,7 +94,7 @@ func List[T any, PT domain.EntityPtr[T], D any](c *Client, svc *service.Resource
 		}
 		out := make([]D, 0, len(items))
 		for _, e := range items {
-			out = append(out, mapFn(e))
+			out = append(out, toDTO(e))
 		}
 		pageHeaders(gc, params, page.Total)
 		gc.JSON(http.StatusOK, gin.H{key: out})
@@ -102,7 +102,7 @@ func List[T any, PT domain.EntityPtr[T], D any](c *Client, svc *service.Resource
 }
 
 // Get builds a get-by-sourcedId handler for an entity type.
-func Get[T any, PT domain.EntityPtr[T], D any](c *Client, svc *service.Resource[T, PT], key string, mapFn func(PT) D) gin.HandlerFunc {
+func Get[T any, PT domain.EntityPtr[T], D any](c *Client, svc *service.Resource[T, PT], key string, toDTO func(PT) D) gin.HandlerFunc {
 	return func(gc *gin.Context) {
 		e, err := svc.GetBySourcedID(gc.Request.Context(), gc.Param("id"))
 		if err != nil {
@@ -118,7 +118,7 @@ func Get[T any, PT domain.EntityPtr[T], D any](c *Client, svc *service.Resource[
 			helpers.WriteError(gc, domain.ErrNotFound)
 			return
 		}
-		gc.JSON(http.StatusOK, gin.H{key: mapFn(e)})
+		gc.JSON(http.StatusOK, gin.H{key: toDTO(e)})
 	}
 }
 
@@ -130,17 +130,17 @@ func Get[T any, PT domain.EntityPtr[T], D any](c *Client, svc *service.Resource[
 // X-Total-Count still counts stored records. A free function for the same
 // reason as List/Get: it is generic over PT.
 func publishRefs[PT domain.Entity](c *Client, gc *gin.Context, items ...PT) ([]PT, error) {
-	ents := make([]domain.Entity, len(items))
+	entities := make([]domain.Entity, len(items))
 	for i, e := range items {
-		ents[i] = e
+		entities[i] = e
 	}
-	ok, err := c.catalog.PublishRefs(gc.Request.Context(), ents...)
+	publishable, err := c.catalog.PublishRefs(gc.Request.Context(), entities...)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]PT, 0, len(items))
 	for i, e := range items {
-		if ok[i] {
+		if publishable[i] {
 			out = append(out, e)
 		}
 	}
@@ -162,6 +162,6 @@ func pageHeaders(gc *gin.Context, params port.ListParams, total int) {
 // must be positive and is clamped to .max_limit, so a caller can never
 // request an unbounded page.
 func (c *Client) limitOffset(gc *gin.Context) (port.ListParams, error) {
-	ec := c.cfg.SIS.Adapter.Inbound.EduAPI
-	return helpers.ParseLimitOffset(gc, ec.DefaultLimit, ec.MaxLimit)
+	eduapiCfg := c.cfg.SIS.Adapter.Inbound.EduAPI
+	return helpers.ParseLimitOffset(gc, eduapiCfg.DefaultLimit, eduapiCfg.MaxLimit)
 }

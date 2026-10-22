@@ -1,13 +1,17 @@
 package helpers
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/SUNET/sis/internal/core/domain"
 )
@@ -25,6 +29,7 @@ func TestWriteErrorRecordsRedactedCause(t *testing.T) {
 	}{
 		{"unclassified", errors.New("pg: connection refused"), http.StatusInternalServerError, true},
 		{"not found", domain.ErrNotFound, http.StatusNotFound, false},
+		{"deadline", fmt.Errorf("query: %w", context.DeadlineExceeded), http.StatusServiceUnavailable, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -32,16 +37,10 @@ func TestWriteErrorRecordsRedactedCause(t *testing.T) {
 			gc, _ := gin.CreateTestContext(w)
 			WriteError(gc, tc.err)
 
-			if w.Code != tc.wantStatus {
-				t.Fatalf("status = %d, want %d", w.Code, tc.wantStatus)
-			}
-			if strings.Contains(w.Body.String(), "connection refused") {
-				t.Fatalf("internal detail leaked to client: %s", w.Body)
-			}
+			require.Equal(t, tc.wantStatus, w.Code, "status")
+			require.NotContains(t, w.Body.String(), "connection refused", "internal detail leaked to client")
 			logged := len(gc.Errors) == 1 && errors.Is(gc.Errors[0].Err, tc.err)
-			if logged != tc.wantLogged {
-				t.Fatalf("recorded on context = %v, want %v (errors=%v)", logged, tc.wantLogged, gc.Errors)
-			}
+			assert.Equal(t, tc.wantLogged, logged, "recorded on context (errors=%v)", gc.Errors)
 		})
 	}
 }
@@ -76,23 +75,15 @@ func TestBindJSONRequiresSingleValue(t *testing.T) {
 			gc.Request = httptest.NewRequest(http.MethodPost, "/", strings.NewReader(tc.body))
 			gc.Request.Body = http.MaxBytesReader(w, gc.Request.Body, limit)
 
-			var p payload
-			err := BindJSON(gc, &p)
+			var bound payload
+			err := BindJSON(gc, &bound)
 			if tc.wantStatus == 0 {
-				if err != nil {
-					t.Fatalf("BindJSON: %v", err)
-				}
-				if p.Name != "a" {
-					t.Fatalf("name = %q, want a", p.Name)
-				}
+				require.NoError(t, err, "BindJSON")
+				assert.Equal(t, "a", bound.Name)
 				return
 			}
-			if err == nil {
-				t.Fatal("expected an error")
-			}
-			if got := NewErrorFromError(err).Status(); got != tc.wantStatus {
-				t.Fatalf("status = %d, want %d (err=%v)", got, tc.wantStatus, err)
-			}
+			require.Error(t, err)
+			assert.Equal(t, tc.wantStatus, NewErrorFromError(err).Status(), "status (err=%v)", err)
 		})
 	}
 }
