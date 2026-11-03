@@ -103,8 +103,8 @@ vscode: gh-install ## Set up VS Code development environment
 	$(info Installing go packages)
 	go install golang.org/x/tools/cmd/deadcode@latest && \
 	go install github.com/securego/gosec/v2/cmd/gosec@latest && \
-	go install golang.org/x/vuln/cmd/govulncheck@latest && \
-	go install honnef.co/go/tools/cmd/staticcheck@latest && \
+	go install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) && \
+	go install honnef.co/go/tools/cmd/staticcheck@$(STATICCHECK_VERSION) && \
 	go install mvdan.cc/gofumpt@latest
 	$(info Installing web SPA dependencies)
 	cd web && npm install
@@ -156,8 +156,11 @@ swagger-restadmin: ## Generate /api/v1 Swagger docs into docs/restadmin
 		-g swagger.go --output docs/restadmin $(SWAGGER_OPTS)
 
 swagger-check: swagger ## Fail if the committed Swagger docs are stale
-	@git diff --exit-code -- docs/ internal/adapter/inbound/restadmin/ \
-		|| { echo "Swagger docs are stale: run 'make swagger' and commit the result"; exit 1; }
+	@out="$$(git status --porcelain -- docs/ internal/adapter/inbound/restadmin/)"; \
+	if [ -n "$$out" ]; then \
+		echo "$$out"; git --no-pager diff -- docs/ internal/adapter/inbound/restadmin/; \
+		echo "Swagger docs are stale: run 'make swagger' and commit the result"; exit 1; \
+	fi
 
 # ==============================================================================
 # Diagrams

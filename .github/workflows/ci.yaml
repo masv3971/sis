@@ -19,7 +19,8 @@ permissions:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Superseded PR pushes are cancelled; every main commit keeps its own result.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   lint:
@@ -39,7 +40,8 @@ jobs:
     timeout-minutes: 20
     services:
       postgres:
-        image: postgres:17-alpine
+        # Pinned by digest like the actions; pinact does not bump images.
+        image: postgres:17-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
         env:
           POSTGRES_USER: sis
           POSTGRES_PASSWORD: sis
@@ -66,7 +68,7 @@ jobs:
           docker run -d --name rabbitmq --user rabbitmq -p 5672:5672 \
             -v "$PWD/developer_tools/rabbitmq/rabbitmq.conf:/etc/rabbitmq/conf.d/20-sis.conf:ro" \
             -v "$PWD/developer_tools/rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro" \
-            rabbitmq:4-management
+            rabbitmq:4-management@sha256:af6f50d38098d8bd52fef7f3fa85015dd8b2bf6def58e995bf584ae9ba0f6407
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
