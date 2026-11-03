@@ -105,6 +105,27 @@ func (w *slowDeadlineWriter) SetReadDeadline(time.Time) error {
 	return nil
 }
 
+// cancelOnDecode cancels the request context while it is being decoded.
+type cancelOnDecode struct{ cancel context.CancelFunc }
+
+func (p *cancelOnDecode) UnmarshalJSON([]byte) error {
+	p.cancel()
+	return nil
+}
+
+// TestBindJSONRejectsContextEndedDuringDecode checks a context that ends
+// while decoding yields its error, not decoded input.
+func TestBindJSONRejectsContextEndedDuringDecode(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	gc, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	gc.Request = httptest.NewRequestWithContext(ctx, http.MethodPost, "/", strings.NewReader(`{}`))
+
+	err := BindJSON(gc, &cancelOnDecode{cancel: cancel})
+	require.ErrorIs(t, err, context.Canceled)
+}
+
 // TestBindJSONWaitsForCancelCallback checks BindJSON does not return while
 // its read-deadline callback is still running: gin reuses the context and
 // writer once the handler returns, so a late callback would race with the

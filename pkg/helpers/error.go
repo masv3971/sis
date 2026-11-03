@@ -196,8 +196,9 @@ func NewErrorFromError(err error) *Error {
 // work deadline, see httpserver.requestTimeout), the connection's read
 // deadline is pulled in to now, which interrupts a body still arriving. It
 // is never pushed later, so sis.httpserver.read_timeout still applies. A
-// request whose context has ended gets its ctx error (503), never decoded
-// input, so a command is not dispatched after the deadline.
+// request whose context has ended, before or during decoding, gets its ctx
+// error (503), never decoded input, so a command is not dispatched after the
+// deadline.
 func BindJSON(gc *gin.Context, v any) error {
 	if gc.Request == nil || gc.Request.Body == nil {
 		return DecodeJSON(nil, v)
@@ -228,7 +229,11 @@ func BindJSON(gc *gin.Context, v any) error {
 		}
 		return decodeError(err)
 	}
-	return DecodeJSON(body, v)
+	decodeErr := DecodeJSON(body, v)
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return fmt.Errorf("decode request body: %w", ctxErr)
+	}
+	return decodeErr
 }
 
 // DecodeJSON decodes body, which must hold exactly one JSON value, into v,
