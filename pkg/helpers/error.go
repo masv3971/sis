@@ -170,6 +170,9 @@ func NewErrorFromError(err error) *Error {
 		// The operation's deadline (request, command) passed; retrying may
 		// succeed, so 503 rather than 500.
 		return &Error{Title: ErrUnavailable, Err: MsgTimedOut, HTTPStatus: http.StatusServiceUnavailable}
+	case errors.Is(err, context.Canceled):
+		// Usually server shutdown; a client that left never reads the reply.
+		return &Error{Title: ErrUnavailable, Err: MsgCanceled, HTTPStatus: http.StatusServiceUnavailable}
 	}
 
 	return &Error{Title: ErrInternal, Err: err.Error(), HTTPStatus: http.StatusInternalServerError, unclassified: true}
@@ -193,9 +196,8 @@ func NewErrorFromError(err error) *Error {
 // work deadline, see httpserver.requestTimeout), the connection's read
 // deadline is pulled in to now, which interrupts a body still arriving. It
 // is never pushed later, so sis.httpserver.read_timeout still applies. A
-// request whose context has ended gets an error (deadline: 503; client gone:
-// 400), never decoded input, so a command is not dispatched after the
-// deadline.
+// request whose context has ended gets its ctx error (503), never decoded
+// input, so a command is not dispatched after the deadline.
 func BindJSON(gc *gin.Context, v any) error {
 	if gc.Request == nil || gc.Request.Body == nil {
 		return DecodeJSON(nil, v)
@@ -218,10 +220,6 @@ func BindJSON(gc *gin.Context, v any) error {
 		<-callbackDone
 	}
 	if ctxErr := ctx.Err(); ctxErr != nil {
-		if errors.Is(ctxErr, context.Canceled) {
-			// The client went away mid-body: its fault, not an internal error.
-			return &Error{Title: ErrBadRequest, Err: "request canceled", HTTPStatus: http.StatusBadRequest}
-		}
 		return fmt.Errorf("read request body: %w", ctxErr)
 	}
 	if err != nil {

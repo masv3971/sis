@@ -32,6 +32,7 @@ func TestWriteErrorRecordsRedactedCause(t *testing.T) {
 		{"unclassified", errors.New("pg: connection refused"), http.StatusInternalServerError, true},
 		{"not found", domain.ErrNotFound, http.StatusNotFound, false},
 		{"deadline", fmt.Errorf("query: %w", context.DeadlineExceeded), http.StatusServiceUnavailable, false},
+		{"canceled", fmt.Errorf("query: %w", context.Canceled), http.StatusServiceUnavailable, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -123,10 +124,10 @@ func TestBindJSONWaitsForCancelCallback(t *testing.T) {
 	assert.True(t, w.done.Load(), "BindJSON returned before its callback finished")
 }
 
-// TestBindJSONClientCanceled checks a request whose client went away while
-// the body was read is a classified 400, not an unclassified 500 that
-// WriteError logs as an internal failure.
-func TestBindJSONClientCanceled(t *testing.T) {
+// TestBindJSONCanceled checks a request cancelled while the body was read
+// (server shutdown or client gone) is a retryable 503, not a 400 that tells
+// the client its request was wrong.
+func TestBindJSONCanceled(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	gc, _ := gin.CreateTestContext(httptest.NewRecorder())
 	ctx, cancel := context.WithCancel(t.Context())
@@ -136,8 +137,8 @@ func TestBindJSONClientCanceled(t *testing.T) {
 	var bound struct{ Name string }
 	err := BindJSON(gc, &bound)
 
-	require.Error(t, err)
+	require.ErrorIs(t, err, context.Canceled)
 	apiErr := NewErrorFromError(err)
 	assert.False(t, apiErr.IsUnclassified(), "unclassified (err=%v)", err)
-	assert.Equal(t, http.StatusBadRequest, apiErr.Status())
+	assert.Equal(t, http.StatusServiceUnavailable, apiErr.Status())
 }

@@ -15,6 +15,8 @@ const (
 	MsgUnauthenticated = "unauthenticated"
 	// MsgTimedOut: the operation ran past its deadline.
 	MsgTimedOut = "timed out"
+	// MsgCanceled: the operation was cancelled, e.g. by server shutdown.
+	MsgCanceled = "canceled"
 )
 
 // MsgLacksScope is the detail for a verified token without scope.
