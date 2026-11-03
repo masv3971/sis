@@ -18,7 +18,7 @@ import (
 // TestPoolConfigAppliesTimeouts: the configured timeouts override the
 // connection string; zero keeps what it says.
 func TestPoolConfigAppliesTimeouts(t *testing.T) {
-	const url = "postgres://u:p@db:5432/sis?connect_timeout=3"
+	const url = "postgres://u:p@db:5432/sis?connect_timeout=3" // #nosec G101 -- dummy, never dialled
 
 	poolCfg, err := poolConfig(model.Postgres{ConnectionString: url, ConnectTimeout: 10 * time.Second, StatementTimeout: 1500 * time.Millisecond})
 	require.NoError(t, err)

@@ -1,0 +1,126 @@
+# CI for SIS. Every job runs a Makefile target, so `make <target>` reproduces
+# a failure locally:
+#   lint          make lint          (gofmt, vet, staticcheck, govulncheck, swagger-check)
+#   test          make test          (-race, with the Postgres and AMQP integration tests)
+#   build         make build
+#   web           make web-ci
+#   docker-build  make docker-build  (build only, never pushed)
+# Actions are pinned by commit SHA; `make update` refreshes them with pinact.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  # Superseded PR pushes are cancelled; every main commit keeps its own result.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - run: make lint
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        # Pinned by digest like the actions; pinact does not bump images.
+        image: postgres:17-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
+        env:
+          POSTGRES_USER: sis
+          POSTGRES_PASSWORD: sis
+          POSTGRES_DB: sis
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U sis -d sis"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      SIS_TEST_DATABASE_URL: postgres://sis:sis@localhost:5432/sis?sslmode=disable
+      SIS_TEST_AMQP_URL: amqp://sis:sis@localhost:5672
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Not a service container: the broker needs the repository's
+      # rabbitmq.conf and definitions.json (sis.test.* queues for TestBroker),
+      # mounted as in docker-compose.yaml.
+      - name: Start RabbitMQ
+        run: |
+          docker run -d --name rabbitmq --user rabbitmq -p 5672:5672 \
+            -v "$PWD/developer_tools/rabbitmq/rabbitmq.conf:/etc/rabbitmq/conf.d/20-sis.conf:ro" \
+            -v "$PWD/developer_tools/rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro" \
+            rabbitmq:4-management@sha256:af6f50d38098d8bd52fef7f3fa85015dd8b2bf6def58e995bf584ae9ba0f6407
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - run: go mod download
+      - name: Wait for RabbitMQ
+        run: |
+          for _ in $(seq 60); do
+            if docker exec rabbitmq rabbitmqctl -q list_queues name 2>/dev/null | grep -qx sis.test.commands; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "RabbitMQ did not load definitions.json in time"
+          docker logs rabbitmq
+          exit 1
+      - run: make test GOTEST_FLAGS="-race -count=1"
+      - name: RabbitMQ logs
+        if: failure()
+        run: docker logs rabbitmq
+
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - run: make build
+
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Same major as the Dockerfile's web stage (node:22-alpine).
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: make web-ci
+
+  docker-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: make docker-build VERSION=ci

@@ -40,7 +40,9 @@ type PopulateRequest struct {
 	// TTL is how long the records are served, as a Go duration ("24h",
 	// "90m"). Omitted: they never expire.
 	TTL string `json:"ttl,omitempty" example:"24h"`
-	// Data is the document to load, e.g. an ELM v3 credential (JSON-LD).
+	// Data is the document to load, e.g. an ELM v3 credential (JSON-LD),
+	// plain or as EDCI issues it ({"credential": ...} or sealed
+	// {"payload": ..., "signatures": ...}; the seal is not verified).
 	Data json.RawMessage `json:"data" binding:"required" swaggertype:"object"`
 }
 

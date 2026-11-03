@@ -104,8 +104,8 @@ func newDialer(cfg model.AMQPAPI) (dialFunc, error) {
 // broker cannot honour it.
 func receiverOptions(cfg model.AMQPAPI) *amqp.ReceiverOptions {
 	return &amqp.ReceiverOptions{
-		Credit:                    int32(cfg.Prefetch),                         //nolint:gosec // bounded by newDialer
-		MaxMessageSize:            uint64(cfg.MaxMessageBytes) + envelopeBytes, //nolint:gosec // validated gt=0
+		Credit:                    int32(cfg.Prefetch),                         // #nosec G115 -- newDialer bounds it to (0, MaxInt32]
+		MaxMessageSize:            uint64(cfg.MaxMessageBytes) + envelopeBytes, // #nosec G115 -- config validates gt=0
 		RequestedSenderSettleMode: new(amqp.SenderSettleModeUnsettled),
 	}
 }

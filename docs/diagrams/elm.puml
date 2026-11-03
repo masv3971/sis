@@ -1,0 +1,27 @@
+@startuml elm
+title ELM v3: from student information to credentials
+
+rectangle "Student records\n(Ladok, SIS)" as src
+rectangle "ELM v3 student information\n--\nPerson (credentialSubject)\n  hasClaim: LearningAchievement\n    specifiedBy: Qualification / Specification\n    wasDerivedFrom: LearningAssessment (grade)\n    wasInfluencedBy: LearningActivity\n    awardedBy: Organisation\n    creditReceived (ECTS)" as elm
+rectangle "European Digital Credential (EDC)\n--\nELM content\n+ W3C VC envelope:\n  @context, type, issuer,\n  issued, validFrom, credentialSchema" as edc
+rectangle "Sealed EDC\n--\nJAdES:\n{ payload, signatures }" as sealed
+rectangle "Micro-credential\n--\nan EDC whose claim fills\nall Annex I fields\n(ECTS, EQF level, outcomes,\nassessment, participation, QA)" as mc
+
+src --> elm
+elm --> edc : wrap in VC envelope
+edc --> sealed : EDCI seals
+edc ..> mc : if Annex I complete
+
+note bottom of elm
+  ELM profiles that are not about a learner
+  (LOQ: learning opportunities and qualifications,
+   AMS: accreditation) describe catalogues and
+  institutions, not student information.
+end note
+
+note right of edc
+  SIS /api/v1/parse and /populate accept the
+  plain, {"credential": ...} and sealed shapes
+  and map the ELM content to Edu-API / OEAPI.
+end note
+@enduml

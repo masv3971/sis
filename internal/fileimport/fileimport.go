@@ -69,7 +69,7 @@ func Run(ctx context.Context, cfg *model.Cfg, catalog *readmodel.Client, log *lo
 // decoding cannot be interrupted, so ctx is checked after each; Populate
 // checks it before every write.
 func Import(ctx context.Context, catalog *readmodel.Client, path string) (int, error) {
-	data, err := os.ReadFile(path) //nolint:gosec // path comes from operator config
+	data, err := os.ReadFile(path) // #nosec G304 -- path comes from operator config
 	if err != nil {
 		return 0, err
 	}
