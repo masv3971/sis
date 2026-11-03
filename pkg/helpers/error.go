@@ -193,21 +193,35 @@ func NewErrorFromError(err error) *Error {
 // work deadline, see httpserver.requestTimeout), the connection's read
 // deadline is pulled in to now, which interrupts a body still arriving. It
 // is never pushed later, so sis.httpserver.read_timeout still applies. A
-// request whose context has ended gets its ctx error (deadline: 503), never
-// decoded input, so a command is not dispatched after the deadline.
+// request whose context has ended gets an error (deadline: 503; client gone:
+// 400), never decoded input, so a command is not dispatched after the
+// deadline.
 func BindJSON(gc *gin.Context, v any) error {
 	if gc.Request == nil || gc.Request.Body == nil {
 		return DecodeJSON(nil, v)
 	}
 	ctx := gc.Request.Context()
+	// Read gc.Writer here, not on the callback's goroutine. gin reuses gc and
+	// its writer once the handler returns, so BindJSON also waits for a
+	// started callback below.
+	controller := http.NewResponseController(gc.Writer)
+	callbackDone := make(chan struct{})
 	stop := context.AfterFunc(ctx, func() {
+		defer close(callbackDone)
 		// ErrNotSupported outside a real server (httptest recorders);
 		// the ctx check below still applies there.
-		_ = http.NewResponseController(gc.Writer).SetReadDeadline(time.Now())
+		_ = controller.SetReadDeadline(time.Now())
 	})
 	body, err := io.ReadAll(gc.Request.Body)
-	stop()
+	if !stop() {
+		// The callback has started; let it finish before gc can be reused.
+		<-callbackDone
+	}
 	if ctxErr := ctx.Err(); ctxErr != nil {
+		if errors.Is(ctxErr, context.Canceled) {
+			// The client went away mid-body: its fault, not an internal error.
+			return &Error{Title: ErrBadRequest, Err: "request canceled", HTTPStatus: http.StatusBadRequest}
+		}
 		return fmt.Errorf("read request body: %w", ctxErr)
 	}
 	if err != nil {

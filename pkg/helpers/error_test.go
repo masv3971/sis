@@ -7,7 +7,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -86,4 +88,56 @@ func TestBindJSONRequiresSingleValue(t *testing.T) {
 			assert.Equal(t, tc.wantStatus, NewErrorFromError(err).Status(), "status (err=%v)", err)
 		})
 	}
+}
+
+// slowDeadlineWriter is a response writer whose SetReadDeadline takes a
+// while, so a BindJSON that returns before its cancellation callback ends is
+// caught.
+type slowDeadlineWriter struct {
+	*httptest.ResponseRecorder
+	done atomic.Bool
+}
+
+func (w *slowDeadlineWriter) SetReadDeadline(time.Time) error {
+	time.Sleep(50 * time.Millisecond)
+	w.done.Store(true)
+	return nil
+}
+
+// TestBindJSONWaitsForCancelCallback checks BindJSON does not return while
+// its read-deadline callback is still running: gin reuses the context and
+// writer once the handler returns, so a late callback would race with the
+// next request.
+func TestBindJSONWaitsForCancelCallback(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := &slowDeadlineWriter{ResponseRecorder: httptest.NewRecorder()}
+	gc, _ := gin.CreateTestContext(w)
+	ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+	defer cancel()
+	gc.Request = httptest.NewRequestWithContext(ctx, http.MethodPost, "/", strings.NewReader(`{"name":"a"}`))
+
+	var bound struct{ Name string }
+	err := BindJSON(gc, &bound)
+
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.True(t, w.done.Load(), "BindJSON returned before its callback finished")
+}
+
+// TestBindJSONClientCanceled checks a request whose client went away while
+// the body was read is a classified 400, not an unclassified 500 that
+// WriteError logs as an internal failure.
+func TestBindJSONClientCanceled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	gc, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	gc.Request = httptest.NewRequestWithContext(ctx, http.MethodPost, "/", strings.NewReader(`{"name":"a"}`))
+
+	var bound struct{ Name string }
+	err := BindJSON(gc, &bound)
+
+	require.Error(t, err)
+	apiErr := NewErrorFromError(err)
+	assert.False(t, apiErr.IsUnclassified(), "unclassified (err=%v)", err)
+	assert.Equal(t, http.StatusBadRequest, apiErr.Status())
 }
