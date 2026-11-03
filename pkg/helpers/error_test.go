@@ -4,10 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -86,4 +89,61 @@ func TestBindJSONRequiresSingleValue(t *testing.T) {
 			assert.Equal(t, tc.wantStatus, NewErrorFromError(err).Status(), "status (err=%v)", err)
 		})
 	}
+}
+
+// slowDeadlineWriter records when the read-deadline callback finishes.
+type slowDeadlineWriter struct {
+	gin.ResponseWriter
+	finished atomic.Bool
+}
+
+func (w *slowDeadlineWriter) SetReadDeadline(time.Time) error {
+	time.Sleep(50 * time.Millisecond)
+	w.finished.Store(true)
+	return nil
+}
+
+// cancelOnRead cancels the request context as the body reaches EOF.
+type cancelOnRead struct{ cancel context.CancelFunc }
+
+func (r cancelOnRead) Read([]byte) (int, error) {
+	r.cancel()
+	return 0, io.EOF
+}
+
+// TestBindJSONWaitsForDeadlineCallback checks BindJSON does not return while
+// its cancellation callback still uses gc, which gin reuses afterwards.
+func TestBindJSONWaitsForDeadlineCallback(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	gc, _ := gin.CreateTestContext(httptest.NewRecorder())
+	writer := &slowDeadlineWriter{ResponseWriter: gc.Writer}
+	gc.Writer = writer
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	gc.Request = httptest.NewRequestWithContext(ctx, http.MethodPost, "/", io.NopCloser(cancelOnRead{cancel}))
+
+	err := BindJSON(gc, &struct{}{})
+	require.ErrorIs(t, err, context.Canceled)
+	assert.True(t, writer.finished.Load(), "BindJSON returned before the callback finished")
+}
+
+// cancelOnDecode cancels the request context while it is being decoded.
+type cancelOnDecode struct{ cancel context.CancelFunc }
+
+func (p *cancelOnDecode) UnmarshalJSON([]byte) error {
+	p.cancel()
+	return nil
+}
+
+// TestBindJSONRejectsContextEndedDuringDecode checks a context that ends
+// while decoding yields its error, not decoded input.
+func TestBindJSONRejectsContextEndedDuringDecode(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	gc, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	gc.Request = httptest.NewRequestWithContext(ctx, http.MethodPost, "/", strings.NewReader(`{}`))
+
+	err := BindJSON(gc, &cancelOnDecode{cancel: cancel})
+	require.ErrorIs(t, err, context.Canceled)
 }
