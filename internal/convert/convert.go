@@ -21,7 +21,7 @@ import (
 
 // Format names, as used in the request metadata.
 const (
-	FormatELM    = "elm"
+	FormatELMv3  = "elm_v3"
 	FormatEduAPI = "eduapi"
 	FormatOEAPI  = "oeapi"
 )
@@ -51,7 +51,7 @@ type Client struct {
 // New builds the convert Client with every supported format registered.
 func New(_ context.Context, _ *model.Cfg, log *logger.Log) (*Client, error) {
 	return &Client{
-		parsers: map[string]parser{FormatELM: parseELM},
+		parsers: map[string]parser{FormatELMv3: parseELM},
 		renderers: map[string]renderer{
 			FormatEduAPI: func(b *domain.Bundle) any { return edudto.FromBundle(b) },
 			FormatOEAPI:  func(b *domain.Bundle) any { return oedto.FromBundle(b) },

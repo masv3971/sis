@@ -47,7 +47,7 @@ TOKEN="$(curl -sS --cacert "$CA_FILE" -X POST "$TOKEN_URL" \
 [[ -n "$TOKEN" ]] || fail "no access token for ${CLIENT_ID} from ${TOKEN_URL}"
 
 status="$(jq -n --slurpfile d "$ELM_FILE" --arg out "$FORMAT" \
-    '{metadata: {input_format: "elm", output_format: $out}, data: $d[0]}' |
+    '{metadata: {input_format: "elm_v3", output_format: $out}, data: $d[0]}' |
     curl -sS --cacert "$CA_FILE" -o "$resp" -w '%{http_code}' \
         -X POST "${SIS_URL}/api/v1/parse" \
         -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \

@@ -195,7 +195,7 @@ func TestCommandsRunLikeREST(t *testing.T) {
 
 	elm, err := os.ReadFile("../../../convert/testdata/edc_bsc.json")
 	require.NoError(t, err)
-	body, _ := json.Marshal(map[string]any{"metadata": map[string]string{"input_format": "elm"}, "ttl": "1h", "data": json.RawMessage(elm)})
+	body, _ := json.Marshal(map[string]any{"metadata": map[string]string{"input_format": "elm_v3"}, "ttl": "1h", "data": json.RawMessage(elm)})
 	fx.expect(t, message("populate", token, string(body)), "accepted")
 	page, err := fx.catalog.Results.List(ctx, port.ListParams{Limit: 10})
 	require.NoError(t, err, "results after populate")
@@ -215,7 +215,7 @@ func TestClientErrorsAreRejected(t *testing.T) {
 		"validation":        {message("person.create", token, `{"givenName":"A"}`), amqp.ErrCondInvalidField},
 		"update without id": {message("course.update", token, `{"title":"T"}`), amqp.ErrCondInvalidField},
 		"not found":         {message("person.delete", token, `{"id":"nobody"}`), amqp.ErrCondNotFound},
-		"bad ttl":           {message("populate", token, `{"metadata":{"input_format":"elm"},"ttl":"soon","data":{}}`), amqp.ErrCondInvalidField},
+		"bad ttl":           {message("populate", token, `{"metadata":{"input_format":"elm_v3"},"ttl":"soon","data":{}}`), amqp.ErrCondInvalidField},
 		"no body":           {&amqp.Message{Properties: &amqp.MessageProperties{Subject: new("person.create")}, ApplicationProperties: map[string]any{authorizationProperty: "Bearer " + token}}, amqp.ErrCondInvalidField},
 	}
 	for name, tc := range cases {

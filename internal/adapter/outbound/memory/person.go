@@ -6,6 +6,7 @@ import (
 	"context"
 	"slices"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -201,12 +202,53 @@ func (r *PersonRepository) GetBySourcedIDs(_ context.Context, sourcedIDs []strin
 // The unique id tie-breaker keeps the order total, so pages are stable across
 // calls even though map iteration is randomised.
 func (r *PersonRepository) List(_ context.Context, params port.ListParams) (port.Page[domain.Person], error) {
+	return r.list(nil, params), nil
+}
+
+// Search is List restricted to the persons matching every term, with the
+// same matching rules as the Postgres repository (ILIKE '%term%').
+func (r *PersonRepository) Search(_ context.Context, terms []string, params port.ListParams) (port.Page[domain.Person], error) {
+	lowered := make([]string, len(terms))
+	for i, term := range terms {
+		lowered[i] = strings.ToLower(term)
+	}
+	return r.list(func(p domain.Person) bool {
+		for _, term := range lowered {
+			if !personMatches(p, term) {
+				return false
+			}
+		}
+		return true
+	}, params), nil
+}
+
+// personMatches reports whether the lower-case term occurs in one of the
+// searched fields of p.
+func personMatches(p domain.Person, term string) bool {
+	fields := []string{p.GivenName, p.MiddleName, p.FamilyName, p.ID, p.SourcedID}
+	for _, identifier := range p.Identifiers {
+		fields = append(fields, identifier.Value)
+	}
+	for _, email := range p.Emails {
+		fields = append(fields, email.Value)
+	}
+	for _, field := range fields {
+		if strings.Contains(strings.ToLower(field), term) {
+			return true
+		}
+	}
+	return false
+}
+
+// list returns the page of live persons for which keep is true (all of
+// them when keep is nil).
+func (r *PersonRepository) list(keep func(domain.Person) bool, params port.ListParams) port.Page[domain.Person] {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	now := r.now()
 	items := make([]domain.Person, 0, len(r.byID))
 	for _, p := range r.byID {
-		if !domain.Expired(p.ExpiresAt, now) {
+		if !domain.Expired(p.ExpiresAt, now) && (keep == nil || keep(p)) {
 			items = append(items, clonePerson(p))
 		}
 	}
@@ -221,7 +263,7 @@ func (r *PersonRepository) List(_ context.Context, params port.ListParams) (port
 		return a.ID < b.ID
 	})
 	lo, hi := pageBounds(len(items), params.Offset, params.Limit)
-	return port.Page[domain.Person]{Items: items[lo:hi], Total: len(items)}, nil
+	return port.Page[domain.Person]{Items: items[lo:hi], Total: len(items)}
 }
 
 // pageBounds returns the [lo:hi) slice bounds for a page of a total-length

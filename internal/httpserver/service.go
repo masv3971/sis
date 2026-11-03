@@ -147,6 +147,9 @@ func New(ctx context.Context, cfg *model.Cfg, verifier *auth.Verifier, catalog *
 	api.GET("/persons/:id", guards.Read, restAdmin.GetPerson)
 	api.PUT("/persons/:id", guards.Write, restAdmin.UpdatePerson)
 	api.DELETE("/persons/:id", guards.Write, restAdmin.DeletePerson)
+	// A student's own records, for the person-centric admin UI.
+	api.GET("/persons/:id/enrollments", guards.Read, restadmin.PersonResourceList(restAdmin, catalog.Enrollments))
+	api.GET("/persons/:id/results", guards.Read, restadmin.PersonResourceList(restAdmin, catalog.Results))
 	registerResource(api, guards, "organizations", restAdmin, catalog.Organizations)
 	registerResource(api, guards, "academic-sessions", restAdmin, catalog.AcademicSessions)
 	registerResource(api, guards, "courses", restAdmin, catalog.Courses)

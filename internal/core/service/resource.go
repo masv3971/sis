@@ -182,6 +182,12 @@ func (s *Resource[T, PT]) List(ctx context.Context, params port.ListParams) (por
 	return s.repo.List(ctx, params)
 }
 
+// ListByRef returns a page of the entities whose reference field (its JSON
+// name, a constant such as "personId") equals id.
+func (s *Resource[T, PT]) ListByRef(ctx context.Context, field, id string, params port.ListParams) (port.Page[PT], error) {
+	return s.repo.ListByRef(ctx, field, id, params)
+}
+
 // Delete removes an entity and emits an event.
 func (s *Resource[T, PT]) Delete(ctx context.Context, id string) error {
 	if err := s.repo.Delete(ctx, id); err != nil {

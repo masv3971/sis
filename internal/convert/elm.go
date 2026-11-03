@@ -167,7 +167,7 @@ func (b *elmBuilder) person(subject *elm.Node) (string, error) {
 		SourcedID: sid, Status: domain.StatusActive,
 		GivenName: given, FamilyName: family,
 		Roles:       []domain.Role{domain.RoleStudent},
-		DateOfBirth: isoDate(subject.String("dateOfBirth")),
+		DateOfBirth: b.date(subject.Path+".dateOfBirth", subject.String("dateOfBirth")),
 	}
 	for _, prop := range []string{"identifier", "nationalID", "nationalId"} {
 		for _, id := range subject.Nodes(prop) {
@@ -243,14 +243,14 @@ func (b *elmBuilder) achievement(achievement *elm.Node, person, org string) erro
 		return err
 	}
 	if awarded != nil {
-		result.ResultDate = isoDate(awarded.String("awardingDate"))
+		result.ResultDate = b.date(awarded.Path+".awardingDate", awarded.String("awardingDate"))
 	}
 	for _, assessment := range achievement.Nodes("wasDerivedFrom") {
 		if gradeText := grade(assessment); gradeText != "" {
 			result.Grade = gradeText
 			if result.ResultDate == "" {
 				if assessmentAward := assessment.Node("awardedBy"); assessmentAward != nil {
-					result.ResultDate = isoDate(assessmentAward.String("awardingDate"))
+					result.ResultDate = b.date(assessmentAward.Path+".awardingDate", assessmentAward.String("awardingDate"))
 				}
 			}
 			break
@@ -452,6 +452,18 @@ func firstNonEmpty(candidates ...string) string {
 		}
 	}
 	return ""
+}
+
+// date maps an xsd:date/dateTime value to an ISO 8601 calendar date. A value
+// that is not one is dropped with a warning rather than failing the whole
+// credential: the person and their results are still useful without it.
+func (b *elmBuilder) date(path, value string) string {
+	date := isoDate(value)
+	if date != "" && !domain.ValidDate(date) {
+		b.warn(path, "%q is not an ISO 8601 date; skipped", value)
+		return ""
+	}
+	return date
 }
 
 // isoDate trims an xsd:dateTime to its date part (2026-01-15T00:00:00+01:00

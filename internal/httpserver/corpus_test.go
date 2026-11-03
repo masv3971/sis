@@ -155,9 +155,9 @@ func corpusFiles(t *testing.T, dir string) []string {
 // envelopeFor wraps doc, unchanged, in a parse (format set) or populate
 // (format empty) request body; extra is added as is, e.g. a ttl.
 func envelopeFor(doc []byte, format, extra string) string {
-	meta := `{"input_format":"elm"}`
+	meta := `{"input_format":"elm_v3"}`
 	if format != "" {
-		meta = `{"input_format":"elm","output_format":"` + format + `"}`
+		meta = `{"input_format":"elm_v3","output_format":"` + format + `"}`
 	}
 	if extra != "" {
 		extra = "," + extra

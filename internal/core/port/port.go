@@ -44,6 +44,11 @@ type PersonRepository interface {
 	// GetBySourcedIDs is GetByIDs by sourcedId.
 	GetBySourcedIDs(ctx context.Context, sourcedIDs []string) ([]domain.Person, error)
 	List(ctx context.Context, params ListParams) (Page[domain.Person], error)
+	// Search is List restricted to the persons matching every term: a term
+	// matches when it occurs, case-insensitively, in the given, middle or
+	// family name, the id, the sourcedId, or the value of any identifier or
+	// email. terms must not be empty.
+	Search(ctx context.Context, terms []string, params ListParams) (Page[domain.Person], error)
 	Delete(ctx context.Context, id string) error
 	// DeleteExpired removes every person expired at now and returns their
 	// ids, in no particular order.

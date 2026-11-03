@@ -225,6 +225,28 @@ func (r *DocRepo[T, PT]) GetBySourcedIDs(_ context.Context, sourcedIDs []string)
 
 // List returns a page of live entities ordered by sourcedId.
 func (r *DocRepo[T, PT]) List(_ context.Context, params port.ListParams) (port.Page[PT], error) {
+	return r.list(nil, params)
+}
+
+// ListByRef is List restricted to the entities whose reference field (a
+// JSON string property, as Postgres' data->>field) equals id.
+func (r *DocRepo[T, PT]) ListByRef(_ context.Context, field, id string, params port.ListParams) (port.Page[PT], error) {
+	return r.list(func(data []byte) (bool, error) {
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(data, &fields); err != nil {
+			return false, err
+		}
+		var value string
+		if raw, ok := fields[field]; !ok || json.Unmarshal(raw, &value) != nil {
+			return false, nil // absent or not a string: no match, as ->> on a non-string
+		}
+		return value == id, nil
+	}, params)
+}
+
+// list returns the page of live entities whose stored JSON keep accepts
+// (all of them when keep is nil), ordered by sourcedId.
+func (r *DocRepo[T, PT]) list(keep func(data []byte) (bool, error), params port.ListParams) (port.Page[PT], error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	now := r.now()
@@ -232,6 +254,15 @@ func (r *DocRepo[T, PT]) List(_ context.Context, params port.ListParams) (port.P
 	for _, stored := range r.byID {
 		if domain.Expired(stored.expiresAt, now) {
 			continue
+		}
+		if keep != nil {
+			ok, err := keep(stored.data)
+			if err != nil {
+				return port.Page[PT]{}, err
+			}
+			if !ok {
+				continue
+			}
 		}
 		e, err := unmarshalDoc[T, PT](stored.data)
 		if err != nil {

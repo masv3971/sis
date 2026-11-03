@@ -160,8 +160,9 @@ type Result struct {
 	// Credits awarded, in ECTS credits. Credits in other systems (e.g.
 	// local points) are not stored here.
 	Credits float64 `json:"credits,omitempty"`
-	// ResultDate is the ISO 8601 date the result was awarded.
-	ResultDate string `json:"resultDate,omitempty"`
+	// ResultDate is the ISO 8601 calendar date (YYYY-MM-DD) the result was
+	// awarded, or empty.
+	ResultDate string `json:"resultDate,omitempty" format:"date" example:"2026-06-05"`
 }
 
 // EntityType returns the stable type tag.
@@ -183,6 +184,9 @@ func (r *Result) Validate() error {
 	}
 	if r.Credits < 0 {
 		return &ValidationError{Field: "credits", Msg: "must not be negative"}
+	}
+	if r.ResultDate != "" && !ValidDate(r.ResultDate) {
+		return &ValidationError{Field: "resultDate", Msg: MsgISODate}
 	}
 	return nil
 }

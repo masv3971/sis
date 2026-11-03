@@ -169,7 +169,7 @@ routed="$(jq -n --slurpfile d "$ELM_FILE" --arg q "$QUEUE" --arg ttl "$TTL" \
             headers: {authorization: $tok}
         },
         routing_key: $q,
-        payload: ({metadata: {input_format: "elm"}, data: $d[0]}
+        payload: ({metadata: {input_format: "elm_v3"}, data: $d[0]}
             + (if $ttl == "" then {} else {ttl: $ttl} end) | tojson),
         payload_encoding: "string"
     }' | rabbit POST /exchanges/%2F/amq.default/publish \

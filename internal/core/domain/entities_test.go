@@ -26,7 +26,10 @@ func TestResultValidate(t *testing.T) {
 		{"NaN credits", Result{PersonID: "p", CourseID: "c", Credits: math.NaN()}, "credits"},
 		{"+Inf credits", Result{PersonID: "p", CourseID: "c", Credits: math.Inf(1)}, "credits"},
 		{"-Inf credits", Result{PersonID: "p", CourseID: "c", Credits: math.Inf(-1)}, "credits"},
-		{"course", Result{PersonID: "p", CourseID: "c", Credits: 7.5}, ""},
+		{"resultDate not ISO", Result{PersonID: "p", CourseID: "c", ResultDate: "05/06/2026"}, "resultDate"},
+		{"resultDate does not exist", Result{PersonID: "p", CourseID: "c", ResultDate: "2026-02-30"}, "resultDate"},
+		{"resultDate with time", Result{PersonID: "p", CourseID: "c", ResultDate: "2026-06-05T10:00:00Z"}, "resultDate"},
+		{"course", Result{PersonID: "p", CourseID: "c", Credits: 7.5, ResultDate: "2026-06-05"}, ""},
 		{"program", Result{PersonID: "p", ProgramID: "g"}, ""},
 	}
 	for _, tc := range cases {

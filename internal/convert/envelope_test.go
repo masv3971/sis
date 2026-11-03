@@ -26,7 +26,7 @@ func TestParseELMEnvelopes(t *testing.T) {
 	}
 
 	client := newClient(t)
-	want, err := client.Parse(FormatELM, plain, "data")
+	want, err := client.Parse(FormatELMv3, plain, "data")
 	require.NoError(t, err)
 
 	cases := []struct {
@@ -40,7 +40,7 @@ func TestParseELMEnvelopes(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := client.Parse(FormatELM, []byte(tc.doc), "data")
+			got, err := client.Parse(FormatELMv3, []byte(tc.doc), "data")
 			require.NoError(t, err)
 			assert.Equal(t, want.Bundle, got.Bundle)
 			var seal []string
@@ -82,7 +82,7 @@ func TestParseELMEnvelopeErrors(t *testing.T) {
 	client := newClient(t)
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := client.Parse(FormatELM, []byte(tc.doc), "data")
+			_, err := client.Parse(FormatELMv3, []byte(tc.doc), "data")
 			var invalid *domain.ValidationError
 			require.ErrorAs(t, err, &invalid)
 			assert.Equal(t, tc.field, invalid.Field)
@@ -95,7 +95,7 @@ func TestParseELMEnvelopeErrors(t *testing.T) {
 func TestParseELMEnvelopePaths(t *testing.T) {
 	inner := `{"credentialSubject": {"id": "urn:p"}}`
 	doc := `{"payload": ` + string(mustMarshal(t, inner)) + `, "signatures": []}`
-	_, err := newClient(t).Parse(FormatELM, []byte(doc), "data")
+	_, err := newClient(t).Parse(FormatELMv3, []byte(doc), "data")
 	var invalid *domain.ValidationError
 	require.ErrorAs(t, err, &invalid)
 	assert.Equal(t, "data.payload.credentialSubject", invalid.Field)

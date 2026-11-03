@@ -53,6 +53,37 @@ func ResourceList[T any, PT domain.EntityPtr[T]](c *Client, svc *service.Resourc
 	}
 }
 
+// PersonResourceList lists the entities of type T that belong to the person
+// in the path (their personId is its id), with limit/offset paging: a
+// student's enrollments or results. An unknown person is a 404 rather than
+// an empty list. The swag annotations are in swagger.go.
+func PersonResourceList[T any, PT domain.EntityPtr[T]](c *Client, svc *service.Resource[T, PT]) gin.HandlerFunc {
+	return func(gc *gin.Context) {
+		params, err := c.listParams(gc)
+		if err != nil {
+			helpers.WriteError(gc, err)
+			return
+		}
+		ctx := gc.Request.Context()
+		personID := gc.Param("id")
+		if _, err := c.catalog.Persons.GetPerson(ctx, personID); err != nil {
+			helpers.WriteError(gc, err)
+			return
+		}
+		page, err := svc.ListByRef(ctx, "personId", personID, params)
+		if err != nil {
+			helpers.WriteError(gc, err)
+			return
+		}
+		gc.JSON(http.StatusOK, ListReply[PT]{
+			Items:  page.Items,
+			Total:  page.Total,
+			Limit:  params.Limit,
+			Offset: params.Offset,
+		})
+	}
+}
+
 // ResourceCreate creates an entity of type T from the JSON body. References
 // to other records must be their canonical ids (see readmodel.CheckRefs).
 func ResourceCreate[T any, PT domain.EntityPtr[T]](c *Client, svc *service.Resource[T, PT]) gin.HandlerFunc {

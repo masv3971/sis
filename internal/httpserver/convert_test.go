@@ -86,7 +86,7 @@ func TestParseAndPopulate(t *testing.T) {
 	t.Run("parse", func(t *testing.T) {
 		for _, format := range []string{"eduapi", "oeapi"} {
 			out := do(t, reader, http.MethodPost, "/api/v1/parse",
-				envelope(`{"input_format":"elm","output_format":"`+format+`"}`, ""), http.StatusOK)
+				envelope(`{"input_format":"elm_v3","output_format":"`+format+`"}`, ""), http.StatusOK)
 			data, _ := out["data"].(map[string]any)
 			courses, _ := data["courses"].([]any)
 			require.Len(t, courses, 1, "%s: courses", format)
@@ -98,22 +98,22 @@ func TestParseAndPopulate(t *testing.T) {
 
 	t.Run("bad requests", func(t *testing.T) {
 		do(t, reader, http.MethodPost, "/api/v1/parse", envelope(`{"input_format":"xml","output_format":"eduapi"}`, ""), http.StatusBadRequest)
-		do(t, reader, http.MethodPost, "/api/v1/parse", envelope(`{"input_format":"elm","output_format":"csv"}`, ""), http.StatusBadRequest)
-		do(t, reader, http.MethodPost, "/api/v1/parse", `{"metadata":{"input_format":"elm","output_format":"eduapi"},"data":{"type":"x"}}`, http.StatusBadRequest)
-		do(t, reader, http.MethodPost, "/api/v1/parse", `{"metadata":{"input_format":"elm","output_format":"eduapi"},"data":{},"extra":1}`, http.StatusBadRequest)
-		do(t, writer, http.MethodPost, "/api/v1/populate", envelope(`{"input_format":"elm"}`, `,"ttl":"-1h"`), http.StatusBadRequest)
-		do(t, writer, http.MethodPost, "/api/v1/populate", envelope(`{"input_format":"elm"}`, `,"ttl":"soon"`), http.StatusBadRequest)
-		do(t, writer, http.MethodPost, "/api/v1/populate", envelope(`{"input_format":"elm","output_format":"eduapi"}`, ""), http.StatusBadRequest)
-		big := `{"metadata":{"input_format":"elm","output_format":"eduapi"},"data":{"x":"` + strings.Repeat("a", 64<<10) + `"}}`
+		do(t, reader, http.MethodPost, "/api/v1/parse", envelope(`{"input_format":"elm_v3","output_format":"csv"}`, ""), http.StatusBadRequest)
+		do(t, reader, http.MethodPost, "/api/v1/parse", `{"metadata":{"input_format":"elm_v3","output_format":"eduapi"},"data":{"type":"x"}}`, http.StatusBadRequest)
+		do(t, reader, http.MethodPost, "/api/v1/parse", `{"metadata":{"input_format":"elm_v3","output_format":"eduapi"},"data":{},"extra":1}`, http.StatusBadRequest)
+		do(t, writer, http.MethodPost, "/api/v1/populate", envelope(`{"input_format":"elm_v3"}`, `,"ttl":"-1h"`), http.StatusBadRequest)
+		do(t, writer, http.MethodPost, "/api/v1/populate", envelope(`{"input_format":"elm_v3"}`, `,"ttl":"soon"`), http.StatusBadRequest)
+		do(t, writer, http.MethodPost, "/api/v1/populate", envelope(`{"input_format":"elm_v3","output_format":"eduapi"}`, ""), http.StatusBadRequest)
+		big := `{"metadata":{"input_format":"elm_v3","output_format":"eduapi"},"data":{"x":"` + strings.Repeat("a", 64<<10) + `"}}`
 		do(t, reader, http.MethodPost, "/api/v1/parse", big, http.StatusRequestEntityTooLarge)
 	})
 
 	t.Run("populate needs write", func(t *testing.T) {
-		do(t, reader, http.MethodPost, "/api/v1/populate", envelope(`{"input_format":"elm"}`, ""), http.StatusForbidden)
+		do(t, reader, http.MethodPost, "/api/v1/populate", envelope(`{"input_format":"elm_v3"}`, ""), http.StatusForbidden)
 	})
 
 	t.Run("populate with ttl", func(t *testing.T) {
-		out := do(t, writer, http.MethodPost, "/api/v1/populate", envelope(`{"input_format":"elm"}`, `,"ttl":"1h"`), http.StatusOK)
+		out := do(t, writer, http.MethodPost, "/api/v1/populate", envelope(`{"input_format":"elm_v3"}`, `,"ttl":"1h"`), http.StatusOK)
 		items, _ := out["items"].([]any)
 		require.Len(t, items, 10, "populate reply = %v", out)
 		require.NotNil(t, out["expiresAt"], "populate reply = %v", out)

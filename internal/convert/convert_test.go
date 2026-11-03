@@ -34,7 +34,7 @@ func readFixture(t *testing.T, name string) []byte {
 // TestParseELMMapping checks the mapping rules on a credential with a
 // qualification whose part is a graded course with an activity.
 func TestParseELMMapping(t *testing.T) {
-	parsed, err := newClient(t).Parse(FormatELM, readFixture(t, "edc_bsc.json"), "data")
+	parsed, err := newClient(t).Parse(FormatELMv3, readFixture(t, "edc_bsc.json"), "data")
 	require.NoError(t, err)
 	bundle := parsed.Bundle
 
@@ -109,7 +109,7 @@ func TestParseELMMapping(t *testing.T) {
 // Run `go test ./internal/convert -update` after an intended change.
 func TestRenderGolden(t *testing.T) {
 	client := newClient(t)
-	parsed, err := client.Parse(FormatELM, readFixture(t, "edc_bsc.json"), "data")
+	parsed, err := client.Parse(FormatELMv3, readFixture(t, "edc_bsc.json"), "data")
 	require.NoError(t, err)
 	for _, format := range client.OutputFormats() {
 		t.Run(format, func(t *testing.T) {
@@ -136,9 +136,9 @@ func TestParseELMIsDeterministic(t *testing.T) {
 	doc := []byte(`{"credentialSubject": {"givenName": "A", "familyName": "B",
 		"hasClaim": {"type": "LearningAchievement", "title": "Course X"}}}`)
 	client := newClient(t)
-	first, err := client.Parse(FormatELM, doc, "data")
+	first, err := client.Parse(FormatELMv3, doc, "data")
 	require.NoError(t, err)
-	second, err := client.Parse(FormatELM, doc, "data")
+	second, err := client.Parse(FormatELMv3, doc, "data")
 	require.NoError(t, err)
 	require.NotEmpty(t, first.Bundle.Persons)
 	require.NotEmpty(t, second.Bundle.Persons)
@@ -162,13 +162,13 @@ func TestParseELMErrors(t *testing.T) {
 	client := newClient(t)
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := client.Parse(FormatELM, []byte(tc.doc), "data")
+			_, err := client.Parse(FormatELMv3, []byte(tc.doc), "data")
 			var ve *domain.ValidationError
 			require.ErrorAs(t, err, &ve)
 			assert.Equal(t, tc.field, ve.Field)
 		})
 	}
-	_, err := client.Parse(FormatELM, []byte(`{`), "data")
+	_, err := client.Parse(FormatELMv3, []byte(`{`), "data")
 	assert.Error(t, err, "malformed JSON must fail")
 	_, err = client.Parse("xml", []byte(`{}`), "data")
 	assert.Error(t, err, "unknown format must fail")
@@ -189,7 +189,7 @@ func TestParseELMGrade(t *testing.T) {
 				"hasClaim": {"type": "LearningAchievement", "title": "Course X",
 					"wasDerivedFrom": {"type": "LearningAssessment", ` + grade + `}}},
 				"notes": [{"id": "urn:note:1", "type": "Note", "noteLiteral": "B"}]}`
-			parsed, err := newClient(t).Parse(FormatELM, []byte(doc), "data")
+			parsed, err := newClient(t).Parse(FormatELMv3, []byte(doc), "data")
 			require.NoError(t, err)
 			require.NotEmpty(t, parsed.Bundle.Results)
 			assert.Equal(t, "B", parsed.Bundle.Results[0].Grade)
@@ -206,7 +206,7 @@ func TestParseELMRejectsNonFiniteCredits(t *testing.T) {
 			doc := `{"credentialSubject": {"givenName": "A", "familyName": "B",
 				"hasClaim": {"type": "LearningAchievement", "title": "Course X",
 					"creditReceived": {"point": "` + point + `"}}}}`
-			parsed, err := newClient(t).Parse(FormatELM, []byte(doc), "data")
+			parsed, err := newClient(t).Parse(FormatELMv3, []byte(doc), "data")
 			require.NoError(t, err)
 			require.NotEmpty(t, parsed.Bundle.Results)
 			assert.Zero(t, parsed.Bundle.Results[0].Credits)
@@ -237,7 +237,7 @@ func TestParseELMOnlyMapsECTSCredits(t *testing.T) {
 			doc := `{"credentialSubject": {"givenName": "A", "familyName": "B",
 				"hasClaim": {"type": "LearningAchievement", "title": "Course X", ` + tc.props + `}}}`
 			client := newClient(t)
-			parsed, err := client.Parse(FormatELM, []byte(doc), "data")
+			parsed, err := client.Parse(FormatELMv3, []byte(doc), "data")
 			require.NoError(t, err)
 			require.NotEmpty(t, parsed.Bundle.Results)
 			assert.InDelta(t, tc.want, parsed.Bundle.Results[0].Credits, 0, "credits")
@@ -266,7 +266,7 @@ func TestParseELMTypedReference(t *testing.T) {
 			{"id": "urn:org:liu", "type": "Organisation", "legalName": "LiU"}],
 		"specs": [{"id": "urn:spec:x", "type": "LearningAchievementSpecification", "title": "Spec title",
 			"identifier": {"notation": "X1"}}]}`
-	parsed, err := newClient(t).Parse(FormatELM, []byte(doc), "data")
+	parsed, err := newClient(t).Parse(FormatELMv3, []byte(doc), "data")
 	require.NoError(t, err)
 	bundle := parsed.Bundle
 	orgs := map[string]*domain.Organization{}
@@ -284,11 +284,51 @@ func TestParseELMTypedReference(t *testing.T) {
 	assert.Empty(t, parsed.Warnings)
 }
 
+// TestParseELMInvalidDateOfBirth checks a dateOfBirth that is no ISO 8601
+// date is dropped with a warning instead of failing the credential, and an
+// xsd:dateTime keeps its date part.
+func TestParseELMInvalidDateOfBirth(t *testing.T) {
+	cases := []struct{ dob, want string }{
+		{"1999-10-01T22:00:00Z", "1999-10-01"},
+		{"2001-02-30", ""},
+		{"01/10/1999", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.dob, func(t *testing.T) {
+			doc := `{"credentialSubject": {"givenName": "A", "familyName": "B", "dateOfBirth": "` + tc.dob + `"}}`
+			parsed, err := newClient(t).Parse(FormatELMv3, []byte(doc), "data")
+			require.NoError(t, err)
+			require.Len(t, parsed.Bundle.Persons, 1)
+			assert.Equal(t, tc.want, parsed.Bundle.Persons[0].DateOfBirth)
+			if tc.want == "" {
+				require.Len(t, parsed.Warnings, 1)
+				assert.Contains(t, parsed.Warnings[0], "dateOfBirth")
+			} else {
+				assert.Empty(t, parsed.Warnings)
+			}
+		})
+	}
+}
+
+// TestParseELMInvalidResultDate checks an awardingDate that is no ISO 8601
+// date is dropped with a warning, keeping the result.
+func TestParseELMInvalidResultDate(t *testing.T) {
+	doc := `{"credentialSubject": {"givenName": "A", "familyName": "B",
+		"hasClaim": {"type": "LearningAchievement", "title": "Course X",
+			"awardedBy": {"awardingDate": "31/01/2026"}}}}`
+	parsed, err := newClient(t).Parse(FormatELMv3, []byte(doc), "data")
+	require.NoError(t, err)
+	require.Len(t, parsed.Bundle.Results, 1)
+	assert.Empty(t, parsed.Bundle.Results[0].ResultDate)
+	require.Len(t, parsed.Warnings, 1)
+	assert.Contains(t, parsed.Warnings[0], "awardingDate")
+}
+
 // TestParseELMOrganisationCycle checks a parent cycle terminates.
 func TestParseELMOrganisationCycle(t *testing.T) {
 	doc := `{"issuer": {"id": "urn:a", "legalName": "A", "parentOrganisation": {"id": "urn:b", "legalName": "B", "parentOrganisation": "urn:a"}},
 		"credentialSubject": {"givenName": "A", "familyName": "B"}}`
-	parsed, err := newClient(t).Parse(FormatELM, []byte(doc), "data")
+	parsed, err := newClient(t).Parse(FormatELMv3, []byte(doc), "data")
 	require.NoError(t, err)
 	assert.Len(t, parsed.Bundle.Organizations, 2)
 	assert.Len(t, parsed.Warnings, 1)

@@ -185,3 +185,276 @@ th {
   justify-content: space-between;
   margin-top: 12px;
 }
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 20px;
+}
+
+.tabs a {
+  color: var(--fg);
+  text-decoration: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 14px;
+}
+
+.tabs a[aria-current="page"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+.tabs a:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.note {
+  font-size: 13px;
+  margin: -8px 0 14px;
+}
+
+.tabs-sep {
+  align-self: center;
+  font-size: 13px;
+  margin-left: 10px;
+}
+
+.topbar h1 a {
+  color: inherit;
+  text-decoration: none;
+}
+
+a {
+  color: var(--focus);
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.spread {
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.wrap {
+  flex-wrap: wrap;
+}
+
+.search input {
+  flex: 1;
+}
+
+.hint {
+  font-size: 13px;
+  margin: 8px 0 0;
+}
+
+table.clickable tbody tr {
+  cursor: pointer;
+}
+
+table.clickable tbody tr:hover {
+  background: #243247;
+}
+
+.back {
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.title {
+  font-size: 20px;
+  margin: 0 0 4px;
+}
+
+.card h3 {
+  margin: 0 0 12px;
+  font-size: 15px;
+}
+
+.subcard {
+  border-top: 1px solid var(--border);
+  margin-top: 16px;
+  padding-top: 16px;
+  max-width: 420px;
+}
+
+.profile {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 16px;
+  margin: 16px 0 0;
+  font-size: 14px;
+}
+
+.profile dt {
+  color: var(--muted);
+}
+
+.profile dd {
+  margin: 0;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0 14px;
+  margin-top: 16px;
+}
+
+fieldset.group {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin: 0 0 14px;
+  padding: 8px 12px 12px;
+  min-width: 0;
+}
+
+fieldset.group legend {
+  color: var(--muted);
+  font-size: 13px;
+  padding: 0 4px;
+}
+
+label.check {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  margin: 0 12px 0 0;
+  color: var(--fg);
+}
+
+.pair {
+  margin-bottom: 8px;
+}
+
+.pair input {
+  flex: 1;
+}
+
+button.small {
+  padding: 5px 10px;
+  font-size: 13px;
+}
+
+/* Date picker: a label + input pair that is not wrapped in a <label>, so
+   the calendar's buttons are not part of the label. */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+  min-width: 0;
+}
+
+.field > label {
+  margin: 0;
+}
+
+.date-field {
+  position: relative;
+}
+
+.date-input input {
+  flex: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.date-input input[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+button.icon {
+  padding: 8px 10px;
+  line-height: 1;
+}
+
+.field-error {
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.calendar {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 10;
+  margin-top: 4px;
+  width: 288px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+
+.calendar-head {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.calendar-head select {
+  flex: 1;
+  padding: 6px 8px;
+  font-size: 13px;
+}
+
+.calendar table {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.calendar th,
+.calendar td {
+  border: 0;
+  padding: 2px;
+  text-align: center;
+  font-size: 12px;
+}
+
+.calendar td button {
+  width: 100%;
+  padding: 6px 0;
+  background: transparent;
+  color: var(--fg);
+  border-radius: 6px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.calendar td button:hover:not(:disabled) {
+  background: #243247;
+}
+
+.calendar td button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.calendar td button.today {
+  box-shadow: inset 0 0 0 1px var(--focus);
+}
+
+.calendar td button.selected {
+  background: var(--accent);
+  color: white;
+}
+
+.calendar td button:disabled {
+  opacity: 0.3;
+}
+
+.calendar-hint {
+  font-size: 11px;
+  margin: 6px 2px 0;
+}
