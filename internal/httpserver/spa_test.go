@@ -1,6 +1,10 @@
 package httpserver
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
 
 func TestIsAPIPath(t *testing.T) {
 	cases := map[string]bool{
@@ -20,8 +24,6 @@ func TestIsAPIPath(t *testing.T) {
 		"/persons/42":     false,
 	}
 	for path, want := range cases {
-		if got := isAPIPath(path); got != want {
-			t.Errorf("isAPIPath(%q) = %v, want %v", path, got, want)
-		}
+		assert.Equal(t, want, isAPIPath(path), "isAPIPath(%q)", path)
 	}
 }

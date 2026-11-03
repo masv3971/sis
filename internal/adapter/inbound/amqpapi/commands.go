@@ -33,83 +33,83 @@ type idBody struct {
 // <type>.create|update|delete for person and every entity type (named as in
 // domain events, e.g. academicSession), and populate. Bodies are the
 // /api/v1 request bodies; update carries its id in the body.
-func newCommandTable(c *command.Client, catalog *readmodel.Client) map[string]handlerFunc {
-	t := map[string]handlerFunc{
+func newCommandTable(commands *command.Client, catalog *readmodel.Client) map[string]handlerFunc {
+	table := map[string]handlerFunc{
 		"person.create": func(ctx context.Context, body []byte) error {
-			var p domain.Person
-			if err := helpers.DecodeJSON(body, &p); err != nil {
+			var person domain.Person
+			if err := helpers.DecodeJSON(body, &person); err != nil {
 				return err
 			}
-			_, err := c.CreatePerson(ctx, p)
+			_, err := commands.CreatePerson(ctx, person)
 			return err
 		},
 		"person.update": func(ctx context.Context, body []byte) error {
-			var p domain.Person
-			if err := helpers.DecodeJSON(body, &p); err != nil {
+			var person domain.Person
+			if err := helpers.DecodeJSON(body, &person); err != nil {
 				return err
 			}
-			if p.ID == "" {
+			if person.ID == "" {
 				return errIDRequired
 			}
-			_, err := c.UpdatePerson(ctx, p.ID, p)
+			_, err := commands.UpdatePerson(ctx, person.ID, person)
 			return err
 		},
 		"person.delete": func(ctx context.Context, body []byte) error {
-			var b idBody
-			if err := helpers.DecodeJSON(body, &b); err != nil {
+			var target idBody
+			if err := helpers.DecodeJSON(body, &target); err != nil {
 				return err
 			}
-			return c.DeletePerson(ctx, b.ID)
+			return commands.DeletePerson(ctx, target.ID)
 		},
 		"populate": func(ctx context.Context, body []byte) error {
 			var req command.PopulateRequest
 			if err := helpers.DecodeJSON(body, &req); err != nil {
 				return err
 			}
-			_, err := c.Populate(ctx, req)
+			_, err := commands.Populate(ctx, req)
 			return err
 		},
 	}
-	register(t, c, catalog.Organizations)
-	register(t, c, catalog.AcademicSessions)
-	register(t, c, catalog.Courses)
-	register(t, c, catalog.Offerings)
-	register(t, c, catalog.Enrollments)
-	register(t, c, catalog.Programs)
-	register(t, c, catalog.Results)
-	return t
+	register(table, commands, catalog.Organizations)
+	register(table, commands, catalog.AcademicSessions)
+	register(table, commands, catalog.Courses)
+	register(table, commands, catalog.Offerings)
+	register(table, commands, catalog.Enrollments)
+	register(table, commands, catalog.Programs)
+	register(table, commands, catalog.Results)
+	return table
 }
 
-var errIDRequired = &domain.ValidationError{Field: "id", Msg: "required"}
+var errIDRequired = domain.Required("id")
 
 // register adds the create/update/delete commands of one entity type.
-func register[T any, PT domain.EntityPtr[T]](t map[string]handlerFunc, c *command.Client, svc *service.Resource[T, PT]) {
+func register[T any, PT domain.EntityPtr[T]](table map[string]handlerFunc, commands *command.Client, svc *service.Resource[T, PT]) {
 	typ := PT(new(T)).EntityType()
-	t[typ+".create"] = func(ctx context.Context, body []byte) error {
-		e := PT(new(T))
-		if err := helpers.DecodeJSON(body, e); err != nil {
+	table[typ+".create"] = func(ctx context.Context, body []byte) error {
+		entity := PT(new(T))
+		if err := helpers.DecodeJSON(body, entity); err != nil {
 			return err
 		}
-		_, err := command.Create(ctx, c, svc, e)
+		_, err := command.Create(ctx, commands, svc, entity)
 		return err
 	}
-	t[typ+".update"] = func(ctx context.Context, body []byte) error {
-		e := PT(new(T))
-		if err := helpers.DecodeJSON(body, e); err != nil {
+	table[typ+".update"] = func(ctx context.Context, body []byte) error {
+		entity := PT(new(T))
+		if err := helpers.DecodeJSON(body, entity); err != nil {
 			return err
 		}
-		if e.GetID() == "" {
+		if entity.GetID() == "" {
 			return errIDRequired
 		}
-		_, err := command.Update(ctx, c, svc, e.GetID(), e)
+		_, err := command.Update(ctx, commands, svc, entity.GetID(), entity)
 		return err
 	}
-	t[typ+".delete"] = func(ctx context.Context, body []byte) error {
-		var b idBody
-		if err := helpers.DecodeJSON(body, &b); err != nil {
+	table[typ+".delete"] = func(ctx context.Context, body []byte) error {
+		var target idBody
+		if err := helpers.DecodeJSON(body, &target); err != nil {
 			return err
 		}
-		return command.Delete(ctx, c, svc, b.ID)
+		return command.Delete(ctx, commands, svc, target.ID)
 	}
 }
 
@@ -119,7 +119,7 @@ func (s *Service) handle(ctx context.Context, msg *amqp.Message) error {
 		return err
 	}
 	subject := subjectOf(msg)
-	h, ok := s.commands[subject]
+	run, ok := s.commands[subject]
 	if !ok {
 		return helpers.NewErrorDetailsWithStatus(helpers.ErrBadRequest, "unknown command subject "+`"`+subject+`"`, http.StatusBadRequest)
 	}
@@ -130,7 +130,7 @@ func (s *Service) handle(ctx context.Context, msg *amqp.Message) error {
 	if int64(len(body)) > s.cfg.MaxMessageBytes {
 		return helpers.NewErrorWithStatus(helpers.ErrTooLarge, http.StatusRequestEntityTooLarge)
 	}
-	return h(ctx, body)
+	return run(ctx, body)
 }
 
 // authorize requires a token granting sis.write in the authorization
@@ -144,20 +144,20 @@ func (s *Service) authorize(ctx context.Context, msg *amqp.Message) error {
 		}
 		return errUnauthorized("missing " + authorizationProperty + " application property")
 	}
-	tok, ok := auth.BearerToken(headerString(raw))
+	token, ok := auth.BearerToken(headerString(raw))
 	if !ok {
 		return errUnauthorized(authorizationProperty + ` must be "Bearer <token>"`)
 	}
-	claims, err := s.verifier.Verify(ctx, tok)
+	claims, err := s.verifier.Verify(ctx, token)
 	if errors.Is(err, auth.ErrIssuerUnavailable) {
 		return err
 	}
 	if err != nil {
 		s.log.Debug("token rejected", "err", err)
-		return errUnauthorized("invalid token")
+		return errUnauthorized(helpers.MsgInvalidToken)
 	}
 	if !claims.HasScope(auth.ScopeWrite) {
-		return helpers.NewErrorDetailsWithStatus("forbidden", "token lacks scope "+auth.ScopeWrite, http.StatusForbidden)
+		return helpers.NewErrorDetailsWithStatus(helpers.ErrForbidden, helpers.MsgLacksScope(auth.ScopeWrite), http.StatusForbidden)
 	}
 	return nil
 }

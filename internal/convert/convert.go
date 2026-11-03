@@ -76,11 +76,11 @@ func (c *Client) HasOutput(format string) bool { _, ok := c.renderers[format]; r
 // HasInput. Errors are the client's fault: malformed JSON (json.SyntaxError
 // and friends) or a *domain.ValidationError naming the document path.
 func (c *Client) Parse(format string, data []byte, path string) (*Parsed, error) {
-	p, ok := c.parsers[format]
+	parse, ok := c.parsers[format]
 	if !ok {
 		return nil, &domain.ValidationError{Field: "input_format", Msg: "unsupported"}
 	}
-	parsed, err := p(data, path)
+	parsed, err := parse(data, path)
 	if err != nil {
 		// Every parse failure is the document's fault: report it as a
 		// validation error on the document rather than an internal one.
@@ -95,11 +95,11 @@ func (c *Client) Parse(format string, data []byte, path string) (*Parsed, error)
 	return parsed, nil
 }
 
-// Render converts b to format, which must satisfy HasOutput.
-func (c *Client) Render(format string, b *domain.Bundle) (any, error) {
-	r, ok := c.renderers[format]
+// Render converts bundle to format, which must satisfy HasOutput.
+func (c *Client) Render(format string, bundle *domain.Bundle) (any, error) {
+	render, ok := c.renderers[format]
 	if !ok {
 		return nil, &domain.ValidationError{Field: "output_format", Msg: "unsupported"}
 	}
-	return r(b), nil
+	return render(bundle), nil
 }

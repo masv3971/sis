@@ -11,12 +11,14 @@ import (
 	"github.com/SUNET/sis/internal/core/domain"
 	"github.com/SUNET/sis/internal/core/port"
 	"github.com/SUNET/sis/internal/core/service"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type countingPublisher struct{ events []domain.Event }
 
-func (c *countingPublisher) Publish(_ context.Context, e domain.Event) error {
-	c.events = append(c.events, e)
+func (pub *countingPublisher) Publish(_ context.Context, event domain.Event) error {
+	pub.events = append(pub.events, event)
 	return nil
 }
 
@@ -27,62 +29,43 @@ func newSvc() (*service.Service, *countingPublisher) {
 
 func TestCreatePerson_Validation(t *testing.T) {
 	svc, _ := newSvc()
-	if _, err := svc.CreatePerson(context.Background(), domain.Person{}); err == nil {
-		t.Fatal("expected validation error for empty person")
-	}
+	_, err := svc.CreatePerson(t.Context(), domain.Person{})
+	assert.Error(t, err, "expected validation error for empty person")
 }
 
 func TestCreatePerson_Success(t *testing.T) {
 	svc, pub := newSvc()
-	p, err := svc.CreatePerson(context.Background(), domain.Person{
+	person, err := svc.CreatePerson(t.Context(), domain.Person{
 		GivenName: "Ada", FamilyName: "Lovelace", Status: domain.StatusActive,
 	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if p.ID == "" {
-		t.Fatal("expected a generated id")
-	}
-	if p.SourcedID != p.ID {
-		t.Fatalf("expected sourcedId to default to id, got %q", p.SourcedID)
-	}
-	if len(pub.events) != 1 || pub.events[0].Type != "person.created" {
-		t.Fatalf("expected a person.created event, got %+v", pub.events)
-	}
+	require.NoError(t, err)
+	assert.NotEmpty(t, person.ID, "expected a generated id")
+	assert.Equal(t, person.ID, person.SourcedID, "expected sourcedId to default to id")
+	require.Len(t, pub.events, 1)
+	assert.Equal(t, "person.created", pub.events[0].Type)
 }
 
 // TestUpsert_CreatesThenUpdates proves the idempotency the hub's non-HTTP
 // ingress paths rely on: the same business key converges to one person.
 func TestUpsert_CreatesThenUpdates(t *testing.T) {
 	svc, _ := newSvc()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	first, err := svc.UpsertPersonBySourcedID(ctx, domain.Person{
 		SourcedID: "stu-1", GivenName: "Grace", FamilyName: "Hopper", Status: domain.StatusActive,
 	})
-	if err != nil {
-		t.Fatalf("first upsert: %v", err)
-	}
+	require.NoError(t, err, "first upsert")
 	second, err := svc.UpsertPersonBySourcedID(ctx, domain.Person{
 		SourcedID: "stu-1", GivenName: "Grace B.", FamilyName: "Hopper", Status: domain.StatusActive,
 	})
-	if err != nil {
-		t.Fatalf("second upsert: %v", err)
-	}
-	if first.ID != second.ID {
-		t.Fatalf("upsert must reuse id: %s != %s", first.ID, second.ID)
-	}
+	require.NoError(t, err, "second upsert")
+	assert.Equal(t, first.ID, second.ID, "upsert must reuse id")
 
 	page, err := svc.ListPersons(ctx, port.ListParams{Limit: 10})
-	if err != nil {
-		t.Fatalf("list: %v", err)
-	}
-	if page.Total != 1 {
-		t.Fatalf("expected 1 person after repeated upsert, got %d", page.Total)
-	}
-	if page.Items[0].GivenName != "Grace B." {
-		t.Fatalf("expected updated given name, got %q", page.Items[0].GivenName)
-	}
+	require.NoError(t, err, "list")
+	assert.Equal(t, 1, page.Total, "expected 1 person after repeated upsert")
+	require.NotEmpty(t, page.Items)
+	assert.Equal(t, "Grace B.", page.Items[0].GivenName, "expected updated given name")
 }
 
 // racyPersons holds the first n GetBySourcedID calls until all n have
@@ -94,13 +77,13 @@ type racyPersons struct {
 	pending *atomic.Int32
 }
 
-func (r racyPersons) GetBySourcedID(ctx context.Context, sid string) (domain.Person, error) {
-	p, err := r.PersonRepository.GetBySourcedID(ctx, sid)
-	if r.pending.Add(-1) >= 0 {
-		r.gate.Done()
-		r.gate.Wait()
+func (repo racyPersons) GetBySourcedID(ctx context.Context, sid string) (domain.Person, error) {
+	person, err := repo.PersonRepository.GetBySourcedID(ctx, sid)
+	if repo.pending.Add(-1) >= 0 {
+		repo.gate.Done()
+		repo.gate.Wait()
 	}
-	return p, err
+	return person, err
 }
 
 // interleavedPersons runs before once, just ahead of the first Update, to
@@ -110,12 +93,12 @@ type interleavedPersons struct {
 	before func()
 }
 
-func (r *interleavedPersons) Update(ctx context.Context, p domain.Person, prev *time.Time) error {
-	if f := r.before; f != nil {
-		r.before = nil
-		f()
+func (repo *interleavedPersons) Update(ctx context.Context, person domain.Person, prev *time.Time) error {
+	if before := repo.before; before != nil {
+		repo.before = nil
+		before()
 	}
-	return r.PersonRepository.Update(ctx, p, prev)
+	return repo.PersonRepository.Update(ctx, person, prev)
 }
 
 // TestUpsertPersonWithExpiryRace: a TTL upsert that loses a race to a no-TTL
@@ -131,64 +114,60 @@ func TestUpsertPersonWithExpiryRace(t *testing.T) {
 	}
 
 	exp := now.Add(time.Hour)
-	if _, _, err := svc.UpsertPersonWithExpiry(ctx, person("A"), &exp); err != nil {
-		t.Fatal(err)
-	}
+	_, _, err := svc.UpsertPersonWithExpiry(ctx, person("A"), &exp)
+	require.NoError(t, err)
 	repo.before = func() {
-		if _, err := svc.UpsertPersonBySourcedID(ctx, person("Permanent")); err != nil {
-			t.Errorf("concurrent permanent upsert: %v", err)
-		}
+		_, err := svc.UpsertPersonBySourcedID(ctx, person("Permanent"))
+		assert.NoError(t, err, "concurrent permanent upsert")
 	}
 	later := now.Add(2 * time.Hour)
-	if _, _, err := svc.UpsertPersonWithExpiry(ctx, person("Late"), &later); err != nil {
-		t.Fatal(err)
-	}
+	_, _, err = svc.UpsertPersonWithExpiry(ctx, person("Late"), &later)
+	require.NoError(t, err)
 	stored, err := svc.GetPersonBySourcedID(ctx, "s")
-	if err != nil || stored.ExpiresAt != nil || stored.GivenName != "Late" {
-		t.Fatalf("stored = %+v, %v; want permanent with the late data", stored, err)
-	}
+	require.NoError(t, err)
+	assert.Nil(t, stored.ExpiresAt, "want permanent")
+	assert.Equal(t, "Late", stored.GivenName, "want the late data")
 }
 
 func TestUpsert_ConcurrentDeliveriesConverge(t *testing.T) {
-	const n = 8
+	const count = 8
 	var gate sync.WaitGroup
-	gate.Add(n)
+	gate.Add(count)
 	var pending atomic.Int32
-	pending.Store(n)
+	pending.Store(count)
 	repo := memory.NewPersonRepository()
 	svc := service.New(racyPersons{repo, &gate, &pending}, nil, nil, nil)
 
-	ids := make(chan string, n)
-	errs := make(chan error, n)
+	ids := make(chan string, count)
+	errs := make(chan error, count)
 	var wg sync.WaitGroup
-	for range n {
+	for range count {
 		wg.Go(func() {
-			p, err := svc.UpsertPersonBySourcedID(context.Background(), domain.Person{
+			person, err := svc.UpsertPersonBySourcedID(t.Context(), domain.Person{
 				SourcedID: "stu-race", GivenName: "Ada", FamilyName: "Lovelace", Status: domain.StatusActive,
 			})
 			if err != nil {
 				errs <- err
 				return
 			}
-			ids <- p.ID
+			ids <- person.ID
 		})
 	}
 	wg.Wait()
 	close(ids)
 	close(errs)
 	for err := range errs {
-		t.Errorf("upsert failed instead of converging: %v", err)
+		assert.NoError(t, err, "upsert failed instead of converging")
 	}
 	var first string
 	for id := range ids {
 		if first == "" {
 			first = id
-		} else if id != first {
-			t.Fatalf("deliveries diverged: %s vs %s", first, id)
+		} else {
+			require.Equal(t, first, id, "deliveries diverged")
 		}
 	}
-	page, _ := repo.List(context.Background(), port.ListParams{})
-	if page.Total != 1 {
-		t.Fatalf("expected exactly one person, got %d", page.Total)
-	}
+	page, err := repo.List(t.Context(), port.ListParams{})
+	require.NoError(t, err)
+	assert.Equal(t, 1, page.Total, "expected exactly one person")
 }

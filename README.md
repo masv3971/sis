@@ -161,7 +161,10 @@ sis:
 #### Example: LiU writes, SUNET vc reads
 
 With the local test issuer from `docker compose` (mellon, `realm.json`),
-`liu` gets both scopes and `sunet-vc` only `sis.read`:
+`liu` gets both scopes and `sunet-vc` only `sis.read`. Both tokens carry
+`aud: "sis"`. A client that asks for a scope it was not given, e.g.
+`sunet-vc` with `-d scope=sis.write`, gets `invalid_scope` from mellon
+and no token:
 
 ```bash
 MELLON=https://localhost:9443/realms/sis/protocol/openid-connect

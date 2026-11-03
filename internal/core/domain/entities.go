@@ -19,7 +19,7 @@ func (o *Organization) Validate() error {
 		return err
 	}
 	if o.Name == "" {
-		return &ValidationError{Field: "name", Msg: "required"}
+		return Required("name")
 	}
 	return nil
 }
@@ -42,7 +42,7 @@ func (a *AcademicSession) Validate() error {
 		return err
 	}
 	if a.Title == "" {
-		return &ValidationError{Field: "title", Msg: "required"}
+		return Required("title")
 	}
 	return nil
 }
@@ -64,7 +64,7 @@ func (c *Course) Validate() error {
 		return err
 	}
 	if c.Title == "" {
-		return &ValidationError{Field: "title", Msg: "required"}
+		return Required("title")
 	}
 	return nil
 }
@@ -87,7 +87,7 @@ func (o *Offering) Validate() error {
 		return err
 	}
 	if o.CourseID == "" {
-		return &ValidationError{Field: "courseId", Msg: "required"}
+		return Required("courseId")
 	}
 	return nil
 }
@@ -109,10 +109,10 @@ func (e *Enrollment) Validate() error {
 		return err
 	}
 	if e.PersonID == "" {
-		return &ValidationError{Field: "personId", Msg: "required"}
+		return Required("personId")
 	}
 	if e.OfferingID == "" {
-		return &ValidationError{Field: "offeringId", Msg: "required"}
+		return Required("offeringId")
 	}
 	return nil
 }
@@ -139,7 +139,7 @@ func (p *Program) Validate() error {
 		return err
 	}
 	if p.Title == "" {
-		return &ValidationError{Field: "title", Msg: "required"}
+		return Required("title")
 	}
 	return nil
 }
@@ -173,7 +173,7 @@ func (r *Result) Validate() error {
 		return err
 	}
 	if r.PersonID == "" {
-		return &ValidationError{Field: "personId", Msg: "required"}
+		return Required("personId")
 	}
 	if (r.CourseID == "") == (r.ProgramID == "") {
 		return &ValidationError{Field: "courseId", Msg: "exactly one of courseId and programId is required"}

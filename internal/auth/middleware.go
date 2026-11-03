@@ -6,32 +6,34 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/SUNET/sis/pkg/helpers"
 )
 
 const claimsKey = "authClaims"
 
 // RequireAuth verifies the Bearer token and stores its claims in the context.
 func (v *Verifier) RequireAuth() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		raw, ok := BearerToken(c.GetHeader("Authorization"))
+	return func(gc *gin.Context) {
+		raw, ok := BearerToken(gc.GetHeader("Authorization"))
 		if !ok {
-			challenge(c, "")
-			abort(c, http.StatusUnauthorized, "missing bearer token")
+			challenge(gc, "")
+			abort(gc, http.StatusUnauthorized, helpers.MsgMissingBearer)
 			return
 		}
-		claims, err := v.Verify(c.Request.Context(), raw)
+		claims, err := v.Verify(gc.Request.Context(), raw)
 		if errors.Is(err, ErrIssuerUnavailable) {
-			abort(c, http.StatusServiceUnavailable, "token issuer unavailable")
+			abort(gc, http.StatusServiceUnavailable, helpers.MsgIssuerUnavailable)
 			return
 		}
 		if err != nil {
 			v.log.Debug("token rejected", "err", err)
-			challenge(c, `error="invalid_token"`)
-			abort(c, http.StatusUnauthorized, "invalid token")
+			challenge(gc, `error="invalid_token"`)
+			abort(gc, http.StatusUnauthorized, helpers.MsgInvalidToken)
 			return
 		}
-		c.Set(claimsKey, claims)
-		c.Next()
+		gc.Set(claimsKey, claims)
+		gc.Next()
 	}
 }
 
@@ -52,39 +54,39 @@ func BearerToken(header string) (string, bool) {
 // must run after RequireAuth. People and machine clients are treated the
 // same: only the scope counts.
 func RequireScope(scope string) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		claims := ClaimsFrom(c)
+	return func(gc *gin.Context) {
+		claims := ClaimsFrom(gc)
 		if claims == nil {
-			challenge(c, "")
-			abort(c, http.StatusUnauthorized, "unauthenticated")
+			challenge(gc, "")
+			abort(gc, http.StatusUnauthorized, helpers.MsgUnauthenticated)
 			return
 		}
 		if !claims.HasScope(scope) {
-			challenge(c, `error="insufficient_scope", scope="`+scope+`"`)
-			abort(c, http.StatusForbidden, "token lacks scope "+scope)
+			challenge(gc, `error="insufficient_scope", scope="`+scope+`"`)
+			abort(gc, http.StatusForbidden, helpers.MsgLacksScope(scope))
 			return
 		}
-		c.Next()
+		gc.Next()
 	}
 }
 
 // challenge sets the RFC 6750 §3 WWW-Authenticate header, with optional
 // auth-params.
-func challenge(c *gin.Context, params string) {
-	v := "Bearer"
+func challenge(gc *gin.Context, params string) {
+	value := "Bearer"
 	if params != "" {
-		v += " " + params
+		value += " " + params
 	}
-	c.Header("WWW-Authenticate", v)
+	gc.Header("WWW-Authenticate", value)
 }
 
 // ClaimsFrom returns the verified claims, or nil if unauthenticated.
-func ClaimsFrom(c *gin.Context) *Claims {
-	v, ok := c.Get(claimsKey)
+func ClaimsFrom(gc *gin.Context) *Claims {
+	stored, ok := gc.Get(claimsKey)
 	if !ok {
 		return nil
 	}
-	claims, _ := v.(*Claims)
+	claims, _ := stored.(*Claims)
 	return claims
 }
 
@@ -102,13 +104,13 @@ type ErrorResponse struct {
 // abort ends the request with a JSON error whose code follows the status, so
 // clients can tell a failed authentication (401 unauthorized) from missing
 // permissions (403 forbidden) and an issuer outage (503 unavailable).
-func abort(c *gin.Context, status int, msg string) {
-	code := "unauthorized"
+func abort(gc *gin.Context, status int, msg string) {
+	code := helpers.ErrUnauthorized
 	switch status {
 	case http.StatusForbidden:
-		code = "forbidden"
+		code = helpers.ErrForbidden
 	case http.StatusServiceUnavailable:
-		code = "unavailable"
+		code = helpers.ErrUnavailable
 	}
-	c.AbortWithStatusJSON(status, ErrorResponse{Error: code, Message: msg})
+	gc.AbortWithStatusJSON(status, ErrorResponse{Error: code, Message: msg})
 }

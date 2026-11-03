@@ -1,8 +1,9 @@
 package helpers
 
 import (
-	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 type urlRule struct {
@@ -18,13 +19,12 @@ func TestHTTPURL(t *testing.T) {
 		"idp.example":                false,
 		"https://":                   false,
 	}
-	for raw, ok := range cases {
+	for raw, valid := range cases {
 		err := Check(urlRule{URL: raw})
-		if ok && err != nil {
-			t.Errorf("%q: unexpected error: %v", raw, err)
-		}
-		if !ok && (err == nil || !strings.Contains(err.Error(), "httpurl")) {
-			t.Errorf("%q: expected httpurl failure, got %v", raw, err)
+		if valid {
+			assert.NoError(t, err, "%q", raw)
+		} else {
+			assert.ErrorContains(t, err, "httpurl", "%q: expected httpurl failure", raw)
 		}
 	}
 }

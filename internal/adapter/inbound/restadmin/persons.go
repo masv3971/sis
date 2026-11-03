@@ -102,12 +102,12 @@ func (c *Client) ListPersons(gc *gin.Context) {
 //	@Failure		500		{object}	helpers.ErrorResponse	"Internal Server Error"
 //	@Router			/persons [post]
 func (c *Client) CreatePerson(gc *gin.Context) {
-	var p domain.Person
-	if err := helpers.BindJSON(gc, &p); err != nil {
+	var person domain.Person
+	if err := helpers.BindJSON(gc, &person); err != nil {
 		helpers.WriteError(gc, err)
 		return
 	}
-	created, err := c.commands.CreatePerson(gc.Request.Context(), p)
+	created, err := c.commands.CreatePerson(gc.Request.Context(), person)
 	if err != nil {
 		helpers.WriteError(gc, err)
 		return
@@ -131,12 +131,12 @@ func (c *Client) CreatePerson(gc *gin.Context) {
 //	@Failure		500	{object}	helpers.ErrorResponse	"Internal Server Error"
 //	@Router			/persons/{id} [get]
 func (c *Client) GetPerson(gc *gin.Context) {
-	p, err := c.catalog.Persons.GetPerson(gc.Request.Context(), gc.Param("id"))
+	person, err := c.catalog.Persons.GetPerson(gc.Request.Context(), gc.Param("id"))
 	if err != nil {
 		helpers.WriteError(gc, err)
 		return
 	}
-	gc.JSON(http.StatusOK, p)
+	gc.JSON(http.StatusOK, person)
 }
 
 // UpdatePerson replaces a person; the path id is authoritative over the body.
@@ -160,12 +160,12 @@ func (c *Client) GetPerson(gc *gin.Context) {
 //	@Failure		500		{object}	helpers.ErrorResponse	"Internal Server Error"
 //	@Router			/persons/{id} [put]
 func (c *Client) UpdatePerson(gc *gin.Context) {
-	var p domain.Person
-	if err := helpers.BindJSON(gc, &p); err != nil {
+	var person domain.Person
+	if err := helpers.BindJSON(gc, &person); err != nil {
 		helpers.WriteError(gc, err)
 		return
 	}
-	updated, err := c.commands.UpdatePerson(gc.Request.Context(), gc.Param("id"), p)
+	updated, err := c.commands.UpdatePerson(gc.Request.Context(), gc.Param("id"), person)
 	if err != nil {
 		helpers.WriteError(gc, err)
 		return
@@ -201,6 +201,6 @@ func (c *Client) DeletePerson(gc *gin.Context) {
 // and is clamped to .max_limit, so a caller can never request an unbounded
 // page. A non-empty sort or filter is rejected (400): neither is implemented.
 func (c *Client) listParams(gc *gin.Context) (port.ListParams, error) {
-	rc := c.cfg.SIS.Adapter.Inbound.RestAdmin
-	return helpers.ParseLimitOffset(gc, rc.DefaultLimit, rc.MaxLimit)
+	restadminCfg := c.cfg.SIS.Adapter.Inbound.RestAdmin
+	return helpers.ParseLimitOffset(gc, restadminCfg.DefaultLimit, restadminCfg.MaxLimit)
 }

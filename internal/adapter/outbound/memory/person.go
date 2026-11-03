@@ -179,14 +179,14 @@ func (r *PersonRepository) GetBySourcedID(_ context.Context, sourcedID string) (
 	return clonePerson(p), nil
 }
 
-// GetBySourcedIDs returns the live persons whose sourcedId is in sids.
-func (r *PersonRepository) GetBySourcedIDs(_ context.Context, sids []string) ([]domain.Person, error) {
+// GetBySourcedIDs returns the live persons whose sourcedId is in sourcedIDs.
+func (r *PersonRepository) GetBySourcedIDs(_ context.Context, sourcedIDs []string) ([]domain.Person, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	now := r.now()
-	items := make([]domain.Person, 0, len(sids))
-	for _, sid := range sids {
-		id, ok := r.sourcedOwner(sid)
+	items := make([]domain.Person, 0, len(sourcedIDs))
+	for _, sourcedID := range sourcedIDs {
+		id, ok := r.sourcedOwner(sourcedID)
 		if !ok {
 			continue
 		}

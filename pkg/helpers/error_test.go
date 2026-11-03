@@ -1,13 +1,19 @@
 package helpers
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/SUNET/sis/internal/core/domain"
 )
@@ -25,6 +31,8 @@ func TestWriteErrorRecordsRedactedCause(t *testing.T) {
 	}{
 		{"unclassified", errors.New("pg: connection refused"), http.StatusInternalServerError, true},
 		{"not found", domain.ErrNotFound, http.StatusNotFound, false},
+		{"deadline", fmt.Errorf("query: %w", context.DeadlineExceeded), http.StatusServiceUnavailable, false},
+		{"canceled", fmt.Errorf("query: %w", context.Canceled), http.StatusServiceUnavailable, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -32,16 +40,10 @@ func TestWriteErrorRecordsRedactedCause(t *testing.T) {
 			gc, _ := gin.CreateTestContext(w)
 			WriteError(gc, tc.err)
 
-			if w.Code != tc.wantStatus {
-				t.Fatalf("status = %d, want %d", w.Code, tc.wantStatus)
-			}
-			if strings.Contains(w.Body.String(), "connection refused") {
-				t.Fatalf("internal detail leaked to client: %s", w.Body)
-			}
+			require.Equal(t, tc.wantStatus, w.Code, "status")
+			require.NotContains(t, w.Body.String(), "connection refused", "internal detail leaked to client")
 			logged := len(gc.Errors) == 1 && errors.Is(gc.Errors[0].Err, tc.err)
-			if logged != tc.wantLogged {
-				t.Fatalf("recorded on context = %v, want %v (errors=%v)", logged, tc.wantLogged, gc.Errors)
-			}
+			assert.Equal(t, tc.wantLogged, logged, "recorded on context (errors=%v)", gc.Errors)
 		})
 	}
 }
@@ -76,23 +78,67 @@ func TestBindJSONRequiresSingleValue(t *testing.T) {
 			gc.Request = httptest.NewRequest(http.MethodPost, "/", strings.NewReader(tc.body))
 			gc.Request.Body = http.MaxBytesReader(w, gc.Request.Body, limit)
 
-			var p payload
-			err := BindJSON(gc, &p)
+			var bound payload
+			err := BindJSON(gc, &bound)
 			if tc.wantStatus == 0 {
-				if err != nil {
-					t.Fatalf("BindJSON: %v", err)
-				}
-				if p.Name != "a" {
-					t.Fatalf("name = %q, want a", p.Name)
-				}
+				require.NoError(t, err, "BindJSON")
+				assert.Equal(t, "a", bound.Name)
 				return
 			}
-			if err == nil {
-				t.Fatal("expected an error")
-			}
-			if got := NewErrorFromError(err).Status(); got != tc.wantStatus {
-				t.Fatalf("status = %d, want %d (err=%v)", got, tc.wantStatus, err)
-			}
+			require.Error(t, err)
+			assert.Equal(t, tc.wantStatus, NewErrorFromError(err).Status(), "status (err=%v)", err)
 		})
 	}
+}
+
+// slowDeadlineWriter is a response writer whose SetReadDeadline takes a
+// while, so a BindJSON that returns before its cancellation callback ends is
+// caught.
+type slowDeadlineWriter struct {
+	*httptest.ResponseRecorder
+	done atomic.Bool
+}
+
+func (w *slowDeadlineWriter) SetReadDeadline(time.Time) error {
+	time.Sleep(50 * time.Millisecond)
+	w.done.Store(true)
+	return nil
+}
+
+// TestBindJSONWaitsForCancelCallback checks BindJSON does not return while
+// its read-deadline callback is still running: gin reuses the context and
+// writer once the handler returns, so a late callback would race with the
+// next request.
+func TestBindJSONWaitsForCancelCallback(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := &slowDeadlineWriter{ResponseRecorder: httptest.NewRecorder()}
+	gc, _ := gin.CreateTestContext(w)
+	ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+	defer cancel()
+	gc.Request = httptest.NewRequestWithContext(ctx, http.MethodPost, "/", strings.NewReader(`{"name":"a"}`))
+
+	var bound struct{ Name string }
+	err := BindJSON(gc, &bound)
+
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.True(t, w.done.Load(), "BindJSON returned before its callback finished")
+}
+
+// TestBindJSONCanceled checks a request cancelled while the body was read
+// (server shutdown or client gone) is a retryable 503, not a 400 that tells
+// the client its request was wrong.
+func TestBindJSONCanceled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	gc, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	gc.Request = httptest.NewRequestWithContext(ctx, http.MethodPost, "/", strings.NewReader(`{"name":"a"}`))
+
+	var bound struct{ Name string }
+	err := BindJSON(gc, &bound)
+
+	require.ErrorIs(t, err, context.Canceled)
+	apiErr := NewErrorFromError(err)
+	assert.False(t, apiErr.IsUnclassified(), "unclassified (err=%v)", err)
+	assert.Equal(t, http.StatusServiceUnavailable, apiErr.Status())
 }

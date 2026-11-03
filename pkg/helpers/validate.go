@@ -34,12 +34,12 @@ func NewValidator() (*validator.Validate, error) {
 
 	// httpurl - a URL with an http or https scheme and a host.
 	if err := validate.RegisterValidation("httpurl", func(fl validator.FieldLevel) bool {
-		u, ok := parseURL(fl.Field().String())
+		parsed, ok := parseURL(fl.Field().String())
 		if !ok {
 			return false
 		}
-		scheme := strings.ToLower(u.Scheme)
-		return (scheme == "http" || scheme == "https") && u.Host != ""
+		scheme := strings.ToLower(parsed.Scheme)
+		return (scheme == "http" || scheme == "https") && parsed.Host != ""
 	}); err != nil {
 		return nil, err
 	}
@@ -49,13 +49,13 @@ func NewValidator() (*validator.Validate, error) {
 	// deployment's own config, where an in-cluster host on a private address is
 	// normal, and resolving at startup would make validation depend on DNS.
 	if err := validate.RegisterValidation("https_endpoint", func(fl validator.FieldLevel) bool {
-		u, ok := parseURL(fl.Field().String())
+		parsed, ok := parseURL(fl.Field().String())
 		if !ok {
 			return false
 		}
 		// Hostname(), not Host: Host keeps the port, so "https://:443/x" has a
 		// non-empty Host and no host at all.
-		return strings.EqualFold(u.Scheme, "https") && u.Hostname() != ""
+		return strings.EqualFold(parsed.Scheme, "https") && parsed.Hostname() != ""
 	}); err != nil {
 		return nil, err
 	}
@@ -63,11 +63,11 @@ func NewValidator() (*validator.Validate, error) {
 	// safe_uri - a URI fetched server-side, with SSRF prevention: blocks
 	// localhost, loopback, link-local and private IPs. No fragment allowed.
 	if err := validate.RegisterValidation("safe_uri", func(fl validator.FieldLevel) bool {
-		u, ok := parseURL(fl.Field().String())
-		if !ok || u.Scheme == "" || u.Fragment != "" {
+		parsed, ok := parseURL(fl.Field().String())
+		if !ok || parsed.Scheme == "" || parsed.Fragment != "" {
 			return false
 		}
-		host := u.Hostname()
+		host := parsed.Hostname()
 		if host == "" || strings.EqualFold(host, "localhost") {
 			return false
 		}
@@ -96,8 +96,8 @@ func Check(s any) error {
 		return err
 	}
 	if err := validate.Struct(s); err != nil {
-		if verrs, ok := errors.AsType[validator.ValidationErrors](err); ok {
-			return fmt.Errorf("validation failed: %s", formatValidationErrors(verrs))
+		if validationErrs, ok := errors.AsType[validator.ValidationErrors](err); ok {
+			return fmt.Errorf("validation failed: %s", formatValidationErrors(validationErrs))
 		}
 		return err
 	}
@@ -108,21 +108,21 @@ func parseURL(raw string) (*url.URL, bool) {
 	if raw == "" {
 		return nil, false
 	}
-	u, err := url.Parse(raw)
+	parsed, err := url.Parse(raw)
 	if err != nil {
 		return nil, false
 	}
-	return u, true
+	return parsed, true
 }
 
-func formatValidationErrors(verrs validator.ValidationErrors) string {
-	parts := make([]string, 0, len(verrs))
-	for _, e := range verrs {
-		if e.Param() != "" {
-			parts = append(parts, fmt.Sprintf("%s failed %q (%s)", e.Namespace(), e.Tag(), e.Param()))
+func formatValidationErrors(validationErrs validator.ValidationErrors) string {
+	parts := make([]string, 0, len(validationErrs))
+	for _, fieldErr := range validationErrs {
+		if fieldErr.Param() != "" {
+			parts = append(parts, fmt.Sprintf("%s failed %q (%s)", fieldErr.Namespace(), fieldErr.Tag(), fieldErr.Param()))
 			continue
 		}
-		parts = append(parts, fmt.Sprintf("%s failed %q", e.Namespace(), e.Tag()))
+		parts = append(parts, fmt.Sprintf("%s failed %q", fieldErr.Namespace(), fieldErr.Tag()))
 	}
 	return strings.Join(parts, "; ")
 }

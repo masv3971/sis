@@ -30,14 +30,14 @@ type Log struct {
 // name and attrs are applied to a fresh logger off the base handler, so a child
 // never inherits a duplicate "logger" attribute from its parent.
 func build(handler slog.Handler, name string, attrs []any) *Log {
-	lg := slog.New(handler)
+	slogger := slog.New(handler)
 	if name != "" {
-		lg = lg.With(nameKey, name)
+		slogger = slogger.With(nameKey, name)
 	}
 	if len(attrs) > 0 {
-		lg = lg.With(attrs...)
+		slogger = slogger.With(attrs...)
 	}
-	return &Log{Logger: lg, handler: handler, name: name, attrs: attrs}
+	return &Log{Logger: slogger, handler: handler, name: name, attrs: attrs}
 }
 
 // New creates a root logger named name, writing to stdout. json selects a JSON
@@ -52,22 +52,22 @@ func New(name string, json bool, level string) *Log {
 // NewWithWriter is New with an explicit destination, useful in tests.
 func NewWithWriter(name string, json bool, level string, w io.Writer) *Log {
 	opts := &slog.HandlerOptions{Level: parseLevel(level)}
-	var h slog.Handler
+	var handler slog.Handler
 	if json {
-		h = slog.NewJSONHandler(w, opts)
+		handler = slog.NewJSONHandler(w, opts)
 	} else {
-		h = slog.NewTextHandler(w, opts)
+		handler = slog.NewTextHandler(w, opts)
 	}
-	return build(h, name, nil)
+	return build(handler, name, nil)
 }
 
 // parseLevel maps a config level string onto slog.Level, defaulting to info.
 func parseLevel(level string) slog.Level {
-	var l slog.Level
-	if err := l.UnmarshalText([]byte(level)); err != nil {
+	var parsedLevel slog.Level
+	if err := parsedLevel.UnmarshalText([]byte(level)); err != nil {
 		return slog.LevelInfo
 	}
-	return l
+	return parsedLevel
 }
 
 // NewSimple wraps the default slog logger under name, for quick or standalone use.

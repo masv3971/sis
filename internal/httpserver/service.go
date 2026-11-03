@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
@@ -73,24 +74,24 @@ func (s *Service) Addr() net.Addr { return s.addr }
 func New(ctx context.Context, cfg *model.Cfg, verifier *auth.Verifier, catalog *readmodel.Client, commands *command.Client, log *logger.Log) (*Service, error) {
 	// Inbound handler clients. Each New returns (*Client, error) and the
 	// handlers are methods on the returned Client, so routes read as
-	// `engine.GET(path, authH.Config)` rather than passing deps per route.
-	authH, err := authapi.New(ctx, cfg)
+	// `engine.GET(path, authAPI.Config)` rather than passing deps per route.
+	authAPI, err := authapi.New(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
-	adminH, err := restadmin.New(ctx, cfg, catalog, commands, log)
+	restAdmin, err := restadmin.New(ctx, cfg, catalog, commands, log)
 	if err != nil {
 		return nil, err
 	}
-	oeH, err := oeapi.New(ctx, cfg, catalog, log)
+	oeAPI, err := oeapi.New(ctx, cfg, catalog, log)
 	if err != nil {
 		return nil, err
 	}
-	eduH, err := eduapi.New(ctx, cfg, catalog, log)
+	eduAPI, err := eduapi.New(ctx, cfg, catalog, log)
 	if err != nil {
 		return nil, err
 	}
-	convH, err := convertapi.New(ctx, cfg, commands, log)
+	convertAPI, err := convertapi.New(ctx, cfg, commands, log)
 	if err != nil {
 		return nil, err
 	}
@@ -115,18 +116,23 @@ func New(ctx context.Context, cfg *model.Cfg, verifier *auth.Verifier, catalog *
 		docTimeout = cfg.SIS.HTTPServer.WriteTimeout
 	}
 	reqLog := log.New("request")
-	engine.Use(requestLogger(reqLog), gin.Recovery(), securityHeaders(cfg.SIS.HTTPServer.TLS.Enabled()), bodyLimit(maxBodyBytes, map[string]int64{
-		parsePath:    docLimit,
-		populatePath: docLimit,
-	}))
-	docDeadline := writeDeadline(docTimeout, reqLog)
+	engine.Use(requestLogger(reqLog), gin.Recovery(), securityHeaders(cfg.SIS.HTTPServer.TLS.Enabled()),
+		bodyLimit(maxBodyBytes, map[string]int64{
+			parsePath:    docLimit,
+			populatePath: docLimit,
+		}),
+		requestTimeout(cfg.SIS.HTTPServer.WriteTimeout, map[string]time.Duration{
+			parsePath:    docTimeout,
+			populatePath: docTimeout,
+		}, responseGrace, reqLog),
+	)
 
 	engine.GET("/healthz", func(gc *gin.Context) {
 		gc.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
 	// Public: where the web UI signs in. SIS issues no tokens.
-	engine.GET("/auth/config", authH.Config)
+	engine.GET("/auth/config", authAPI.Config)
 
 	// Every API needs a token from a trusted issuer; reads need scope
 	// sis.read and writes sis.write, whoever holds the token.
@@ -136,85 +142,85 @@ func New(ctx context.Context, cfg *model.Cfg, verifier *auth.Verifier, catalog *
 	}
 	requireAuth := verifier.RequireAuth()
 	api := engine.Group("/api/v1", requireAuth)
-	api.GET("/persons", guards.Read, adminH.ListPersons)
-	api.POST("/persons", guards.Write, adminH.CreatePerson)
-	api.GET("/persons/:id", guards.Read, adminH.GetPerson)
-	api.PUT("/persons/:id", guards.Write, adminH.UpdatePerson)
-	api.DELETE("/persons/:id", guards.Write, adminH.DeletePerson)
-	registerResource(api, guards, "organizations", adminH, catalog.Organizations)
-	registerResource(api, guards, "academic-sessions", adminH, catalog.AcademicSessions)
-	registerResource(api, guards, "courses", adminH, catalog.Courses)
-	registerResource(api, guards, "offerings", adminH, catalog.Offerings)
-	registerResource(api, guards, "enrollments", adminH, catalog.Enrollments)
-	registerResource(api, guards, "programs", adminH, catalog.Programs)
-	registerResource(api, guards, "results", adminH, catalog.Results)
+	api.GET("/persons", guards.Read, restAdmin.ListPersons)
+	api.POST("/persons", guards.Write, restAdmin.CreatePerson)
+	api.GET("/persons/:id", guards.Read, restAdmin.GetPerson)
+	api.PUT("/persons/:id", guards.Write, restAdmin.UpdatePerson)
+	api.DELETE("/persons/:id", guards.Write, restAdmin.DeletePerson)
+	registerResource(api, guards, "organizations", restAdmin, catalog.Organizations)
+	registerResource(api, guards, "academic-sessions", restAdmin, catalog.AcademicSessions)
+	registerResource(api, guards, "courses", restAdmin, catalog.Courses)
+	registerResource(api, guards, "offerings", restAdmin, catalog.Offerings)
+	registerResource(api, guards, "enrollments", restAdmin, catalog.Enrollments)
+	registerResource(api, guards, "programs", restAdmin, catalog.Programs)
+	registerResource(api, guards, "results", restAdmin, catalog.Results)
 
 	// Document conversion: parse is pure (read guard), populate stores.
-	api.POST("/parse", docDeadline, guards.Read, convH.Parse)
-	api.POST("/populate", docDeadline, guards.Write, convH.Populate)
+	api.POST("/parse", guards.Read, convertAPI.Parse)
+	api.POST("/populate", guards.Write, convertAPI.Populate)
 
 	// Open Education API v6.0 read provider, behind the read scope.
 	oe := engine.Group("/oeapi", requireAuth, guards.Read)
-	oe.GET("/persons", oeH.ListPersons)
-	oe.GET("/persons/:id", oeH.GetPerson)
-	oe.GET("/organizations", oeapi.List(oeH, catalog.Organizations, oedto.FromOrganization))
-	oe.GET("/organizations/:id", oeapi.Get(oeH, catalog.Organizations, oedto.FromOrganization))
-	oe.GET("/academic-sessions", oeapi.List(oeH, catalog.AcademicSessions, oedto.FromAcademicSession))
-	oe.GET("/academic-sessions/:id", oeapi.Get(oeH, catalog.AcademicSessions, oedto.FromAcademicSession))
-	oe.GET("/courses", oeapi.List(oeH, catalog.Courses, oedto.FromCourse))
-	oe.GET("/courses/:id", oeapi.Get(oeH, catalog.Courses, oedto.FromCourse))
-	oe.GET("/offerings", oeapi.List(oeH, catalog.Offerings, oedto.FromOffering))
-	oe.GET("/offerings/:id", oeapi.Get(oeH, catalog.Offerings, oedto.FromOffering))
-	oe.GET("/associations", oeapi.List(oeH, catalog.Enrollments, oedto.FromAssociation))
-	oe.GET("/associations/:id", oeapi.Get(oeH, catalog.Enrollments, oedto.FromAssociation))
-	oe.GET("/programs", oeapi.List(oeH, catalog.Programs, oedto.FromProgram))
-	oe.GET("/programs/:id", oeapi.Get(oeH, catalog.Programs, oedto.FromProgram))
-	oe.GET("/results", oeapi.List(oeH, catalog.Results, oedto.FromResult))
-	oe.GET("/results/:id", oeapi.Get(oeH, catalog.Results, oedto.FromResult))
+	oe.GET("/persons", oeAPI.ListPersons)
+	oe.GET("/persons/:id", oeAPI.GetPerson)
+	oe.GET("/organizations", oeapi.List(oeAPI, catalog.Organizations, oedto.FromOrganization))
+	oe.GET("/organizations/:id", oeapi.Get(oeAPI, catalog.Organizations, oedto.FromOrganization))
+	oe.GET("/academic-sessions", oeapi.List(oeAPI, catalog.AcademicSessions, oedto.FromAcademicSession))
+	oe.GET("/academic-sessions/:id", oeapi.Get(oeAPI, catalog.AcademicSessions, oedto.FromAcademicSession))
+	oe.GET("/courses", oeapi.List(oeAPI, catalog.Courses, oedto.FromCourse))
+	oe.GET("/courses/:id", oeapi.Get(oeAPI, catalog.Courses, oedto.FromCourse))
+	oe.GET("/offerings", oeapi.List(oeAPI, catalog.Offerings, oedto.FromOffering))
+	oe.GET("/offerings/:id", oeapi.Get(oeAPI, catalog.Offerings, oedto.FromOffering))
+	oe.GET("/associations", oeapi.List(oeAPI, catalog.Enrollments, oedto.FromAssociation))
+	oe.GET("/associations/:id", oeapi.Get(oeAPI, catalog.Enrollments, oedto.FromAssociation))
+	oe.GET("/programs", oeapi.List(oeAPI, catalog.Programs, oedto.FromProgram))
+	oe.GET("/programs/:id", oeapi.Get(oeAPI, catalog.Programs, oedto.FromProgram))
+	oe.GET("/results", oeapi.List(oeAPI, catalog.Results, oedto.FromResult))
+	oe.GET("/results/:id", oeapi.Get(oeAPI, catalog.Results, oedto.FromResult))
 
 	// Edu-API v1.0 read provider, behind the read scope.
 	edu := engine.Group("/eduapi", requireAuth, guards.Read)
-	edu.GET("/persons", eduH.ListPersons)
-	edu.GET("/persons/:id", eduH.GetPerson)
-	edu.GET("/orgs", eduapi.List(eduH, catalog.Organizations, "orgs", edudto.FromOrg))
-	edu.GET("/orgs/:id", eduapi.Get(eduH, catalog.Organizations, "org", edudto.FromOrg))
-	edu.GET("/academicSessions", eduapi.List(eduH, catalog.AcademicSessions, "academicSessions", edudto.FromAcademicSession))
-	edu.GET("/academicSessions/:id", eduapi.Get(eduH, catalog.AcademicSessions, "academicSession", edudto.FromAcademicSession))
-	edu.GET("/courses", eduapi.List(eduH, catalog.Courses, "courses", edudto.FromCourse))
-	edu.GET("/courses/:id", eduapi.Get(eduH, catalog.Courses, "course", edudto.FromCourse))
-	edu.GET("/classes", eduapi.List(eduH, catalog.Offerings, "classes", edudto.FromClass))
-	edu.GET("/classes/:id", eduapi.Get(eduH, catalog.Offerings, "class", edudto.FromClass))
-	edu.GET("/enrollments", eduapi.List(eduH, catalog.Enrollments, "enrollments", edudto.FromEnrollment))
-	edu.GET("/enrollments/:id", eduapi.Get(eduH, catalog.Enrollments, "enrollment", edudto.FromEnrollment))
-	edu.GET("/programs", eduapi.List(eduH, catalog.Programs, "programs", edudto.FromProgram))
-	edu.GET("/programs/:id", eduapi.Get(eduH, catalog.Programs, "program", edudto.FromProgram))
-	edu.GET("/results", eduapi.List(eduH, catalog.Results, "results", edudto.FromResult))
-	edu.GET("/results/:id", eduapi.Get(eduH, catalog.Results, "result", edudto.FromResult))
+	edu.GET("/persons", eduAPI.ListPersons)
+	edu.GET("/persons/:id", eduAPI.GetPerson)
+	edu.GET("/orgs", eduapi.List(eduAPI, catalog.Organizations, "orgs", edudto.FromOrg))
+	edu.GET("/orgs/:id", eduapi.Get(eduAPI, catalog.Organizations, "org", edudto.FromOrg))
+	edu.GET("/academicSessions", eduapi.List(eduAPI, catalog.AcademicSessions, "academicSessions", edudto.FromAcademicSession))
+	edu.GET("/academicSessions/:id", eduapi.Get(eduAPI, catalog.AcademicSessions, "academicSession", edudto.FromAcademicSession))
+	edu.GET("/courses", eduapi.List(eduAPI, catalog.Courses, "courses", edudto.FromCourse))
+	edu.GET("/courses/:id", eduapi.Get(eduAPI, catalog.Courses, "course", edudto.FromCourse))
+	edu.GET("/classes", eduapi.List(eduAPI, catalog.Offerings, "classes", edudto.FromClass))
+	edu.GET("/classes/:id", eduapi.Get(eduAPI, catalog.Offerings, "class", edudto.FromClass))
+	edu.GET("/enrollments", eduapi.List(eduAPI, catalog.Enrollments, "enrollments", edudto.FromEnrollment))
+	edu.GET("/enrollments/:id", eduapi.Get(eduAPI, catalog.Enrollments, "enrollment", edudto.FromEnrollment))
+	edu.GET("/programs", eduapi.List(eduAPI, catalog.Programs, "programs", edudto.FromProgram))
+	edu.GET("/programs/:id", eduapi.Get(eduAPI, catalog.Programs, "program", edudto.FromProgram))
+	edu.GET("/results", eduapi.List(eduAPI, catalog.Results, "results", edudto.FromResult))
+	edu.GET("/results/:id", eduapi.Get(eduAPI, catalog.Results, "result", edudto.FromResult))
 
-	hc := cfg.SIS.HTTPServer
+	httpCfg := cfg.SIS.HTTPServer
 
 	// Swagger UI and the generated /api/v1 OpenAPI document (served at
 	// /swagger/doc.json). Public: the spec reveals nothing a client could not
 	// learn by probing, and every call made from the UI still needs a token.
-	if hc.Swagger.Enabled {
+	if httpCfg.Swagger.Enabled {
 		engine.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler, ginSwagger.PersistAuthorization(true)))
 	}
 
 	// Built React SPA, when configured. Empty root means API-only (the dev
 	// workflow runs `vite dev` on :5173 and proxies to this service).
-	if hc.Web.Root != "" {
-		if err := mountSPA(engine, hc.Web.Root, log.New("spa")); err != nil {
+	if httpCfg.Web.Root != "" {
+		if err := mountSPA(engine, httpCfg.Web.Root, log.New("spa")); err != nil {
 			return nil, err
 		}
 	}
 
-	return start(ctx, hc, engine, log)
+	return start(ctx, httpCfg, engine, log)
 }
 
 // start binds the listener and serves handler in the background. Every
 // request context derives from a base context owned by the Service, so Close
 // can abort in-flight handlers once the graceful drain deadline passes.
-func start(ctx context.Context, hc model.HTTPServer, handler http.Handler, log *logger.Log) (*Service, error) {
+func start(ctx context.Context, httpCfg model.HTTPServer, handler http.Handler, log *logger.Log) (*Service, error) {
 	// Detach from ctx's cancellation: the server outlives New's ctx and is
 	// stopped only by Close.
 	baseCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
@@ -222,17 +228,19 @@ func start(ctx context.Context, hc model.HTTPServer, handler http.Handler, log *
 		log:            log,
 		cancelRequests: cancel,
 		server: &http.Server{
-			Addr:         hc.Addr,
-			Handler:      handler,
-			ReadTimeout:  hc.ReadTimeout,
-			WriteTimeout: hc.WriteTimeout,
+			Addr:        httpCfg.Addr,
+			Handler:     handler,
+			ReadTimeout: httpCfg.ReadTimeout,
+			// requestTimeout sets each request's write deadline; this
+			// backstop matches it for the default timeout.
+			WriteTimeout: httpCfg.WriteTimeout + responseGrace,
 			BaseContext:  func(net.Listener) context.Context { return baseCtx },
 		},
 	}
 
 	// Load the certificate before binding, so a bad file fails startup.
-	if hc.TLS.Enabled() {
-		cert, err := tls.LoadX509KeyPair(hc.TLS.CertFile, hc.TLS.KeyFile)
+	if httpCfg.TLS.Enabled() {
+		cert, err := tls.LoadX509KeyPair(httpCfg.TLS.CertFile, httpCfg.TLS.KeyFile)
 		if err != nil {
 			cancel()
 			return nil, fmt.Errorf("load tls certificate: %w", err)
@@ -242,19 +250,19 @@ func start(ctx context.Context, hc model.HTTPServer, handler http.Handler, log *
 
 	// Bind synchronously so an invalid or busy address fails New (and thus
 	// startup) instead of only being logged from the serve goroutine.
-	ln, err := (&net.ListenConfig{}).Listen(ctx, "tcp", hc.Addr)
+	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", httpCfg.Addr)
 	if err != nil {
 		cancel()
-		return nil, fmt.Errorf("listen %s: %w", hc.Addr, err)
+		return nil, fmt.Errorf("listen %s: %w", httpCfg.Addr, err)
 	}
-	s.addr = ln.Addr()
+	s.addr = listener.Addr()
 	if s.server.TLSConfig != nil {
-		ln = tls.NewListener(ln, s.server.TLSConfig)
+		listener = tls.NewListener(listener, s.server.TLSConfig)
 	}
-	s.log.Info("sis listening", "addr", s.addr.String(), "tls", hc.TLS.Enabled())
+	s.log.Info("sis listening", "addr", s.addr.String(), "tls", httpCfg.TLS.Enabled())
 
 	go func() {
-		if err := s.server.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := s.server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			s.log.Error("http server error", "err", err)
 		}
 	}()
@@ -266,12 +274,12 @@ func start(ctx context.Context, hc model.HTTPServer, handler http.Handler, log *
 // guarding reads and writes with the supplied middleware. The generic resource
 // handlers in restadmin cannot be methods on *Client (Go forbids type
 // parameters on methods), so the Client is threaded through as the first arg.
-func registerResource[T any, PT domain.EntityPtr[T]](rg *gin.RouterGroup, g Guards, path string, h *restadmin.Client, svc *service.Resource[T, PT]) {
-	rg.GET("/"+path, g.Read, restadmin.ResourceList(h, svc))
-	rg.POST("/"+path, g.Write, restadmin.ResourceCreate(h, svc))
-	rg.GET("/"+path+"/:id", g.Read, restadmin.ResourceGet(h, svc))
-	rg.PUT("/"+path+"/:id", g.Write, restadmin.ResourceUpdate(h, svc))
-	rg.DELETE("/"+path+"/:id", g.Write, restadmin.ResourceDelete(h, svc))
+func registerResource[T any, PT domain.EntityPtr[T]](group *gin.RouterGroup, guards Guards, path string, admin *restadmin.Client, svc *service.Resource[T, PT]) {
+	group.GET("/"+path, guards.Read, restadmin.ResourceList(admin, svc))
+	group.POST("/"+path, guards.Write, restadmin.ResourceCreate(admin, svc))
+	group.GET("/"+path+"/:id", guards.Read, restadmin.ResourceGet(admin, svc))
+	group.PUT("/"+path+"/:id", guards.Write, restadmin.ResourceUpdate(admin, svc))
+	group.DELETE("/"+path+"/:id", guards.Write, restadmin.ResourceDelete(admin, svc))
 }
 
 // Close gracefully shuts down the HTTP server, waiting for in-flight requests

@@ -10,6 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/SUNET/sis/internal/adapter/outbound/memory"
 	"github.com/SUNET/sis/internal/core/domain"
 	"github.com/SUNET/sis/internal/core/service"
@@ -21,7 +24,7 @@ import (
 // test can jump past a ttl while the handler stamps expiries in real time.
 type skewClock struct{ skew atomic.Int64 }
 
-func (c *skewClock) now() time.Time { return time.Now().Add(time.Duration(c.skew.Load())) }
+func (clock *skewClock) now() time.Time { return time.Now().Add(time.Duration(clock.skew.Load())) }
 
 func memCatalog(clock func() time.Time, log *logger.Log) *readmodel.Client {
 	return &readmodel.Client{
@@ -50,37 +53,31 @@ func TestParseAndPopulate(t *testing.T) {
 	cfg.SIS.Adapter.Inbound.OEAPI.DefaultPageSize, cfg.SIS.Adapter.Inbound.OEAPI.MaxPageSize = 10, 10
 	cfg.SIS.Adapter.Inbound.EduAPI.DefaultLimit, cfg.SIS.Adapter.Inbound.EduAPI.MaxLimit = 10, 10
 	cfg.SIS.Adapter.Inbound.ConvertAPI.MaxBodyBytes = 64 << 10
-	s, iss := startWithIssuer(t, cfg, catalog)
+	srv, iss := startWithIssuer(t, cfg, catalog)
 	reader, writer := iss.Token(t, "svc", "sis.read"), iss.Token(t, "svc", "sis.read sis.write")
-	base := "http://" + s.Addr().String()
+	base := "http://" + srv.Addr().String()
 
-	do := func(t *testing.T, tok, method, path, body string, want int) map[string]any {
+	do := func(t *testing.T, token, method, path, body string, want int) map[string]any {
 		t.Helper()
 		var rd io.Reader
 		if body != "" {
 			rd = strings.NewReader(body)
 		}
 		req, _ := http.NewRequestWithContext(ctx, method, base+path, rd)
-		req.Header.Set("Authorization", "Bearer "+tok)
+		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatalf("%s %s: %v", method, path, err)
-		}
+		require.NoError(t, err, "%s %s", method, path)
 		defer resp.Body.Close()
 		raw, _ := io.ReadAll(resp.Body)
-		if resp.StatusCode != want {
-			t.Fatalf("%s %s: status %d, want %d; body=%s", method, path, resp.StatusCode, want, raw)
-		}
+		require.Equal(t, want, resp.StatusCode, "%s %s: body=%s", method, path, raw)
 		var out map[string]any
 		_ = json.Unmarshal(raw, &out)
 		return out
 	}
 
 	elm, err := os.ReadFile("../convert/testdata/edc_bsc.json")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	envelope := func(meta, extra string) string {
 		return `{"metadata":` + meta + extra + `,"data":` + string(elm) + `}`
 	}
@@ -91,12 +88,10 @@ func TestParseAndPopulate(t *testing.T) {
 			out := do(t, reader, http.MethodPost, "/api/v1/parse",
 				envelope(`{"input_format":"elm","output_format":"`+format+`"}`, ""), http.StatusOK)
 			data, _ := out["data"].(map[string]any)
-			if courses, _ := data["courses"].([]any); len(courses) != 1 {
-				t.Fatalf("%s: courses = %v", format, data["courses"])
-			}
-			if meta, _ := out["metadata"].(map[string]any); meta["output_format"] != format {
-				t.Fatalf("metadata not echoed: %v", out["metadata"])
-			}
+			courses, _ := data["courses"].([]any)
+			require.Len(t, courses, 1, "%s: courses", format)
+			meta, _ := out["metadata"].(map[string]any)
+			require.Equal(t, format, meta["output_format"], "metadata not echoed: %v", out["metadata"])
 		}
 		do(t, reader, http.MethodGet, course, "", http.StatusNotFound) // nothing stored
 	})
@@ -119,17 +114,15 @@ func TestParseAndPopulate(t *testing.T) {
 
 	t.Run("populate with ttl", func(t *testing.T) {
 		out := do(t, writer, http.MethodPost, "/api/v1/populate", envelope(`{"input_format":"elm"}`, `,"ttl":"1h"`), http.StatusOK)
-		if items, _ := out["items"].([]any); len(items) != 10 || out["expiresAt"] == nil {
-			t.Fatalf("populate reply = %v", out)
-		}
+		items, _ := out["items"].([]any)
+		require.Len(t, items, 10, "populate reply = %v", out)
+		require.NotNil(t, out["expiresAt"], "populate reply = %v", out)
 		got := do(t, reader, http.MethodGet, course, "", http.StatusOK)
-		if c, _ := got["course"].(map[string]any); c["courseCode"] != "BI101" {
-			t.Fatalf("course = %v", got)
-		}
+		gotCourse, _ := got["course"].(map[string]any)
+		require.Equal(t, "BI101", gotCourse["courseCode"], "course = %v", got)
 		res := do(t, reader, http.MethodGet, "/oeapi/results/urn:epass:learningAchievement:bi101", "", http.StatusOK)
-		if res["score"] != "A" || res["courseId"] != "urn:epass:learningAchievementSpec:bi101" {
-			t.Fatalf("oeapi result = %v", res)
-		}
+		assert.Equal(t, "A", res["score"], "oeapi result = %v", res)
+		assert.Equal(t, "urn:epass:learningAchievementSpec:bi101", res["courseId"], "oeapi result = %v", res)
 
 		clock.skew.Store(int64(2 * time.Hour))
 		do(t, reader, http.MethodGet, course, "", http.StatusNotFound)

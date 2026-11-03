@@ -26,7 +26,7 @@ import (
 type ref struct {
 	typ      string  // referenced entity type
 	field    string  // JSON field name, for validation errors
-	ptr      *string // the field itself
+	target   *string // the field itself
 	required bool    // the entity is meaningless without it (mirrors Validate)
 }
 
@@ -77,12 +77,12 @@ func (c *Client) CheckRefs(ctx context.Context, e domain.Entity) error {
 	if err != nil {
 		return err
 	}
-	for _, r := range refs {
-		if *r.ptr == "" {
+	for _, reference := range refs {
+		if *reference.target == "" {
 			continue
 		}
-		if _, ok := found[refKey{r.typ, *r.ptr}]; !ok {
-			return &domain.ValidationError{Field: r.field, Msg: "must be the id of an existing " + r.typ}
+		if _, ok := found[refKey{reference.typ, *reference.target}]; !ok {
+			return &domain.ValidationError{Field: reference.field, Msg: "must be the id of an existing " + reference.typ}
 		}
 	}
 	return nil
@@ -109,28 +109,28 @@ func (c *Client) CheckRefs(ctx context.Context, e domain.Entity) error {
 // one for the courses of referenced offerings), so a page costs at most six
 // lookups however many records it holds.
 func (c *Client) PublishRefs(ctx context.Context, entities ...domain.Entity) ([]bool, error) {
-	per := make([][]ref, len(entities))
+	refsByEntity := make([][]ref, len(entities))
 	var refs []ref
 	for i, e := range entities {
-		per[i] = refsOf(e)
-		refs = append(refs, per[i]...)
+		refsByEntity[i] = refsOf(e)
+		refs = append(refs, refsByEntity[i]...)
 	}
 	found, err := c.resolve(ctx, refs)
 	if err != nil {
 		return nil, err
 	}
 	publishable := make([]bool, len(entities))
-	for i, rs := range per {
+	for i, entityRefs := range refsByEntity {
 		publishable[i] = true
-		for _, r := range rs {
-			if *r.ptr == "" {
+		for _, reference := range entityRefs {
+			if *reference.target == "" {
 				continue
 			}
-			sid, ok := found[refKey{r.typ, *r.ptr}]
-			if !ok && r.required {
+			sourcedID, ok := found[refKey{reference.typ, *reference.target}]
+			if !ok && reference.required {
 				publishable[i] = false
 			}
-			*r.ptr = sid
+			*reference.target = sourcedID
 		}
 	}
 	return publishable, nil
@@ -141,22 +141,22 @@ func (c *Client) PublishRefs(ctx context.Context, entities ...domain.Entity) ([]
 func (c *Client) resolve(ctx context.Context, refs []ref) (map[refKey]string, error) {
 	byType := map[string][]string{}
 	seen := map[refKey]bool{}
-	for _, r := range refs {
-		k := refKey{r.typ, *r.ptr}
-		if k.id == "" || seen[k] {
+	for _, reference := range refs {
+		key := refKey{reference.typ, *reference.target}
+		if key.id == "" || seen[key] {
 			continue
 		}
-		seen[k] = true
-		byType[r.typ] = append(byType[r.typ], k.id)
+		seen[key] = true
+		byType[reference.typ] = append(byType[reference.typ], key.id)
 	}
 	found := make(map[refKey]string, len(seen))
 	for typ, ids := range byType {
-		sids, err := c.sourcedIDs(ctx, typ, ids)
+		sourcedIDs, err := c.sourcedIDs(ctx, typ, ids)
 		if err != nil {
 			return nil, err
 		}
-		for id, sid := range sids {
-			found[refKey{typ, id}] = sid
+		for id, sourcedID := range sourcedIDs {
+			found[refKey{typ, id}] = sourcedID
 		}
 	}
 	return found, nil
@@ -167,13 +167,13 @@ func (c *Client) resolve(ctx context.Context, refs []ref) (map[refKey]string, er
 func (c *Client) sourcedIDs(ctx context.Context, typ string, ids []string) (map[string]string, error) {
 	switch typ {
 	case "person":
-		ps, err := c.Persons.GetPersons(ctx, ids)
+		persons, err := c.Persons.GetPersons(ctx, ids)
 		if err != nil {
 			return nil, err
 		}
-		out := make(map[string]string, len(ps))
-		for _, p := range ps {
-			out[p.ID] = p.SourcedID
+		out := make(map[string]string, len(persons))
+		for _, person := range persons {
+			out[person.ID] = person.SourcedID
 		}
 		return out, nil
 	case "organization":
@@ -187,7 +187,7 @@ func (c *Client) sourcedIDs(ctx context.Context, typ string, ids []string) (map[
 	case "program":
 		return entitySourcedIDs(ctx, c.Programs, ids)
 	}
-	return nil, fmt.Errorf("readmodel: unknown reference type %q", typ)
+	return nil, errUnknownRefType(typ)
 }
 
 // offeringSourcedIDs is entitySourcedIDs for offerings, except that an
@@ -200,30 +200,36 @@ func (c *Client) offeringSourcedIDs(ctx context.Context, ids []string) (map[stri
 		return nil, err
 	}
 	courseIDs := make([]string, 0, len(offerings))
-	for _, o := range offerings {
-		courseIDs = append(courseIDs, o.CourseID)
+	for _, offering := range offerings {
+		courseIDs = append(courseIDs, offering.CourseID)
 	}
 	courses, err := entitySourcedIDs(ctx, c.Courses, courseIDs)
 	if err != nil {
 		return nil, err
 	}
 	out := make(map[string]string, len(offerings))
-	for _, o := range offerings {
-		if _, ok := courses[o.CourseID]; ok {
-			out[o.ID] = o.SourcedID
+	for _, offering := range offerings {
+		if _, ok := courses[offering.CourseID]; ok {
+			out[offering.ID] = offering.SourcedID
 		}
 	}
 	return out, nil
 }
 
 func entitySourcedIDs[T any, PT domain.EntityPtr[T]](ctx context.Context, svc *service.Resource[T, PT], ids []string) (map[string]string, error) {
-	es, err := svc.GetByIDs(ctx, ids)
+	records, err := svc.GetByIDs(ctx, ids)
 	if err != nil {
 		return nil, err
 	}
-	out := make(map[string]string, len(es))
-	for _, e := range es {
+	out := make(map[string]string, len(records))
+	for _, e := range records {
 		out[e.GetID()] = e.GetSourcedID()
 	}
 	return out, nil
+}
+
+// errUnknownRefType reports a reference type no lookup exists for: a
+// programming error (refsOf and the lookups disagree), not bad input.
+func errUnknownRefType(typ string) error {
+	return fmt.Errorf("readmodel: unknown reference type %q", typ)
 }

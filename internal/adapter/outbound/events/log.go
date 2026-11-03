@@ -28,11 +28,11 @@ func New(_ context.Context, _ *model.Cfg, log *logger.Log) (*Client, error) {
 }
 
 // Publish logs the event.
-func (c *Client) Publish(ctx context.Context, e domain.Event) error {
+func (c *Client) Publish(ctx context.Context, event domain.Event) error {
 	c.log.InfoContext(ctx, "domain event",
-		"type", e.Type,
-		"aggregateType", e.AggregateType,
-		"aggregateId", e.AggregateID,
+		"type", event.Type,
+		"aggregateType", event.AggregateType,
+		"aggregateId", event.AggregateID,
 	)
 	return nil
 }

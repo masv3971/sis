@@ -2,10 +2,11 @@ package memory
 
 import (
 	"context"
-	"errors"
-	"slices"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/SUNET/sis/internal/core/domain"
 	"github.com/SUNET/sis/internal/core/port"
@@ -21,82 +22,64 @@ func (c *clock) now() time.Time { return c.t }
 // is removed by DeleteExpired.
 func TestDocRepoExpiry(t *testing.T) {
 	ctx := t.Context()
-	c := &clock{t: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
-	r := NewDocRepo[domain.Course]().WithClock(c.now)
-	exp := c.t.Add(time.Hour)
-	mustNoErr(t, r.Create(ctx, &domain.Course{ID: "1", SourcedID: "a", ExpiresAt: &exp, Title: "A"}))
-	mustNoErr(t, r.Create(ctx, &domain.Course{ID: "2", SourcedID: "b", Title: "B"}))
+	clk := &clock{t: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
+	repo := NewDocRepo[domain.Course]().WithClock(clk.now)
+	exp := clk.t.Add(time.Hour)
+	require.NoError(t, repo.Create(ctx, &domain.Course{ID: "1", SourcedID: "a", ExpiresAt: &exp, Title: "A"}))
+	require.NoError(t, repo.Create(ctx, &domain.Course{ID: "2", SourcedID: "b", Title: "B"}))
 
-	if _, err := r.GetBySourcedID(ctx, "a"); err != nil {
-		t.Fatalf("live record must be readable: %v", err)
-	}
+	_, err := repo.GetBySourcedID(ctx, "a")
+	require.NoError(t, err, "live record must be readable")
 
-	c.t = exp // inclusive boundary
-	assertGone(ctx, t, r, "1", "a")
-	page, err := r.List(ctx, port.ListParams{})
-	mustNoErr(t, err)
-	if page.Total != 1 || page.Items[0].GetID() != "2" {
-		t.Fatalf("List must skip expired: %+v", page)
-	}
-	if err := r.Update(ctx, &domain.Course{ID: "1", SourcedID: "a", Title: "x"}, &exp); !errors.Is(err, domain.ErrNotFound) {
-		t.Fatalf("Update of expired: %v", err)
-	}
-	if err := r.Delete(ctx, "1"); !errors.Is(err, domain.ErrNotFound) {
-		t.Fatalf("Delete of expired: %v", err)
-	}
+	clk.t = exp // inclusive boundary
+	assertGone(ctx, t, repo, "1", "a")
+	page, err := repo.List(ctx, port.ListParams{})
+	require.NoError(t, err)
+	require.Equal(t, 1, page.Total, "List must skip expired")
+	require.NotEmpty(t, page.Items, "List must skip expired")
+	assert.Equal(t, "2", page.Items[0].GetID(), "List must skip expired")
+	assert.ErrorIs(t, repo.Update(ctx, &domain.Course{ID: "1", SourcedID: "a", Title: "x"}, &exp), domain.ErrNotFound, "Update of expired")
+	assert.ErrorIs(t, repo.Delete(ctx, "1"), domain.ErrNotFound, "Delete of expired")
 
 	// A new record may take the expired one's sourcedId.
-	mustNoErr(t, r.Create(ctx, &domain.Course{ID: "3", SourcedID: "a", Title: "A2"}))
-	got, err := r.GetBySourcedID(ctx, "a")
-	if err != nil || got.GetID() != "3" {
-		t.Fatalf("replacement not found: %+v %v", got, err)
-	}
-	if _, ok := r.byID["1"]; ok {
-		t.Fatal("expired record must be dropped when its sourcedId is reused")
-	}
+	require.NoError(t, repo.Create(ctx, &domain.Course{ID: "3", SourcedID: "a", Title: "A2"}))
+	got, err := repo.GetBySourcedID(ctx, "a")
+	require.NoError(t, err, "replacement not found")
+	assert.Equal(t, "3", got.GetID(), "replacement not found")
+	assert.NotContains(t, repo.byID, "1", "expired record must be dropped when its sourcedId is reused")
 
 	// DeleteExpired reports exactly the expired ids.
-	exp2 := c.t.Add(time.Minute)
-	mustNoErr(t, r.Create(ctx, &domain.Course{ID: "4", SourcedID: "d", ExpiresAt: &exp2, Title: "D"}))
-	ids, err := r.DeleteExpired(ctx, exp2)
-	mustNoErr(t, err)
-	if !slices.Equal(ids, []string{"4"}) {
-		t.Fatalf("DeleteExpired = %v", ids)
-	}
-	if _, ok := r.sourcedToID["d"]; ok {
-		t.Fatal("sourcedId index must be cleaned")
-	}
+	exp2 := clk.t.Add(time.Minute)
+	require.NoError(t, repo.Create(ctx, &domain.Course{ID: "4", SourcedID: "d", ExpiresAt: &exp2, Title: "D"}))
+	ids, err := repo.DeleteExpired(ctx, exp2)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"4"}, ids, "DeleteExpired")
+	assert.NotContains(t, repo.sourcedToID, "d", "sourcedId index must be cleaned")
 }
 
 func TestPersonRepoExpiry(t *testing.T) {
 	ctx := t.Context()
-	c := &clock{t: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
-	r := NewPersonRepository().WithClock(c.now)
-	mustNoErr(t, r.Create(ctx, domain.Person{ID: "1", SourcedID: "a", ExpiresAt: new(c.t.Add(time.Hour))}))
-	mustNoErr(t, r.Create(ctx, domain.Person{ID: "2", SourcedID: "b"}))
+	clk := &clock{t: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
+	repo := NewPersonRepository().WithClock(clk.now)
+	require.NoError(t, repo.Create(ctx, domain.Person{ID: "1", SourcedID: "a", ExpiresAt: new(clk.t.Add(time.Hour))}))
+	require.NoError(t, repo.Create(ctx, domain.Person{ID: "2", SourcedID: "b"}))
 
-	c.t = c.t.Add(2 * time.Hour)
-	if _, err := r.Get(ctx, "1"); !errors.Is(err, domain.ErrNotFound) {
-		t.Fatalf("Get expired: %v", err)
-	}
-	if _, err := r.GetBySourcedID(ctx, "a"); !errors.Is(err, domain.ErrNotFound) {
-		t.Fatalf("GetBySourcedID expired: %v", err)
-	}
-	if ps, _ := r.GetByIDs(ctx, []string{"1", "2"}); len(ps) != 1 {
-		t.Fatalf("GetByIDs must skip expired: %v", ps)
-	}
-	if page, _ := r.List(ctx, port.ListParams{}); page.Total != 1 {
-		t.Fatalf("List must skip expired: %+v", page)
-	}
-	mustNoErr(t, r.Create(ctx, domain.Person{ID: "3", SourcedID: "a"}))
-	if got, err := r.GetBySourcedID(ctx, "a"); err != nil || got.ID != "3" {
-		t.Fatalf("replacement: %+v %v", got, err)
-	}
-	ids, err := r.DeleteExpired(ctx, c.t)
-	mustNoErr(t, err)
-	if len(ids) != 0 {
-		t.Fatalf("expired record was already replaced, got %v", ids)
-	}
+	clk.t = clk.t.Add(2 * time.Hour)
+	_, err := repo.Get(ctx, "1")
+	assert.ErrorIs(t, err, domain.ErrNotFound, "Get expired")
+	_, err = repo.GetBySourcedID(ctx, "a")
+	assert.ErrorIs(t, err, domain.ErrNotFound, "GetBySourcedID expired")
+	persons, _ := repo.GetByIDs(ctx, []string{"1", "2"})
+	assert.Len(t, persons, 1, "GetByIDs must skip expired")
+	page, _ := repo.List(ctx, port.ListParams{})
+	assert.Equal(t, 1, page.Total, "List must skip expired")
+	require.NoError(t, repo.Create(ctx, domain.Person{ID: "3", SourcedID: "a"}))
+	got, err := repo.GetBySourcedID(ctx, "a")
+	require.NoError(t, err, "replacement")
+	assert.Equal(t, "3", got.ID, "replacement")
+	ids, err := repo.DeleteExpired(ctx, clk.t)
+	require.NoError(t, err)
+	assert.Empty(t, ids, "expired record was already replaced")
 }
 
 // TestDocRepoCopiesExpiry checks Create and Update store a copy of the
@@ -104,26 +87,23 @@ func TestPersonRepoExpiry(t *testing.T) {
 // visibility or sweeper eligibility without a repository write.
 func TestDocRepoCopiesExpiry(t *testing.T) {
 	ctx := t.Context()
-	c := &clock{t: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
-	r := NewDocRepo[domain.Course]().WithClock(c.now)
-	later := c.t.Add(time.Hour)
+	clk := &clock{t: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
+	repo := NewDocRepo[domain.Course]().WithClock(clk.now)
+	later := clk.t.Add(time.Hour)
 
 	exp := later
-	mustNoErr(t, r.Create(ctx, &domain.Course{ID: "1", SourcedID: "a", ExpiresAt: &exp, Title: "A"}))
-	exp = c.t // would make it expired now if aliased
-	if _, err := r.Get(ctx, "1"); err != nil {
-		t.Fatalf("after mutating Create expiry: %v", err)
-	}
+	require.NoError(t, repo.Create(ctx, &domain.Course{ID: "1", SourcedID: "a", ExpiresAt: &exp, Title: "A"}))
+	exp = clk.t // would make it expired now if aliased
+	_, err := repo.Get(ctx, "1")
+	require.NoError(t, err, "after mutating Create expiry")
 
 	upd := later.Add(time.Hour)
-	mustNoErr(t, r.Update(ctx, &domain.Course{ID: "1", SourcedID: "a", ExpiresAt: &upd, Title: "A"}, &later))
-	upd = c.t
-	if _, err := r.Get(ctx, "1"); err != nil {
-		t.Fatalf("after mutating Update expiry: %v", err)
-	}
-	if ids, _ := r.DeleteExpired(ctx, c.t); len(ids) != 0 {
-		t.Fatalf("sweeper saw the caller's mutated expiry: %v", ids)
-	}
+	require.NoError(t, repo.Update(ctx, &domain.Course{ID: "1", SourcedID: "a", ExpiresAt: &upd, Title: "A"}, &later))
+	upd = clk.t
+	_, err = repo.Get(ctx, "1")
+	require.NoError(t, err, "after mutating Update expiry")
+	ids, _ := repo.DeleteExpired(ctx, clk.t)
+	assert.Empty(t, ids, "sweeper saw the caller's mutated expiry")
 }
 
 // TestUpdateIsConditionalOnExpiry checks Update applies only while the
@@ -131,46 +111,32 @@ func TestDocRepoCopiesExpiry(t *testing.T) {
 // record untouched otherwise.
 func TestUpdateIsConditionalOnExpiry(t *testing.T) {
 	ctx := t.Context()
-	c := &clock{t: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
-	exp, other := c.t.Add(time.Hour), c.t.Add(2*time.Hour)
+	clk := &clock{t: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
+	exp, other := clk.t.Add(time.Hour), clk.t.Add(2*time.Hour)
 
-	docs := NewDocRepo[domain.Course]().WithClock(c.now)
-	mustNoErr(t, docs.Create(ctx, &domain.Course{ID: "1", SourcedID: "a", Title: "A"}))
-	if err := docs.Update(ctx, &domain.Course{ID: "1", SourcedID: "a", ExpiresAt: &other, Title: "B"}, &exp); !errors.Is(err, domain.ErrStale) {
-		t.Fatalf("doc: want ErrStale, got %v", err)
-	}
-	if got, _ := docs.Get(ctx, "1"); got.Title != "A" || got.ExpiresAt != nil {
-		t.Fatalf("doc: stale update was applied: %+v", got)
-	}
-	mustNoErr(t, docs.Update(ctx, &domain.Course{ID: "1", SourcedID: "a", Title: "B"}, nil))
+	docs := NewDocRepo[domain.Course]().WithClock(clk.now)
+	require.NoError(t, docs.Create(ctx, &domain.Course{ID: "1", SourcedID: "a", Title: "A"}))
+	assert.ErrorIs(t, docs.Update(ctx, &domain.Course{ID: "1", SourcedID: "a", ExpiresAt: &other, Title: "B"}, &exp), domain.ErrStale, "doc")
+	gotDoc, _ := docs.Get(ctx, "1")
+	assert.Equal(t, "A", gotDoc.Title, "doc: stale update was applied")
+	assert.Nil(t, gotDoc.ExpiresAt, "doc: stale update was applied")
+	require.NoError(t, docs.Update(ctx, &domain.Course{ID: "1", SourcedID: "a", Title: "B"}, nil))
 
-	persons := NewPersonRepository().WithClock(c.now)
-	mustNoErr(t, persons.Create(ctx, domain.Person{ID: "1", SourcedID: "a", ExpiresAt: &exp}))
-	if err := persons.Update(ctx, domain.Person{ID: "1", SourcedID: "a", GivenName: "B"}, nil); !errors.Is(err, domain.ErrStale) {
-		t.Fatalf("person: want ErrStale, got %v", err)
-	}
-	if got, _ := persons.Get(ctx, "1"); got.GivenName != "" || got.ExpiresAt == nil {
-		t.Fatalf("person: stale update was applied: %+v", got)
-	}
-	mustNoErr(t, persons.Update(ctx, domain.Person{ID: "1", SourcedID: "a", GivenName: "B"}, new(exp)))
+	persons := NewPersonRepository().WithClock(clk.now)
+	require.NoError(t, persons.Create(ctx, domain.Person{ID: "1", SourcedID: "a", ExpiresAt: &exp}))
+	assert.ErrorIs(t, persons.Update(ctx, domain.Person{ID: "1", SourcedID: "a", GivenName: "B"}, nil), domain.ErrStale, "person")
+	gotPerson, _ := persons.Get(ctx, "1")
+	assert.Empty(t, gotPerson.GivenName, "person: stale update was applied")
+	assert.NotNil(t, gotPerson.ExpiresAt, "person: stale update was applied")
+	require.NoError(t, persons.Update(ctx, domain.Person{ID: "1", SourcedID: "a", GivenName: "B"}, new(exp)))
 }
 
-func assertGone(ctx context.Context, t *testing.T, r *DocRepo[domain.Course, *domain.Course], id, sid string) {
+func assertGone(ctx context.Context, t *testing.T, repo *DocRepo[domain.Course, *domain.Course], id, sid string) {
 	t.Helper()
-	if _, err := r.Get(ctx, id); !errors.Is(err, domain.ErrNotFound) {
-		t.Fatalf("Get expired: %v", err)
-	}
-	if _, err := r.GetBySourcedID(ctx, sid); !errors.Is(err, domain.ErrNotFound) {
-		t.Fatalf("GetBySourcedID expired: %v", err)
-	}
-	if es, _ := r.GetByIDs(ctx, []string{id}); len(es) != 0 {
-		t.Fatalf("GetByIDs expired: %v", es)
-	}
-}
-
-func mustNoErr(t *testing.T, err error) {
-	t.Helper()
-	if err != nil {
-		t.Fatal(err)
-	}
+	_, err := repo.Get(ctx, id)
+	assert.ErrorIs(t, err, domain.ErrNotFound, "Get expired")
+	_, err = repo.GetBySourcedID(ctx, sid)
+	assert.ErrorIs(t, err, domain.ErrNotFound, "GetBySourcedID expired")
+	got, _ := repo.GetByIDs(ctx, []string{id})
+	assert.Empty(t, got, "GetByIDs expired")
 }

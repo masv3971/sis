@@ -1,13 +1,15 @@
 package httpserver
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strconv"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/SUNET/sis/internal/adapter/outbound/memory"
 	"github.com/SUNET/sis/internal/core/domain"
@@ -21,7 +23,7 @@ import (
 // reaches X-Total-Count. Every publishable record must be read even though
 // the requested limit is clamped and an orphan makes a page short.
 func TestEduAPIPagingByXLimit(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	log := logger.NewWithWriter("test", false, "error", io.Discard)
 	catalog := &readmodel.Client{
 		Persons:     service.New(memory.NewPersonRepository(), nil, nil, log),
@@ -32,53 +34,42 @@ func TestEduAPIPagingByXLimit(t *testing.T) {
 	const stored = 7
 	for i := range stored {
 		id := fmt.Sprintf("o%d", i)
-		if _, err := catalog.Courses.Create(ctx, &domain.Course{ID: "c" + id, SourcedID: "c" + id, Title: "T"}); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := catalog.Offerings.Create(ctx, &domain.Offering{ID: id, SourcedID: id, CourseID: "c" + id}); err != nil {
-			t.Fatal(err)
-		}
+		_, err := catalog.Courses.Create(ctx, &domain.Course{ID: "c" + id, SourcedID: "c" + id, Title: "T"})
+		require.NoError(t, err)
+		_, err = catalog.Offerings.Create(ctx, &domain.Offering{ID: id, SourcedID: id, CourseID: "c" + id})
+		require.NoError(t, err)
 	}
 	// Orphan the first offering: List leaves it out, X-Total-Count still counts it.
-	if err := catalog.Courses.Delete(ctx, "co0"); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, catalog.Courses.Delete(ctx, "co0"))
 
 	cfg := testCfg("127.0.0.1:0")
 	cfg.SIS.Adapter.Inbound.EduAPI.DefaultLimit, cfg.SIS.Adapter.Inbound.EduAPI.MaxLimit = 2, 3
-	s, iss := startWithIssuer(t, cfg, catalog)
-	tok := iss.Token(t, "reader", "sis.read")
+	srv, iss := startWithIssuer(t, cfg, catalog)
+	token := iss.Token(t, "reader", "sis.read")
 
 	seen := map[string]bool{}
 	for offset, pages := 0, 0; ; pages++ {
-		if pages > stored {
-			t.Fatal("paging does not end")
-		}
-		req, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("http://%s/eduapi/classes?limit=500&offset=%d", s.Addr(), offset), nil)
-		req.Header.Set("Authorization", "Bearer "+tok)
+		require.LessOrEqual(t, pages, stored, "paging does not end")
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://%s/eduapi/classes?limit=500&offset=%d", srv.Addr(), offset), nil)
+		req.Header.Set("Authorization", "Bearer "+token)
 		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 		var body struct{ Classes []struct{ SourcedID string } }
 		err = json.NewDecoder(resp.Body).Decode(&body)
 		_ = resp.Body.Close()
-		if err != nil || resp.StatusCode != http.StatusOK {
-			t.Fatalf("offset %d: status %d, %v", offset, resp.StatusCode, err)
-		}
+		require.NoError(t, err, "offset %d", offset)
+		require.Equal(t, http.StatusOK, resp.StatusCode, "offset %d", offset)
 		limit, _ := strconv.Atoi(resp.Header.Get("X-Limit"))
 		total, _ := strconv.Atoi(resp.Header.Get("X-Total-Count"))
-		if limit != 3 || total != stored {
-			t.Fatalf("X-Limit %q, X-Total-Count %q; want 3, %d", resp.Header.Get("X-Limit"), resp.Header.Get("X-Total-Count"), stored)
-		}
-		for _, c := range body.Classes {
-			seen[c.SourcedID] = true
+		require.Equal(t, 3, limit, "X-Limit")
+		require.Equal(t, stored, total, "X-Total-Count")
+		for _, class := range body.Classes {
+			seen[class.SourcedID] = true
 		}
 		if offset += limit; offset >= total {
 			break
 		}
 	}
-	if len(seen) != stored-1 || seen["o0"] {
-		t.Fatalf("read %v; want o1..o%d", seen, stored-1)
-	}
+	assert.Len(t, seen, stored-1, "read %v; want o1..o%d", seen, stored-1)
+	assert.False(t, seen["o0"], "orphan o0 must not be listed")
 }

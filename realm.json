@@ -8,12 +8,160 @@
     {
       "name": "sis.read",
       "description": "Read SIS: /api/v1 GET, /api/v1/parse, /oeapi, /eduapi",
-      "protocol": "openid-connect"
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "aud-sis",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "sis",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
     },
     {
       "name": "sis.write",
       "description": "Write SIS: /api/v1 POST/PUT/DELETE, /api/v1/populate",
-      "protocol": "openid-connect"
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "aud-sis",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "sis",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "name": "basic",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "false" },
+      "protocolMappers": [
+        {
+          "name": "sub",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-sub-mapper",
+          "config": { "access.token.claim": "true", "introspection.token.claim": "true" }
+        },
+        {
+          "name": "auth_time",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usersessionmodel-note-mapper",
+          "config": {
+            "user.session.note": "AUTH_TIME",
+            "claim.name": "auth_time",
+            "jsonType.label": "long",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "name": "web-origins",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "false" },
+      "protocolMappers": [
+        {
+          "name": "allowed web origins",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-allowed-origins-mapper",
+          "config": { "access.token.claim": "true", "introspection.token.claim": "true" }
+        }
+      ]
+    },
+    {
+      "name": "profile",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "true" },
+      "protocolMappers": [
+        {
+          "name": "full name",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-full-name-mapper",
+          "config": { "id.token.claim": "true", "access.token.claim": "true", "userinfo.token.claim": "true" }
+        },
+        {
+          "name": "given name",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "config": {
+            "user.attribute": "firstName",
+            "claim.name": "given_name",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "family name",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "config": {
+            "user.attribute": "lastName",
+            "claim.name": "family_name",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "username",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "config": {
+            "user.attribute": "username",
+            "claim.name": "preferred_username",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "name": "email",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "true" },
+      "protocolMappers": [
+        {
+          "name": "email",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "config": {
+            "user.attribute": "email",
+            "claim.name": "email",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "email verified",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "config": {
+            "user.attribute": "emailVerified",
+            "claim.name": "email_verified",
+            "jsonType.label": "boolean",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
     }
   ],
   "clients": [
@@ -24,21 +172,8 @@
       "publicClient": false,
       "standardFlowEnabled": false,
       "serviceAccountsEnabled": true,
-      "defaultClientScopes": [
-        "sis.read",
-        "sis.write"
-      ],
-      "protocolMappers": [
-        {
-          "name": "aud-sis",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "config": {
-            "included.custom.audience": "sis",
-            "access.token.claim": "true"
-          }
-        }
-      ]
+      "defaultClientScopes": ["basic", "sis.read", "sis.write"],
+      "optionalClientScopes": []
     },
     {
       "clientId": "sunet-vc",
@@ -47,20 +182,8 @@
       "publicClient": false,
       "standardFlowEnabled": false,
       "serviceAccountsEnabled": true,
-      "defaultClientScopes": [
-        "sis.read"
-      ],
-      "protocolMappers": [
-        {
-          "name": "aud-sis",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "config": {
-            "included.custom.audience": "sis",
-            "access.token.claim": "true"
-          }
-        }
-      ]
+      "defaultClientScopes": ["basic", "sis.read"],
+      "optionalClientScopes": []
     },
     {
       "clientId": "sis-web",
@@ -80,26 +203,8 @@
       "attributes": {
         "pkce.code.challenge.method": "S256"
       },
-      "defaultClientScopes": [
-        "openid",
-        "profile",
-        "email"
-      ],
-      "optionalClientScopes": [
-        "sis.read",
-        "sis.write"
-      ],
-      "protocolMappers": [
-        {
-          "name": "aud-sis",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "config": {
-            "included.custom.audience": "sis",
-            "access.token.claim": "true"
-          }
-        }
-      ]
+      "defaultClientScopes": ["basic", "web-origins", "profile", "email"],
+      "optionalClientScopes": ["sis.read", "sis.write"]
     }
   ],
   "users": [

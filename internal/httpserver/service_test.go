@@ -17,6 +17,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/SUNET/sis/internal/adapter/outbound/memory"
 	"github.com/SUNET/sis/internal/auth"
 	"github.com/SUNET/sis/internal/auth/authtest"
@@ -43,25 +46,21 @@ func newTestServerWithCfg(t *testing.T, cfg *model.Cfg) (*Service, error) {
 	t.Helper()
 	log := logger.NewWithWriter("test", false, "error", io.Discard)
 	catalog := &readmodel.Client{}
-	return New(context.Background(), cfg, newVerifier(t, cfg), catalog, newCommands(t, catalog), log)
+	return New(t.Context(), cfg, newVerifier(t, cfg), catalog, newCommands(t, catalog), log)
 }
 
 func newCommands(t *testing.T, catalog *readmodel.Client) *command.Client {
 	t.Helper()
-	c, err := command.New(context.Background(), &model.Cfg{}, catalog, logger.NewWithWriter("test", false, "error", io.Discard))
-	if err != nil {
-		t.Fatalf("command.New: %v", err)
-	}
-	return c
+	commands, err := command.New(t.Context(), &model.Cfg{}, catalog, logger.NewWithWriter("test", false, "error", io.Discard))
+	require.NoError(t, err, "command.New")
+	return commands
 }
 
 func newVerifier(t *testing.T, cfg *model.Cfg) *auth.Verifier {
 	t.Helper()
-	v, err := auth.New(context.Background(), cfg, logger.NewWithWriter("test", false, "error", io.Discard))
-	if err != nil {
-		t.Fatalf("auth.New: %v", err)
-	}
-	return v
+	verifier, err := auth.New(t.Context(), cfg, logger.NewWithWriter("test", false, "error", io.Discard))
+	require.NoError(t, err, "auth.New")
+	return verifier
 }
 
 // startWithIssuer serves catalog behind a fresh local token issuer and
@@ -71,123 +70,105 @@ func startWithIssuer(t *testing.T, cfg *model.Cfg, catalog *readmodel.Client) (*
 	iss := authtest.NewIssuer(t)
 	cfg.SIS.Auth.Issuers = []model.Issuer{iss.Config()}
 	log := logger.NewWithWriter("test", false, "error", io.Discard)
-	s, err := New(context.Background(), cfg, newVerifier(t, cfg), catalog, newCommands(t, catalog), log)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	t.Cleanup(func() { _ = s.Close(context.Background()) })
-	return s, iss
+	srv, err := New(t.Context(), cfg, newVerifier(t, cfg), catalog, newCommands(t, catalog), log)
+	require.NoError(t, err, "New")
+	t.Cleanup(func() { _ = srv.Close(context.Background()) })
+	return srv, iss
 }
 
 func TestNewServesOnceReturned(t *testing.T) {
-	s, err := newTestServer(t, "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	t.Cleanup(func() { _ = s.Close(context.Background()) })
+	srv, err := newTestServer(t, "127.0.0.1:0")
+	require.NoError(t, err, "New")
+	t.Cleanup(func() { _ = srv.Close(context.Background()) })
 
 	// No retry loop: New's contract is that the listener is bound on return.
-	resp, err := http.Get("http://" + s.Addr().String() + "/healthz")
-	if err != nil {
-		t.Fatalf("GET /healthz: %v", err)
-	}
+	resp, err := httpGet(t, http.DefaultClient, "http://"+srv.Addr().String()+"/healthz")
+	require.NoError(t, err, "GET /healthz")
 	_ = resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200, got %d", resp.StatusCode)
-	}
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+// httpGet is http.Get bound to the test's context.
+func httpGet(t *testing.T, client *http.Client, target string) (*http.Response, error) {
+	t.Helper()
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, target, nil)
+	require.NoError(t, err)
+	return client.Do(req)
 }
 
 // TestServesTLS checks a configured certificate makes the listener serve
 // https, and that a missing key file fails startup.
 func TestServesTLS(t *testing.T) {
-	srv := httptest.NewTLSServer(http.NotFoundHandler()) // only for its cert
-	srv.Close()
+	certSrv := httptest.NewTLSServer(http.NotFoundHandler()) // only for its cert
+	certSrv.Close()
 	dir := t.TempDir()
 	certFile, keyFile := filepath.Join(dir, "tls.crt"), filepath.Join(dir, "tls.key")
-	c := srv.TLS.Certificates[0]
-	keyDER, err := x509.MarshalPKCS8PrivateKey(c.PrivateKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-	mustWrite(t, certFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: c.Certificate[0]}))
+	cert := certSrv.TLS.Certificates[0]
+	keyDER, err := x509.MarshalPKCS8PrivateKey(cert.PrivateKey)
+	require.NoError(t, err)
+	mustWrite(t, certFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Certificate[0]}))
 	mustWrite(t, keyFile, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}))
 
 	cfg := testCfg("127.0.0.1:0")
 	cfg.SIS.HTTPServer.TLS = model.TLS{CertFile: certFile, KeyFile: keyFile}
-	s, err := newTestServerWithCfg(t, cfg)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	t.Cleanup(func() { _ = s.Close(context.Background()) })
+	srv, err := newTestServerWithCfg(t, cfg)
+	require.NoError(t, err, "New")
+	t.Cleanup(func() { _ = srv.Close(context.Background()) })
 
 	pool := x509.NewCertPool()
-	leaf, _ := x509.ParseCertificate(c.Certificate[0])
+	leaf, _ := x509.ParseCertificate(cert.Certificate[0])
 	pool.AddCert(leaf)
 	client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool, ServerName: "example.com"}}}
-	resp, err := client.Get("https://" + s.Addr().String() + "/healthz")
-	if err != nil {
-		t.Fatalf("GET https: %v", err)
-	}
+	resp, err := httpGet(t, client, "https://"+srv.Addr().String()+"/healthz")
+	require.NoError(t, err, "GET https")
 	_ = resp.Body.Close()
-	if resp.StatusCode != http.StatusOK || resp.TLS == nil {
-		t.Fatalf("https /healthz: %d tls=%v", resp.StatusCode, resp.TLS != nil)
-	}
+	assert.Equal(t, http.StatusOK, resp.StatusCode, "https /healthz")
+	assert.NotNil(t, resp.TLS, "https /healthz must be served over TLS")
 
 	cfg = testCfg("127.0.0.1:0")
 	cfg.SIS.HTTPServer.TLS = model.TLS{CertFile: certFile, KeyFile: filepath.Join(dir, "missing.key")}
-	if s, err := newTestServerWithCfg(t, cfg); err == nil {
-		_ = s.Close(context.Background())
-		t.Fatal("expected startup to fail with a missing key file")
+	if srv, err := newTestServerWithCfg(t, cfg); !assert.Error(t, err, "expected startup to fail with a missing key file") {
+		_ = srv.Close(t.Context())
 	}
 }
 
 func mustWrite(t *testing.T, path string, data []byte) {
 	t.Helper()
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, os.WriteFile(path, data, 0o600))
 }
 
 func TestAuthConfigIsPublic(t *testing.T) {
-	s, err := newTestServer(t, "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	t.Cleanup(func() { _ = s.Close(context.Background()) })
+	srv, err := newTestServer(t, "127.0.0.1:0")
+	require.NoError(t, err, "New")
+	t.Cleanup(func() { _ = srv.Close(context.Background()) })
 
-	resp, err := http.Get("http://" + s.Addr().String() + "/auth/config")
-	if err != nil {
-		t.Fatalf("GET /auth/config: %v", err)
-	}
+	resp, err := httpGet(t, http.DefaultClient, "http://"+srv.Addr().String()+"/auth/config")
+	require.NoError(t, err, "GET /auth/config")
 	defer resp.Body.Close()
 	var body struct {
 		Enabled *bool `json:"enabled"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if resp.StatusCode != http.StatusOK || body.Enabled == nil || *body.Enabled {
-		t.Fatalf("expected 200 {\"enabled\":false}, got %d %+v", resp.StatusCode, body)
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body), "decode")
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	if assert.NotNil(t, body.Enabled, `expected {"enabled":false}`) {
+		assert.False(t, *body.Enabled)
 	}
 }
 
 // TestTokenIssuingRoutesAreGone checks SIS no longer issues tokens: the old
 // login and token endpoints are plain 404s.
 func TestTokenIssuingRoutesAreGone(t *testing.T) {
-	s, err := newTestServer(t, "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	t.Cleanup(func() { _ = s.Close(context.Background()) })
-	for _, p := range []string{"/auth/login", "/oauth/token", "/auth/oidc/session"} {
-		resp, err := http.Post("http://"+s.Addr().String()+p, "application/x-www-form-urlencoded", strings.NewReader("grant_type=client_credentials"))
-		if err != nil {
-			t.Fatal(err)
-		}
+	srv, err := newTestServer(t, "127.0.0.1:0")
+	require.NoError(t, err, "New")
+	t.Cleanup(func() { _ = srv.Close(context.Background()) })
+	for _, path := range []string{"/auth/login", "/oauth/token", "/auth/oidc/session"} {
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "http://"+srv.Addr().String()+path, strings.NewReader("grant_type=client_credentials"))
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err, "POST %s", path)
 		_ = resp.Body.Close()
-		if resp.StatusCode != http.StatusNotFound {
-			t.Errorf("POST %s: %d, want 404", p, resp.StatusCode)
-		}
+		assert.Equal(t, http.StatusNotFound, resp.StatusCode, "POST %s", path)
 	}
 }
 
@@ -200,25 +181,23 @@ func TestScopesGateAPIs(t *testing.T) {
 	cfg.SIS.Adapter.Inbound.RestAdmin.DefaultLimit, cfg.SIS.Adapter.Inbound.RestAdmin.MaxLimit = 10, 10
 	cfg.SIS.Adapter.Inbound.OEAPI.DefaultPageSize, cfg.SIS.Adapter.Inbound.OEAPI.MaxPageSize = 10, 10
 	cfg.SIS.Adapter.Inbound.EduAPI.DefaultLimit, cfg.SIS.Adapter.Inbound.EduAPI.MaxLimit = 10, 10
-	s, iss := startWithIssuer(t, cfg, catalog)
-	base := "http://" + s.Addr().String()
+	srv, iss := startWithIssuer(t, cfg, catalog)
+	base := "http://" + srv.Addr().String()
 
 	read, write, both := iss.Token(t, "sunet-vc", "sis.read"), iss.Token(t, "w", "sis.write"), iss.Token(t, "liu", "sis.read sis.write")
-	status := func(tok, method, path, body string) int {
-		req, _ := http.NewRequest(method, base+path, strings.NewReader(body))
-		req.Header.Set("Authorization", "Bearer "+tok)
+	status := func(token, method, path, body string) int {
+		req, _ := http.NewRequestWithContext(t.Context(), method, base+path, strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err, "%s %s", method, path)
 		_ = resp.Body.Close()
 		return resp.StatusCode
 	}
 	person := `{"sourcedId":"p1","givenName":"A","familyName":"B","status":"active"}`
 	cases := []struct {
-		name, tok, method, path, body string
-		want                          int
+		name, token, method, path, body string
+		want                            int
 	}{
 		{"read cannot create", read, http.MethodPost, "/api/v1/persons", person, http.StatusForbidden},
 		{"write creates", write, http.MethodPost, "/api/v1/persons", person, http.StatusCreated},
@@ -231,10 +210,8 @@ func TestScopesGateAPIs(t *testing.T) {
 		{"no token", "", http.MethodGet, "/eduapi/persons", "", http.StatusUnauthorized},
 		{"untrusted issuer", authtest.NewIssuer(t).Token(t, "x", "sis.read sis.write"), http.MethodGet, "/api/v1/persons", "", http.StatusUnauthorized},
 	}
-	for _, c := range cases {
-		if got := status(c.tok, c.method, c.path, c.body); got != c.want {
-			t.Errorf("%s: %s %s = %d, want %d", c.name, c.method, c.path, got, c.want)
-		}
+	for _, tc := range cases {
+		assert.Equal(t, tc.want, status(tc.token, tc.method, tc.path, tc.body), "%s: %s %s", tc.name, tc.method, tc.path)
 	}
 }
 
@@ -244,16 +221,12 @@ func TestSwaggerServesSpecOnlyWhenEnabled(t *testing.T) {
 	for _, enabled := range []bool{true, false} {
 		cfg := testCfg("127.0.0.1:0")
 		cfg.SIS.HTTPServer.Swagger.Enabled = enabled
-		s, err := newTestServerWithCfg(t, cfg)
-		if err != nil {
-			t.Fatalf("New: %v", err)
-		}
-		t.Cleanup(func() { _ = s.Close(context.Background()) })
+		srv, err := newTestServerWithCfg(t, cfg)
+		require.NoError(t, err, "New")
+		t.Cleanup(func() { _ = srv.Close(context.Background()) })
 
-		resp, err := http.Get("http://" + s.Addr().String() + "/swagger/doc.json")
-		if err != nil {
-			t.Fatalf("GET /swagger/doc.json: %v", err)
-		}
+		resp, err := httpGet(t, http.DefaultClient, "http://"+srv.Addr().String()+"/swagger/doc.json")
+		require.NoError(t, err, "GET /swagger/doc.json")
 		var doc struct {
 			BasePath string                     `json:"basePath"`
 			Paths    map[string]json.RawMessage `json:"paths"`
@@ -262,21 +235,14 @@ func TestSwaggerServesSpecOnlyWhenEnabled(t *testing.T) {
 		_ = resp.Body.Close()
 
 		if !enabled {
-			if resp.StatusCode != http.StatusNotFound {
-				t.Fatalf("disabled: expected 404, got %d", resp.StatusCode)
-			}
+			require.Equal(t, http.StatusNotFound, resp.StatusCode, "disabled")
 			continue
 		}
-		if resp.StatusCode != http.StatusOK || decodeErr != nil {
-			t.Fatalf("enabled: expected 200 JSON, got %d (%v)", resp.StatusCode, decodeErr)
-		}
-		if doc.BasePath != "/api/v1" {
-			t.Errorf("basePath = %q, want /api/v1", doc.BasePath)
-		}
-		for _, p := range []string{"/persons", "/persons/{id}", "/enrollments/{id}"} {
-			if _, ok := doc.Paths[p]; !ok {
-				t.Errorf("spec is missing path %s", p)
-			}
+		require.Equal(t, http.StatusOK, resp.StatusCode, "enabled")
+		require.NoError(t, decodeErr, "enabled: expected JSON")
+		assert.Equal(t, "/api/v1", doc.BasePath)
+		for _, path := range []string{"/persons", "/persons/{id}", "/enrollments/{id}"} {
+			assert.Contains(t, doc.Paths, path, "spec is missing path %s", path)
 		}
 	}
 }
@@ -286,19 +252,17 @@ func TestSwaggerServesSpecOnlyWhenEnabled(t *testing.T) {
 // standards providers when the slash is sent escaped (%2F), for persons and
 // for the generic resources.
 func TestIDsWithSlashesRoundTrip(t *testing.T) {
-	ctx := context.Background()
 	log := logger.NewWithWriter("test", false, "error", io.Discard)
 	catalog := &readmodel.Client{
 		Persons:       service.New(memory.NewPersonRepository(), nil, nil, log),
 		Organizations: service.NewResource(memory.NewDocRepo[domain.Organization](), nil, nil, log),
 	}
-	_ = ctx
 	cfg := testCfg("127.0.0.1:0")
 	cfg.SIS.Adapter.Inbound.OEAPI.DefaultPageSize, cfg.SIS.Adapter.Inbound.OEAPI.MaxPageSize = 10, 10
 	cfg.SIS.Adapter.Inbound.EduAPI.DefaultLimit, cfg.SIS.Adapter.Inbound.EduAPI.MaxLimit = 10, 10
-	s, iss := startWithIssuer(t, cfg, catalog)
-	tok := iss.Token(t, "writer", "sis.read sis.write")
-	base := "http://" + s.Addr().String()
+	srv, iss := startWithIssuer(t, cfg, catalog)
+	token := iss.Token(t, "writer", "sis.read sis.write")
+	base := "http://" + srv.Addr().String()
 
 	do := func(t *testing.T, method, path, body string, want int) map[string]any {
 		t.Helper()
@@ -306,20 +270,16 @@ func TestIDsWithSlashesRoundTrip(t *testing.T) {
 		if body != "" {
 			rd = strings.NewReader(body)
 		}
-		req, _ := http.NewRequest(method, base+path, rd)
-		req.Header.Set("Authorization", "Bearer "+tok)
+		req, _ := http.NewRequestWithContext(t.Context(), method, base+path, rd)
+		req.Header.Set("Authorization", "Bearer "+token)
 		if body != "" {
 			req.Header.Set("Content-Type", "application/json")
 		}
 		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatalf("%s %s: %v", method, path, err)
-		}
+		require.NoError(t, err, "%s %s", method, path)
 		defer resp.Body.Close()
 		raw, _ := io.ReadAll(resp.Body)
-		if resp.StatusCode != want {
-			t.Fatalf("%s %s: status %d, want %d; body=%s", method, path, resp.StatusCode, want, raw)
-		}
+		require.Equal(t, want, resp.StatusCode, "%s %s: body=%s", method, path, raw)
 		var out map[string]any
 		_ = json.Unmarshal(raw, &out)
 		return out
@@ -330,14 +290,11 @@ func TestIDsWithSlashesRoundTrip(t *testing.T) {
 		const id, sid = "external/42", "src/42"
 		do(t, http.MethodPost, "/api/v1/persons",
 			`{"id":"`+id+`","sourcedId":"`+sid+`","givenName":"A","familyName":"B","status":"active"}`, http.StatusCreated)
-		if got := do(t, http.MethodGet, "/api/v1/persons/"+esc(id), "", http.StatusOK)["id"]; got != id {
-			t.Fatalf("GET id = %v, want %q", got, id)
-		}
+		require.Equal(t, id, do(t, http.MethodGet, "/api/v1/persons/"+esc(id), "", http.StatusOK)["id"], "GET id")
 		got := do(t, http.MethodPut, "/api/v1/persons/"+esc(id),
 			`{"givenName":"C","familyName":"B","status":"active"}`, http.StatusOK)
-		if got["id"] != id || got["givenName"] != "C" {
-			t.Fatalf("PUT = %v", got)
-		}
+		require.Equal(t, id, got["id"], "PUT = %v", got)
+		require.Equal(t, "C", got["givenName"], "PUT = %v", got)
 		do(t, http.MethodGet, "/oeapi/persons/"+esc(sid), "", http.StatusOK)
 		do(t, http.MethodGet, "/eduapi/persons/"+esc(sid), "", http.StatusOK)
 		do(t, http.MethodDelete, "/api/v1/persons/"+esc(id), "", http.StatusNoContent)
@@ -348,13 +305,10 @@ func TestIDsWithSlashesRoundTrip(t *testing.T) {
 		const id, sid = "org/1", "uni/1"
 		do(t, http.MethodPost, "/api/v1/organizations",
 			`{"id":"`+id+`","sourcedId":"`+sid+`","name":"U"}`, http.StatusCreated)
-		if got := do(t, http.MethodGet, "/api/v1/organizations/"+esc(id), "", http.StatusOK)["id"]; got != id {
-			t.Fatalf("GET id = %v, want %q", got, id)
-		}
+		require.Equal(t, id, do(t, http.MethodGet, "/api/v1/organizations/"+esc(id), "", http.StatusOK)["id"], "GET id")
 		got := do(t, http.MethodPut, "/api/v1/organizations/"+esc(id), `{"name":"V"}`, http.StatusOK)
-		if got["id"] != id || got["name"] != "V" {
-			t.Fatalf("PUT = %v", got)
-		}
+		require.Equal(t, id, got["id"], "PUT = %v", got)
+		require.Equal(t, "V", got["name"], "PUT = %v", got)
 		do(t, http.MethodGet, "/oeapi/organizations/"+esc(sid), "", http.StatusOK)
 		do(t, http.MethodGet, "/eduapi/orgs/"+esc(sid), "", http.StatusOK)
 		do(t, http.MethodDelete, "/api/v1/organizations/"+esc(id), "", http.StatusNoContent)
@@ -364,14 +318,11 @@ func TestIDsWithSlashesRoundTrip(t *testing.T) {
 
 func TestNewFailsWhenAddressInUse(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
+	require.NoError(t, err, "listen")
 	t.Cleanup(func() { _ = ln.Close() })
 
-	if s, err := newTestServer(t, ln.Addr().String()); err == nil {
-		_ = s.Close(context.Background())
-		t.Fatal("expected New to fail on a busy address")
+	if srv, err := newTestServer(t, ln.Addr().String()); !assert.Error(t, err, "expected New to fail on a busy address") {
+		_ = srv.Close(t.Context())
 	}
 }
 
@@ -380,33 +331,27 @@ func TestNewFailsWhenAddressInUse(t *testing.T) {
 // once the shutdown deadline passes, and that Close returns within it.
 func TestCloseCancelsInFlightRequestsAfterDeadline(t *testing.T) {
 	started, aborted := make(chan struct{}), make(chan struct{})
-	h := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(_ http.ResponseWriter, req *http.Request) {
 		close(started)
-		<-r.Context().Done()
+		<-req.Context().Done()
 		close(aborted)
 	})
 	log := logger.NewWithWriter("test", false, "error", io.Discard)
-	s, err := start(context.Background(), testCfg("127.0.0.1:0").SIS.HTTPServer, h, log)
-	if err != nil {
-		t.Fatalf("start: %v", err)
-	}
+	srv, err := start(t.Context(), testCfg("127.0.0.1:0").SIS.HTTPServer, handler, log)
+	require.NoError(t, err, "start")
 
 	go func() {
-		if resp, err := http.Get("http://" + s.Addr().String() + "/"); err == nil {
+		if resp, err := http.Get("http://" + srv.Addr().String() + "/"); err == nil {
 			_ = resp.Body.Close()
 		}
 	}()
 	<-started
 
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
 	begin := time.Now()
-	if err := s.Close(ctx); err == nil {
-		t.Fatal("expected deadline error from Close")
-	}
-	if d := time.Since(begin); d > time.Second {
-		t.Fatalf("Close took %v, want it bounded by ctx", d)
-	}
+	require.Error(t, srv.Close(ctx), "expected deadline error from Close")
+	assert.LessOrEqual(t, time.Since(begin), time.Second, "Close must be bounded by ctx")
 	select {
 	case <-aborted:
 	case <-time.After(time.Second):

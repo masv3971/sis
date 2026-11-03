@@ -1,7 +1,6 @@
 package restadmin
 
 import (
-	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/SUNET/sis/internal/adapter/outbound/memory"
 	"github.com/SUNET/sis/internal/command"
@@ -31,17 +32,12 @@ func newTestRouter(t *testing.T) *gin.Engine {
 		Organizations: service.NewResource(memory.NewDocRepo[domain.Organization](), nil, nil, log),
 		Courses:       service.NewResource(memory.NewDocRepo[domain.Course](), nil, nil, log),
 	}
-	if _, err := catalog.Organizations.Create(context.Background(), &domain.Organization{ID: "o-id", SourcedID: "uni", Name: "U"}); err != nil {
-		t.Fatal(err)
-	}
-	commands, err := command.New(context.Background(), &model.Cfg{}, catalog, log)
-	if err != nil {
-		t.Fatalf("command.New: %v", err)
-	}
-	c, err := New(context.Background(), &model.Cfg{}, catalog, commands, log)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
+	_, err := catalog.Organizations.Create(t.Context(), &domain.Organization{ID: "o-id", SourcedID: "uni", Name: "U"})
+	require.NoError(t, err)
+	commands, err := command.New(t.Context(), &model.Cfg{}, catalog, log)
+	require.NoError(t, err, "command.New")
+	c, err := New(t.Context(), &model.Cfg{}, catalog, commands, log)
+	require.NoError(t, err, "New")
 	r := gin.New()
 	r.POST("/persons", c.CreatePerson)
 	r.PUT("/persons/:id", c.UpdatePerson)
@@ -79,12 +75,8 @@ func TestWriteHandlersRejectBadBodiesWith400(t *testing.T) {
 				req.Header.Set("Content-Type", "application/json")
 				w := httptest.NewRecorder()
 				r.ServeHTTP(w, req)
-				if w.Code != http.StatusBadRequest {
-					t.Fatalf("status = %d, want 400; body=%s", w.Code, w.Body)
-				}
-				if !strings.Contains(w.Body.String(), `"invalid_request"`) {
-					t.Fatalf("expected invalid_request title, got %s", w.Body)
-				}
+				require.Equal(t, http.StatusBadRequest, w.Code, "body=%s", w.Body)
+				assert.Contains(t, w.Body.String(), `"invalid_request"`, "expected invalid_request title")
 			})
 		}
 	}
@@ -109,11 +101,9 @@ func TestResourceWritesRequireCanonicalRefs(t *testing.T) {
 			req.Header.Set("Content-Type", "application/json")
 			w := httptest.NewRecorder()
 			r.ServeHTTP(w, req)
-			if w.Code != tc.want {
-				t.Fatalf("status = %d, want %d; body=%s", w.Code, tc.want, w.Body)
-			}
-			if tc.want == http.StatusBadRequest && !strings.Contains(w.Body.String(), `"orgId"`) {
-				t.Fatalf("expected error naming orgId, got %s", w.Body)
+			require.Equal(t, tc.want, w.Code, "body=%s", w.Body)
+			if tc.want == http.StatusBadRequest {
+				assert.Contains(t, w.Body.String(), `"orgId"`, "expected error naming orgId")
 			}
 		})
 	}
@@ -128,9 +118,7 @@ func TestWriteHandlersKeepServiceErrorClassification(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("status = %d, want 404; body=%s", w.Code, w.Body)
-	}
+	assert.Equal(t, http.StatusNotFound, w.Code, "body=%s", w.Body)
 }
 
 // TestWritesIgnoreExpiresAt checks expiresAt is server-managed: /api/v1
@@ -147,11 +135,7 @@ func TestWritesIgnoreExpiresAt(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
-		if w.Code != http.StatusCreated {
-			t.Fatalf("%s: status = %d; body=%s", path, w.Code, w.Body)
-		}
-		if strings.Contains(w.Body.String(), "expiresAt") {
-			t.Fatalf("%s: caller-supplied expiresAt was stored: %s", path, w.Body)
-		}
+		require.Equal(t, http.StatusCreated, w.Code, "%s: body=%s", path, w.Body)
+		assert.NotContains(t, w.Body.String(), "expiresAt", "%s: caller-supplied expiresAt was stored", path)
 	}
 }

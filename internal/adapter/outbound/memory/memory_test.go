@@ -1,132 +1,113 @@
 package memory
 
 import (
-	"context"
-	"errors"
 	"math"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/SUNET/sis/internal/core/domain"
 	"github.com/SUNET/sis/internal/core/port"
 )
 
 func TestPersonUpdateRejectsForeignSourcedID(t *testing.T) {
-	ctx := context.Background()
-	r := NewPersonRepository()
-	_ = r.Create(ctx, domain.Person{ID: "1", SourcedID: "a"})
-	_ = r.Create(ctx, domain.Person{ID: "2", SourcedID: "b"})
+	ctx := t.Context()
+	repo := NewPersonRepository()
+	_ = repo.Create(ctx, domain.Person{ID: "1", SourcedID: "a"})
+	_ = repo.Create(ctx, domain.Person{ID: "2", SourcedID: "b"})
 
-	if err := r.Update(ctx, domain.Person{ID: "2", SourcedID: "a"}, nil); !errors.Is(err, domain.ErrConflict) {
-		t.Fatalf("expected ErrConflict, got %v", err)
-	}
+	require.ErrorIs(t, repo.Update(ctx, domain.Person{ID: "2", SourcedID: "a"}, nil), domain.ErrConflict)
 	// Keeping its own sourcedId is fine.
-	if err := r.Update(ctx, domain.Person{ID: "2", SourcedID: "b", GivenName: "x"}, nil); err != nil {
-		t.Fatalf("self update: %v", err)
-	}
+	assert.NoError(t, repo.Update(ctx, domain.Person{ID: "2", SourcedID: "b", GivenName: "x"}, nil), "self update")
 }
 
 // TestPersonSourcedIDIndex checks the sourcedId index follows renames,
 // deletes and sweeps, so a freed sourcedId resolves to nothing and can be
 // reused.
 func TestPersonSourcedIDIndex(t *testing.T) {
-	ctx := context.Background()
-	r := NewPersonRepository()
-	mustNoErr(t, r.Create(ctx, domain.Person{ID: "1", SourcedID: "a"}))
-	mustNoErr(t, r.Update(ctx, domain.Person{ID: "1", SourcedID: "b"}, nil))
-	if _, err := r.GetBySourcedID(ctx, "a"); !errors.Is(err, domain.ErrNotFound) {
-		t.Fatalf("old sourcedId after rename: %v", err)
-	}
-	if ps, _ := r.GetBySourcedIDs(ctx, []string{"a", "b"}); len(ps) != 1 || ps[0].ID != "1" {
-		t.Fatalf("GetBySourcedIDs = %+v", ps)
-	}
-	mustNoErr(t, r.Create(ctx, domain.Person{ID: "2", SourcedID: "a"}))
+	ctx := t.Context()
+	repo := NewPersonRepository()
+	require.NoError(t, repo.Create(ctx, domain.Person{ID: "1", SourcedID: "a"}))
+	require.NoError(t, repo.Update(ctx, domain.Person{ID: "1", SourcedID: "b"}, nil))
+	_, err := repo.GetBySourcedID(ctx, "a")
+	require.ErrorIs(t, err, domain.ErrNotFound, "old sourcedId after rename")
+	persons, _ := repo.GetBySourcedIDs(ctx, []string{"a", "b"})
+	require.Len(t, persons, 1, "GetBySourcedIDs")
+	require.Equal(t, "1", persons[0].ID, "GetBySourcedIDs")
+	require.NoError(t, repo.Create(ctx, domain.Person{ID: "2", SourcedID: "a"}))
 
-	mustNoErr(t, r.Delete(ctx, "1"))
-	if _, ok := r.sourcedToID["b"]; ok {
-		t.Fatal("Delete must clean the index")
-	}
+	require.NoError(t, repo.Delete(ctx, "1"))
+	require.NotContains(t, repo.sourcedToID, "b", "Delete must clean the index")
 	exp := time.Now().Add(-time.Minute)
-	mustNoErr(t, r.Update(ctx, domain.Person{ID: "2", SourcedID: "a", ExpiresAt: &exp}, nil))
-	if _, err := r.DeleteExpired(ctx, time.Now()); err != nil {
-		t.Fatal(err)
-	}
-	if len(r.sourcedToID) != 0 || len(r.byID) != 0 {
-		t.Fatalf("DeleteExpired must clean the index: %v %v", r.sourcedToID, r.byID)
-	}
+	require.NoError(t, repo.Update(ctx, domain.Person{ID: "2", SourcedID: "a", ExpiresAt: &exp}, nil))
+	_, err = repo.DeleteExpired(ctx, time.Now())
+	require.NoError(t, err)
+	assert.Empty(t, repo.sourcedToID, "DeleteExpired must clean the index")
+	assert.Empty(t, repo.byID, "DeleteExpired must clean the index")
 }
 
 func TestPersonListLimitDoesNotOverflow(t *testing.T) {
-	ctx := context.Background()
-	r := NewPersonRepository()
-	_ = r.Create(ctx, domain.Person{ID: "1", SourcedID: "a"})
-	_ = r.Create(ctx, domain.Person{ID: "2", SourcedID: "b"})
+	ctx := t.Context()
+	repo := NewPersonRepository()
+	_ = repo.Create(ctx, domain.Person{ID: "1", SourcedID: "a"})
+	_ = repo.Create(ctx, domain.Person{ID: "2", SourcedID: "b"})
 
-	page, err := r.List(ctx, port.ListParams{Offset: 1, Limit: math.MaxInt})
-	if err != nil {
-		t.Fatalf("List: %v", err)
-	}
-	if len(page.Items) != 1 || page.Total != 2 {
-		t.Fatalf("expected 1 item of 2, got %d of %d", len(page.Items), page.Total)
-	}
+	page, err := repo.List(ctx, port.ListParams{Offset: 1, Limit: math.MaxInt})
+	require.NoError(t, err, "List")
+	assert.Len(t, page.Items, 1)
+	assert.Equal(t, 2, page.Total)
 }
 
 func TestPersonListStableForSameName(t *testing.T) {
-	ctx := context.Background()
-	r := NewPersonRepository()
+	ctx := t.Context()
+	repo := NewPersonRepository()
 	for _, id := range []string{"c", "a", "b"} {
-		_ = r.Create(ctx, domain.Person{ID: id, SourcedID: id, GivenName: "Ada", FamilyName: "Lovelace"})
+		_ = repo.Create(ctx, domain.Person{ID: id, SourcedID: id, GivenName: "Ada", FamilyName: "Lovelace"})
 	}
 	for range 20 {
-		page, _ := r.List(ctx, port.ListParams{})
-		if page.Items[0].ID != "a" || page.Items[1].ID != "b" || page.Items[2].ID != "c" {
-			t.Fatalf("unstable order: %v %v %v", page.Items[0].ID, page.Items[1].ID, page.Items[2].ID)
-		}
+		page, _ := repo.List(ctx, port.ListParams{})
+		require.Len(t, page.Items, 3)
+		ids := []string{page.Items[0].ID, page.Items[1].ID, page.Items[2].ID}
+		require.Equal(t, []string{"a", "b", "c"}, ids, "unstable order")
 	}
 }
 
 func TestDocRepoUpdateRejectsForeignSourcedID(t *testing.T) {
-	ctx := context.Background()
-	r := NewDocRepo[domain.Course]()
+	ctx := t.Context()
+	repo := NewDocRepo[domain.Course]()
 	a := &domain.Course{ID: "1", SourcedID: "a", Title: "A"}
 	b := &domain.Course{ID: "2", SourcedID: "b", Title: "B"}
-	_ = r.Create(ctx, a)
-	_ = r.Create(ctx, b)
+	_ = repo.Create(ctx, a)
+	_ = repo.Create(ctx, b)
 
 	steal := &domain.Course{ID: "2", SourcedID: "a", Title: "B"}
-	if err := r.Update(ctx, steal, nil); !errors.Is(err, domain.ErrConflict) {
-		t.Fatalf("expected ErrConflict, got %v", err)
-	}
+	require.ErrorIs(t, repo.Update(ctx, steal, nil), domain.ErrConflict)
 	// The original owner must still be reachable by its business key.
-	got, err := r.GetBySourcedID(ctx, "a")
-	if err != nil || got.GetID() != "1" {
-		t.Fatalf("sourcedId index corrupted: id=%v err=%v", got, err)
-	}
+	got, err := repo.GetBySourcedID(ctx, "a")
+	require.NoError(t, err, "sourcedId index corrupted")
+	assert.Equal(t, "1", got.GetID(), "sourcedId index corrupted")
 }
 
 // TestDocRepoUpdateMarshalFailurePreservesIndex checks that an Update which
 // changes sourcedId but fails to serialize leaves the stored record and its
 // sourcedId lookup untouched.
 func TestDocRepoUpdateMarshalFailurePreservesIndex(t *testing.T) {
-	ctx := context.Background()
-	r := NewDocRepo[domain.Course]()
-	if err := r.Create(ctx, &domain.Course{ID: "1", SourcedID: "a", Title: "A"}); err != nil {
-		t.Fatal(err)
-	}
+	ctx := t.Context()
+	repo := NewDocRepo[domain.Course]()
+	require.NoError(t, repo.Create(ctx, &domain.Course{ID: "1", SourcedID: "a", Title: "A"}))
 
 	// Year 10000 is outside the RFC 3339 range, so json.Marshal fails.
 	bad := &domain.Course{ID: "1", SourcedID: "b", UpdatedAt: time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC), Title: "B"}
-	if err := r.Update(ctx, bad, nil); err == nil {
-		t.Fatal("expected marshal error")
-	}
+	require.Error(t, repo.Update(ctx, bad, nil), "expected marshal error")
 
-	got, err := r.GetBySourcedID(ctx, "a")
-	if err != nil || got.GetID() != "1" || got.Title != "A" {
-		t.Fatalf("failed update corrupted state: got=%+v err=%v", got, err)
-	}
-	if _, err := r.GetBySourcedID(ctx, "b"); !errors.Is(err, domain.ErrNotFound) {
-		t.Fatalf("new sourcedId must not be indexed after a failed update, got %v", err)
-	}
+	got, err := repo.GetBySourcedID(ctx, "a")
+	require.NoError(t, err, "failed update corrupted state")
+	assert.Equal(t, "1", got.GetID(), "failed update corrupted state")
+	assert.Equal(t, "A", got.Title, "failed update corrupted state")
+	_, err = repo.GetBySourcedID(ctx, "b")
+	assert.ErrorIs(t, err, domain.ErrNotFound, "new sourcedId must not be indexed after a failed update")
 }
 
 func TestPageBounds(t *testing.T) {
@@ -138,11 +119,10 @@ func TestPageBounds(t *testing.T) {
 		{10, 1, math.MaxInt, 1, 10},
 		{10, -1, 2, 0, 2},
 	}
-	for _, c := range cases {
-		lo, hi := pageBounds(c.total, c.off, c.lim)
-		if lo != c.lo || hi != c.hi {
-			t.Errorf("pageBounds(%d,%d,%d) = %d,%d; want %d,%d", c.total, c.off, c.lim, lo, hi, c.lo, c.hi)
-		}
+	for _, tc := range cases {
+		lo, hi := pageBounds(tc.total, tc.off, tc.lim)
+		assert.Equal(t, tc.lo, lo, "pageBounds(%d,%d,%d) lo", tc.total, tc.off, tc.lim)
+		assert.Equal(t, tc.hi, hi, "pageBounds(%d,%d,%d) hi", tc.total, tc.off, tc.lim)
 	}
 }
 
@@ -150,50 +130,45 @@ func TestPageBounds(t *testing.T) {
 // a write nor a value returned by a read shares slice storage with the
 // repository, so mutating them cannot change stored data.
 func TestPersonRepositoryIsolatesSlices(t *testing.T) {
-	ctx := context.Background()
-	r := NewPersonRepository()
-	p := domain.Person{
+	ctx := t.Context()
+	repo := NewPersonRepository()
+	person := domain.Person{
 		ID: "1", SourcedID: "a",
 		Roles:       []domain.Role{domain.RoleStudent},
 		Identifiers: []domain.Identifier{{Type: "nin", Value: "x"}},
 		Emails:      []domain.Contact{{Type: "work", Value: "a@x"}},
 		Phones:      []domain.Contact{{Type: "work", Value: "1"}},
 	}
-	if err := r.Create(ctx, p); err != nil {
-		t.Fatal(err)
-	}
-	p.Roles[0], p.Identifiers[0].Value, p.Emails[0].Value, p.Phones[0].Value = domain.RoleStaff, "y", "b@x", "2"
+	require.NoError(t, repo.Create(ctx, person))
+	person.Roles[0], person.Identifiers[0].Value, person.Emails[0].Value, person.Phones[0].Value = domain.RoleStaff, "y", "b@x", "2"
 
 	check := func(stage string) {
 		t.Helper()
-		got, err := r.Get(ctx, "1")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got.Roles[0] != domain.RoleStudent || got.Identifiers[0].Value != "x" ||
-			got.Emails[0].Value != "a@x" || got.Phones[0].Value != "1" {
-			t.Fatalf("%s: stored person changed: %+v", stage, got)
-		}
+		got, err := repo.Get(ctx, "1")
+		require.NoError(t, err)
+		require.Equal(t, domain.RoleStudent, got.Roles[0], "%s: stored person changed", stage)
+		require.Equal(t, "x", got.Identifiers[0].Value, "%s: stored person changed", stage)
+		require.Equal(t, "a@x", got.Emails[0].Value, "%s: stored person changed", stage)
+		require.Equal(t, "1", got.Phones[0].Value, "%s: stored person changed", stage)
 	}
 	check("after mutating Create argument")
 
 	mutate := func(q domain.Person) {
 		q.Roles[0], q.Identifiers[0].Value, q.Emails[0].Value, q.Phones[0].Value = domain.RoleGuest, "z", "c@x", "3"
 	}
-	got, _ := r.Get(ctx, "1")
+	got, _ := repo.Get(ctx, "1")
 	mutate(got)
 	check("after mutating Get result")
-	got, _ = r.GetBySourcedID(ctx, "a")
+	got, _ = repo.GetBySourcedID(ctx, "a")
 	mutate(got)
 	check("after mutating GetBySourcedID result")
-	page, _ := r.List(ctx, port.ListParams{})
+	page, _ := repo.List(ctx, port.ListParams{})
+	require.NotEmpty(t, page.Items)
 	mutate(page.Items[0])
 	check("after mutating List result")
 
-	upd, _ := r.Get(ctx, "1")
-	if err := r.Update(ctx, upd, nil); err != nil {
-		t.Fatal(err)
-	}
+	upd, _ := repo.Get(ctx, "1")
+	require.NoError(t, repo.Update(ctx, upd, nil))
 	mutate(upd)
 	check("after mutating Update argument")
 }

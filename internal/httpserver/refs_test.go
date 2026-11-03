@@ -1,11 +1,13 @@
 package httpserver
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/SUNET/sis/internal/adapter/outbound/memory"
 	"github.com/SUNET/sis/internal/core/domain"
@@ -19,7 +21,7 @@ import (
 // and Edu-API providers publish carries the sourcedId, i.e. can be followed
 // through the same provider.
 func TestProvidersPublishReferencesAsSourcedIDs(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	log := logger.NewWithWriter("test", false, "error", io.Discard)
 	catalog := &readmodel.Client{
 		Persons:          service.New(memory.NewPersonRepository(), nil, nil, log),
@@ -31,9 +33,7 @@ func TestProvidersPublishReferencesAsSourcedIDs(t *testing.T) {
 	}
 	must := func(_ any, err error) {
 		t.Helper()
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 	}
 	must(catalog.Persons.CreatePerson(ctx, domain.Person{ID: "p-internal", SourcedID: "p-external", GivenName: "A", FamilyName: "B", Status: domain.StatusActive}))
 	must(catalog.Organizations.Create(ctx, &domain.Organization{ID: "o-root", SourcedID: "uni", Name: "U"}))
@@ -46,26 +46,20 @@ func TestProvidersPublishReferencesAsSourcedIDs(t *testing.T) {
 	cfg := testCfg("127.0.0.1:0")
 	cfg.SIS.Adapter.Inbound.OEAPI.DefaultPageSize, cfg.SIS.Adapter.Inbound.OEAPI.MaxPageSize = 10, 10
 	cfg.SIS.Adapter.Inbound.EduAPI.DefaultLimit, cfg.SIS.Adapter.Inbound.EduAPI.MaxLimit = 10, 10
-	s, iss := startWithIssuer(t, cfg, catalog)
-	tok := iss.Token(t, "reader", "sis.read")
-	base := "http://" + s.Addr().String()
+	srv, iss := startWithIssuer(t, cfg, catalog)
+	token := iss.Token(t, "reader", "sis.read")
+	base := "http://" + srv.Addr().String()
 
 	get := func(t *testing.T, path string, out any) {
 		t.Helper()
-		req, _ := http.NewRequest(http.MethodGet, base+path, nil)
-		req.Header.Set("Authorization", "Bearer "+tok)
+		req, _ := http.NewRequestWithContext(t.Context(), http.MethodGet, base+path, nil)
+		req.Header.Set("Authorization", "Bearer "+token)
 		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatalf("GET %s: %v", path, err)
-		}
+		require.NoError(t, err, "GET %s", path)
 		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("GET %s: status %d", path, resp.StatusCode)
-		}
+		require.Equal(t, http.StatusOK, resp.StatusCode, "GET %s", path)
 		if out != nil {
-			if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
-				t.Fatalf("GET %s: decode: %v", path, err)
-			}
+			require.NoError(t, json.NewDecoder(resp.Body).Decode(out), "GET %s: decode", path)
 		}
 	}
 
@@ -82,9 +76,7 @@ func TestProvidersPublishReferencesAsSourcedIDs(t *testing.T) {
 			Items []struct{ PersonID, OfferingID string }
 		}
 		get(t, "/oeapi/associations", &list)
-		if len(list.Items) != 1 {
-			t.Fatalf("expected 1 association, got %d", len(list.Items))
-		}
+		require.Len(t, list.Items, 1)
 
 		checks := []struct{ name, got, want string }{
 			{"organization.parentOrganization", org.ParentOrganization, "uni"},
@@ -95,10 +87,8 @@ func TestProvidersPublishReferencesAsSourcedIDs(t *testing.T) {
 			{"association.offeringId", assoc.OfferingID, "DA101-ht26"},
 			{"list association.personId", list.Items[0].PersonID, "p-external"},
 		}
-		for _, c := range checks {
-			if c.got != c.want {
-				t.Errorf("%s = %q, want %q", c.name, c.got, c.want)
-			}
+		for _, check := range checks {
+			assert.Equal(t, check.want, check.got, check.name)
 		}
 		// Each published reference resolves through the provider.
 		get(t, "/oeapi/organizations/"+org.ParentOrganization, nil)
@@ -125,11 +115,11 @@ func TestProvidersPublishReferencesAsSourcedIDs(t *testing.T) {
 		var enr struct{ Enrollment struct{ User, Class ref } }
 		get(t, "/eduapi/enrollments/enr-1", &enr)
 
-		sid := func(r *ref) string {
-			if r == nil {
+		sid := func(reference *ref) string {
+			if reference == nil {
 				return ""
 			}
-			return r.SourcedID
+			return reference.SourcedID
 		}
 		var term string
 		if len(class.Class.Terms) == 1 {
@@ -144,10 +134,8 @@ func TestProvidersPublishReferencesAsSourcedIDs(t *testing.T) {
 			{"enrollment.user", enr.Enrollment.User.SourcedID, "p-external"},
 			{"enrollment.class", enr.Enrollment.Class.SourcedID, "DA101-ht26"},
 		}
-		for _, c := range checks {
-			if c.got != c.want {
-				t.Errorf("%s = %q, want %q", c.name, c.got, c.want)
-			}
+		for _, check := range checks {
+			assert.Equal(t, check.want, check.got, check.name)
 		}
 		get(t, "/eduapi/persons/"+enr.Enrollment.User.SourcedID, nil)
 		get(t, "/eduapi/classes/"+enr.Enrollment.Class.SourcedID, nil)
@@ -158,25 +146,23 @@ func TestProvidersPublishReferencesAsSourcedIDs(t *testing.T) {
 	// deleted after they were stored must not be published with an empty
 	// required relationship: Get answers 404 and List omits them.
 	t.Run("orphaned enrollments", func(t *testing.T) {
+		must := func(_ any, err error) {
+			t.Helper()
+			require.NoError(t, err)
+		}
 		must(catalog.Persons.CreatePerson(ctx, domain.Person{ID: "p-gone", SourcedID: "p-gone", GivenName: "A", FamilyName: "B", Status: domain.StatusActive}))
 		must(catalog.Offerings.Create(ctx, &domain.Offering{ID: "f-gone", SourcedID: "f-gone", CourseID: "c-internal"}))
 		must(catalog.Enrollments.Create(ctx, &domain.Enrollment{ID: "e-person", SourcedID: "enr-person-gone", PersonID: "p-gone", OfferingID: "f-internal"}))
 		must(catalog.Enrollments.Create(ctx, &domain.Enrollment{ID: "e-offering", SourcedID: "enr-offering-gone", PersonID: "p-internal", OfferingID: "f-gone"}))
-		if err := catalog.Persons.DeletePerson(ctx, "p-gone"); err != nil {
-			t.Fatal(err)
-		}
-		if err := catalog.Offerings.Delete(ctx, "f-gone"); err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, catalog.Persons.DeletePerson(ctx, "p-gone"))
+		require.NoError(t, catalog.Offerings.Delete(ctx, "f-gone"))
 
 		status := func(t *testing.T, path string) int {
 			t.Helper()
-			req, _ := http.NewRequest(http.MethodGet, base+path, nil)
-			req.Header.Set("Authorization", "Bearer "+tok)
+			req, _ := http.NewRequestWithContext(t.Context(), http.MethodGet, base+path, nil)
+			req.Header.Set("Authorization", "Bearer "+token)
 			resp, err := http.DefaultClient.Do(req)
-			if err != nil {
-				t.Fatalf("GET %s: %v", path, err)
-			}
+			require.NoError(t, err, "GET %s", path)
 			_ = resp.Body.Close()
 			return resp.StatusCode
 		}
@@ -186,9 +172,7 @@ func TestProvidersPublishReferencesAsSourcedIDs(t *testing.T) {
 			"/eduapi/enrollments/enr-person-gone",
 			"/eduapi/enrollments/enr-offering-gone",
 		} {
-			if got := status(t, path); got != http.StatusNotFound {
-				t.Errorf("GET %s: status %d, want 404", path, got)
-			}
+			assert.Equal(t, http.StatusNotFound, status(t, path), "GET %s", path)
 		}
 
 		var oe struct {
@@ -202,11 +186,11 @@ func TestProvidersPublishReferencesAsSourcedIDs(t *testing.T) {
 			}
 		}
 		get(t, "/eduapi/enrollments", &edu)
-		if len(oe.Items) != 1 || oe.Items[0].AssociationID != "enr-1" {
-			t.Errorf("oeapi associations = %+v, want only enr-1", oe.Items)
+		if assert.Len(t, oe.Items, 1, "oeapi associations, want only enr-1") {
+			assert.Equal(t, "enr-1", oe.Items[0].AssociationID)
 		}
-		if len(edu.Enrollments) != 1 || edu.Enrollments[0].SourcedID != "enr-1" {
-			t.Errorf("eduapi enrollments = %+v, want only enr-1", edu.Enrollments)
+		if assert.Len(t, edu.Enrollments, 1, "eduapi enrollments, want only enr-1") {
+			assert.Equal(t, "enr-1", edu.Enrollments[0].SourcedID)
 		}
 	})
 }

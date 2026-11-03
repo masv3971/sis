@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"strings"
 	"testing"
 
 	"github.com/SUNET/sis/internal/adapter/outbound/memory"
 	"github.com/SUNET/sis/internal/core/domain"
 	"github.com/SUNET/sis/internal/core/service"
 	"github.com/SUNET/sis/pkg/logger"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type failingPublisher struct{}
@@ -24,16 +25,12 @@ func TestPublishFailureIsLogged(t *testing.T) {
 	log := logger.NewWithWriter("sis", false, "info", &buf)
 	svc := service.New(memory.NewPersonRepository(), failingPublisher{}, nil, log)
 
-	p, err := svc.CreatePerson(context.Background(), domain.Person{
+	person, err := svc.CreatePerson(t.Context(), domain.Person{
 		GivenName: "Ada", FamilyName: "Lovelace", Status: domain.StatusActive,
 	})
-	if err != nil {
-		t.Fatalf("committed write must still succeed: %v", err)
-	}
+	require.NoError(t, err, "committed write must still succeed")
 	out := buf.String()
-	for _, want := range []string{"level=ERROR", "event publish failed", "type=person.created", "aggregateId=" + p.ID, "bus down"} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("log missing %q:\n%s", want, out)
-		}
+	for _, want := range []string{"level=ERROR", "event publish failed", "type=person.created", "aggregateId=" + person.ID, "bus down"} {
+		assert.Contains(t, out, want, "log missing")
 	}
 }

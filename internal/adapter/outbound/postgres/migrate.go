@@ -33,6 +33,14 @@ func migrate(ctx context.Context, pool *pgxpool.Pool) error {
 		return fmt.Errorf("acquire migration connection: %w", err)
 	}
 
+	// Waiting for another replica's migrations, and the migrations
+	// themselves, may take longer than sis.adapter.outbound.postgres.
+	// statement_timeout; the startup timeout (ctx) bounds them instead.
+	// releaseMigrationLock restores the session default.
+	if _, err := conn.Exec(ctx, `SET statement_timeout = 0`); err != nil {
+		discardConn(conn)
+		return fmt.Errorf("lift statement_timeout for migrations: %w", err)
+	}
 	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1)`, migrationLockKey); err != nil {
 		// The lock state is unknown (the query may have been sent), so
 		// never hand this session back to the pool.
@@ -62,6 +70,11 @@ func releaseMigrationLock(conn *pgxpool.Conn) {
 		discardConn(conn)
 		return
 	}
+	// Back to the pool's statement_timeout before the pool reuses it.
+	if _, err := conn.Exec(ctx, `RESET statement_timeout`); err != nil {
+		discardConn(conn)
+		return
+	}
 	conn.Release()
 }
 
@@ -88,9 +101,9 @@ func migrateLocked(ctx context.Context, conn *pgxpool.Conn) error {
 		return fmt.Errorf("read migrations: %w", err)
 	}
 	names := make([]string, 0, len(entries))
-	for _, e := range entries {
-		if strings.HasSuffix(e.Name(), ".up.sql") {
-			names = append(names, e.Name())
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".up.sql") {
+			names = append(names, entry.Name())
 		}
 	}
 	sort.Strings(names)

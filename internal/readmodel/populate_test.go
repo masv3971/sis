@@ -1,32 +1,34 @@
 package readmodel
 
 import (
-	"errors"
+	"context"
 	"strconv"
 	"testing"
 	"time"
 
 	"github.com/SUNET/sis/internal/core/domain"
 	"github.com/SUNET/sis/internal/core/port"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func sampleBundle() *domain.Bundle {
-	b := func(sid string) domain.Base { return domain.Base{SourcedID: sid, Status: domain.StatusActive} }
+	base := func(sid string) domain.Base { return domain.Base{SourcedID: sid, Status: domain.StatusActive} }
 	return &domain.Bundle{
 		Persons: []domain.Person{{SourcedID: "stu", Status: domain.StatusActive, GivenName: "A", FamilyName: "B"}},
 		// Child listed before its parent: Populate must reorder.
 		Organizations: []*domain.Organization{
-			{Base: b("dept"), Name: "D", ParentID: "uni"},
-			{Base: b("uni"), Name: "U"},
+			{Base: base("dept"), Name: "D", ParentID: "uni"},
+			{Base: base("uni"), Name: "U"},
 		},
-		AcademicSessions: []*domain.AcademicSession{{Base: b("ht25"), Title: "HT25"}},
-		Courses:          []*domain.Course{{Base: b("BI101"), Title: "Bio", OrgID: "dept"}},
-		Programs:         []*domain.Program{{Base: b("BSc"), Title: "BSc", OrgID: "uni"}},
-		Offerings:        []*domain.Offering{{Base: b("BI101-ht25"), CourseID: "BI101", AcademicSessionID: "ht25"}},
-		Enrollments:      []*domain.Enrollment{{Base: b("enr"), PersonID: "stu", OfferingID: "BI101-ht25", Role: domain.RoleStudent}},
+		AcademicSessions: []*domain.AcademicSession{{Base: base("ht25"), Title: "HT25"}},
+		Courses:          []*domain.Course{{Base: base("BI101"), Title: "Bio", OrgID: "dept"}},
+		Programs:         []*domain.Program{{Base: base("BSc"), Title: "BSc", OrgID: "uni"}},
+		Offerings:        []*domain.Offering{{Base: base("BI101-ht25"), CourseID: "BI101", AcademicSessionID: "ht25"}},
+		Enrollments:      []*domain.Enrollment{{Base: base("enr"), PersonID: "stu", OfferingID: "BI101-ht25", Role: domain.RoleStudent}},
 		Results: []*domain.Result{
-			{Base: b("r1"), PersonID: "stu", CourseID: "BI101", OfferingID: "BI101-ht25", Grade: "A"},
-			{Base: b("r2"), PersonID: "stu", ProgramID: "BSc"},
+			{Base: base("r1"), PersonID: "stu", CourseID: "BI101", OfferingID: "BI101-ht25", Grade: "A"},
+			{Base: base("r2"), PersonID: "stu", ProgramID: "BSc"},
 		},
 	}
 }
@@ -36,127 +38,130 @@ func sampleBundle() *domain.Bundle {
 // PublishRefs publishes the original sourcedIds.
 func TestPopulateStoresWithCanonicalRefs(t *testing.T) {
 	ctx := t.Context()
-	c := newFixture(t).c
+	catalog := newFixture(t).catalog
 	exp := time.Now().Add(time.Hour).UTC()
-	items, err := c.Populate(ctx, sampleBundle(), &exp)
-	must(t, err)
-	if len(items) != 10 {
-		t.Fatalf("items = %d: %+v", len(items), items)
+	items, err := catalog.Populate(ctx, sampleBundle(), &exp)
+	require.NoError(t, err)
+	require.Len(t, items, 10)
+	for _, item := range items {
+		require.Equal(t, ActionCreated, item.Action, "item %+v", item)
+		require.NotEmpty(t, item.ID, "item %+v", item)
 	}
-	for _, it := range items {
-		if it.Action != ActionCreated || it.ID == "" {
-			t.Fatalf("item %+v", it)
-		}
-	}
-	if items[0].SourcedID != "uni" {
-		t.Fatalf("parent must be stored first: %+v", items[:2])
-	}
+	require.Equal(t, "uni", items[0].SourcedID, "parent must be stored first")
 
-	r, err := c.Results.GetBySourcedID(ctx, "r1")
-	must(t, err)
-	must(t, c.CheckRefs(ctx, r))
-	if r.ExpiresAt == nil || !r.ExpiresAt.Equal(exp) {
-		t.Fatalf("expiry not set: %+v", r.ExpiresAt)
-	}
-	ok, err := c.PublishRefs(ctx, r)
-	must(t, err)
-	if !ok[0] || r.PersonID != "stu" || r.CourseID != "BI101" || r.OfferingID != "BI101-ht25" {
-		t.Fatalf("published refs: %+v", r)
-	}
-	dept, err := c.Organizations.GetBySourcedID(ctx, "dept")
-	must(t, err)
-	must(t, c.CheckRefs(ctx, dept))
+	result, err := catalog.Results.GetBySourcedID(ctx, "r1")
+	require.NoError(t, err)
+	require.NoError(t, catalog.CheckRefs(ctx, result))
+	require.NotNil(t, result.ExpiresAt, "expiry not set")
+	require.True(t, result.ExpiresAt.Equal(exp), "expiry = %v, want %v", result.ExpiresAt, exp)
+	publishable, err := catalog.PublishRefs(ctx, result)
+	require.NoError(t, err)
+	require.Equal(t, []bool{true}, publishable, "publishable")
+	require.Equal(t, "stu", result.PersonID, "published personId")
+	require.Equal(t, "BI101", result.CourseID, "published courseId")
+	require.Equal(t, "BI101-ht25", result.OfferingID, "published offeringId")
+	dept, err := catalog.Organizations.GetBySourcedID(ctx, "dept")
+	require.NoError(t, err)
+	require.NoError(t, catalog.CheckRefs(ctx, dept))
 
 	// Re-populating converges: same ids, all updated.
-	again, err := c.Populate(ctx, sampleBundle(), &exp)
-	must(t, err)
-	for i, it := range again {
-		if it.Action != ActionUpdated || it.ID != items[i].ID {
-			t.Fatalf("re-populate item %d = %+v, first %+v", i, it, items[i])
-		}
+	again, err := catalog.Populate(ctx, sampleBundle(), &exp)
+	require.NoError(t, err)
+	require.Len(t, again, len(items))
+	for i, item := range again {
+		require.Equal(t, ActionUpdated, item.Action, "re-populate item %d", i)
+		require.Equal(t, items[i].ID, item.ID, "re-populate item %d", i)
 	}
-	page, err := c.Results.List(ctx, port.ListParams{})
-	must(t, err)
-	if page.Total != 2 {
-		t.Fatalf("results = %d", page.Total)
-	}
+	page, err := catalog.Results.List(ctx, port.ListParams{})
+	require.NoError(t, err)
+	assert.Equal(t, 2, page.Total, "results")
 }
 
 // TestPopulateResolvesStoredRefs checks a reference may name an already
 // stored record by sourcedId.
 func TestPopulateResolvesStoredRefs(t *testing.T) {
 	ctx := t.Context()
-	c := newFixture(t).c
-	_, err := c.Courses.Create(ctx, &domain.Course{ID: "c-id", SourcedID: "DA101", Title: "C"})
-	must(t, err)
-	b := &domain.Bundle{
+	catalog := newFixture(t).catalog
+	_, err := catalog.Courses.Create(ctx, &domain.Course{ID: "c-id", SourcedID: "DA101", Title: "C"})
+	require.NoError(t, err)
+	bundle := &domain.Bundle{
 		Persons: []domain.Person{{SourcedID: "stu", Status: domain.StatusActive, GivenName: "A", FamilyName: "B"}},
 		Results: []*domain.Result{{SourcedID: "r", PersonID: "stu", CourseID: "DA101"}},
 	}
-	_, err = c.Populate(ctx, b, nil)
-	must(t, err)
-	r, err := c.Results.GetBySourcedID(ctx, "r")
-	must(t, err)
-	if r.CourseID != "c-id" || r.ExpiresAt != nil {
-		t.Fatalf("result = %+v", r)
-	}
+	_, err = catalog.Populate(ctx, bundle, nil)
+	require.NoError(t, err)
+	result, err := catalog.Results.GetBySourcedID(ctx, "r")
+	require.NoError(t, err)
+	assert.Equal(t, "c-id", result.CourseID)
+	assert.Nil(t, result.ExpiresAt)
 }
 
 // TestPopulateBatchesStoredRefs checks references to stored records cost one
 // lookup per type, however many records hold them.
 func TestPopulateBatchesStoredRefs(t *testing.T) {
 	ctx := t.Context()
-	f := newFixture(t)
-	c := f.c
-	_, err := c.Offerings.Create(ctx, &domain.Offering{ID: "f-id", SourcedID: "DA101-ht26", CourseID: "c-id"})
-	must(t, err)
-	b := &domain.Bundle{}
+	fx := newFixture(t)
+	catalog := fx.catalog
+	_, err := catalog.Offerings.Create(ctx, &domain.Offering{ID: "f-id", SourcedID: "DA101-ht26", CourseID: "c-id"})
+	require.NoError(t, err)
+	bundle := &domain.Bundle{}
 	for i := range 5 {
 		sid := "stu" + strconv.Itoa(i)
-		_, err := c.Persons.CreatePerson(ctx, domain.Person{ID: "p" + sid, SourcedID: sid, GivenName: "A", FamilyName: "B", Status: domain.StatusActive})
-		must(t, err)
-		b.Enrollments = append(b.Enrollments, &domain.Enrollment{
+		_, err := catalog.Persons.CreatePerson(ctx, domain.Person{ID: "p" + sid, SourcedID: sid, GivenName: "A", FamilyName: "B", Status: domain.StatusActive})
+		require.NoError(t, err)
+		bundle.Enrollments = append(bundle.Enrollments, &domain.Enrollment{
 			SourcedID: "enr" + strconv.Itoa(i), Status: domain.StatusActive,
 			PersonID: sid, OfferingID: "DA101-ht26", Role: domain.RoleStudent,
 		})
 	}
-	f.persons.bulk, f.persons.single, f.offering.bulk, f.offering.single = 0, 0, 0, 0
+	fx.persons.bulk, fx.persons.single, fx.offering.bulk, fx.offering.single = 0, 0, 0, 0
 
-	_, err = c.Populate(ctx, b, nil)
-	must(t, err)
-	if f.persons.bulk != 1 || f.persons.single != 0 || f.offering.bulk != 1 || f.offering.single != 0 {
-		t.Fatalf("lookups: persons bulk=%d single=%d, offerings bulk=%d single=%d",
-			f.persons.bulk, f.persons.single, f.offering.bulk, f.offering.single)
-	}
-	e, err := c.Enrollments.GetBySourcedID(ctx, "enr3")
-	must(t, err)
-	if e.PersonID != "pstu3" || e.OfferingID != "f-id" {
-		t.Fatalf("enrollment = %+v", e)
-	}
+	_, err = catalog.Populate(ctx, bundle, nil)
+	require.NoError(t, err)
+	assert.Equal(t, 1, fx.persons.bulk, "persons bulk lookups")
+	assert.Equal(t, 0, fx.persons.single, "persons single lookups")
+	assert.Equal(t, 1, fx.offering.bulk, "offerings bulk lookups")
+	assert.Equal(t, 0, fx.offering.single, "offerings single lookups")
+	enrollment, err := catalog.Enrollments.GetBySourcedID(ctx, "enr3")
+	require.NoError(t, err)
+	assert.Equal(t, "pstu3", enrollment.PersonID)
+	assert.Equal(t, "f-id", enrollment.OfferingID)
+}
+
+// TestPopulateStopsOnCancel checks a cancelled ctx stops Populate before any
+// write, even on the memory store, which ignores ctx.
+func TestPopulateStopsOnCancel(t *testing.T) {
+	catalog := newFixture(t).catalog
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	items, err := catalog.Populate(ctx, sampleBundle(), nil)
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Empty(t, items)
+	page, err := catalog.Organizations.List(t.Context(), port.ListParams{})
+	require.NoError(t, err)
+	assert.Zero(t, page.Total, "nothing must be written")
 }
 
 // TestPopulateRejectsBeforeWriting checks a bad bundle stores nothing.
 func TestPopulateRejectsBeforeWriting(t *testing.T) {
-	cases := map[string]func(b *domain.Bundle){
-		"unknown reference": func(b *domain.Bundle) { b.Results[0].CourseID = "nope" },
-		"invalid record":    func(b *domain.Bundle) { b.Courses[0].Title = "" },
-		"duplicate":         func(b *domain.Bundle) { b.Courses = append(b.Courses, b.Courses[0]) },
-		"missing sourcedId": func(b *domain.Bundle) { b.AcademicSessions[0].SourcedID = "" },
-		"parent cycle":      func(b *domain.Bundle) { b.Organizations[1].ParentID = "dept" },
+	cases := map[string]func(bundle *domain.Bundle){
+		"unknown reference": func(bundle *domain.Bundle) { bundle.Results[0].CourseID = "nope" },
+		"invalid record":    func(bundle *domain.Bundle) { bundle.Courses[0].Title = "" },
+		"duplicate":         func(bundle *domain.Bundle) { bundle.Courses = append(bundle.Courses, bundle.Courses[0]) },
+		"missing sourcedId": func(bundle *domain.Bundle) { bundle.AcademicSessions[0].SourcedID = "" },
+		"parent cycle":      func(bundle *domain.Bundle) { bundle.Organizations[1].ParentID = "dept" },
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {
 			ctx := t.Context()
-			c := newFixture(t).c
-			b := sampleBundle()
-			mutate(b)
-			_, err := c.Populate(ctx, b, nil)
-			if _, ok := errors.AsType[*domain.ValidationError](err); !ok {
-				t.Fatalf("want ValidationError, got %v", err)
-			}
-			if page, _ := c.Organizations.List(ctx, port.ListParams{}); page.Total != 0 {
-				t.Fatalf("nothing must be written, got %d organizations", page.Total)
-			}
+			catalog := newFixture(t).catalog
+			bundle := sampleBundle()
+			mutate(bundle)
+			_, err := catalog.Populate(ctx, bundle, nil)
+			var verr *domain.ValidationError
+			require.ErrorAs(t, err, &verr)
+			page, _ := catalog.Organizations.List(ctx, port.ListParams{})
+			assert.Zero(t, page.Total, "nothing must be written")
 		})
 	}
 }

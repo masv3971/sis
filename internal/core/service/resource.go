@@ -86,7 +86,7 @@ func (s *Resource[T, PT]) Update(ctx context.Context, e PT) (PT, error) {
 // finite expiry can never overwrite a record that just became permanent.
 func (s *Resource[T, PT]) update(ctx context.Context, e PT, expiry func(existing PT) *time.Time) (PT, error) {
 	if e.GetID() == "" {
-		return nil, &domain.ValidationError{Field: "id", Msg: "required"}
+		return nil, domain.Required("id")
 	}
 	if err := e.Validate(); err != nil {
 		return nil, err
@@ -128,7 +128,7 @@ func (s *Resource[T, PT]) UpsertBySourcedID(ctx context.Context, e PT) (PT, erro
 // else maintains. created reports whether a new record was stored.
 func (s *Resource[T, PT]) UpsertWithExpiry(ctx context.Context, e PT, expiresAt *time.Time) (out PT, created bool, err error) {
 	if e.GetSourcedID() == "" {
-		return nil, false, &domain.ValidationError{Field: "sourcedId", Msg: "required for upsert"}
+		return nil, false, &domain.ValidationError{Field: "sourcedId", Msg: domain.MsgRequiredForUpsert}
 	}
 	merge := func(existing PT) *time.Time { return MergeExpiry(existing.GetExpiresAt(), expiresAt) }
 	existing, err := s.repo.GetBySourcedID(ctx, e.GetSourcedID())

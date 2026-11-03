@@ -22,31 +22,31 @@ import (
 // The generic entity commands are free functions taking *Client first: Go
 // does not allow type parameters on methods.
 type Client struct {
-	catalog *readmodel.Client
-	convert *convert.Client
-	now     func() time.Time
-	log     *logger.Log
+	catalog   *readmodel.Client
+	converter *convert.Client
+	now       func() time.Time
+	log       *logger.Log
 }
 
 // New builds the command Client, with its own convert Client (pure, so
 // nothing is shared or shut down).
 func New(ctx context.Context, cfg *model.Cfg, catalog *readmodel.Client, log *logger.Log) (*Client, error) {
-	conv, err := convert.New(ctx, cfg, log)
+	converter, err := convert.New(ctx, cfg, log)
 	if err != nil {
 		return nil, err
 	}
-	return &Client{catalog: catalog, convert: conv, now: time.Now, log: log.New("command")}, nil
+	return &Client{catalog: catalog, converter: converter, now: time.Now, log: log.New("command")}, nil
 }
 
-// CreatePerson creates p.
-func (c *Client) CreatePerson(ctx context.Context, p domain.Person) (domain.Person, error) {
-	return c.catalog.Persons.CreatePerson(ctx, p)
+// CreatePerson creates person.
+func (c *Client) CreatePerson(ctx context.Context, person domain.Person) (domain.Person, error) {
+	return c.catalog.Persons.CreatePerson(ctx, person)
 }
 
-// UpdatePerson replaces the person id with p; id wins over p.ID.
-func (c *Client) UpdatePerson(ctx context.Context, id string, p domain.Person) (domain.Person, error) {
-	p.ID = id
-	return c.catalog.Persons.UpdatePerson(ctx, p)
+// UpdatePerson replaces the person id with person; id wins over person.ID.
+func (c *Client) UpdatePerson(ctx context.Context, id string, person domain.Person) (domain.Person, error) {
+	person.ID = id
+	return c.catalog.Persons.UpdatePerson(ctx, person)
 }
 
 // DeletePerson deletes the person id.
@@ -54,23 +54,23 @@ func (c *Client) DeletePerson(ctx context.Context, id string) error {
 	return c.catalog.Persons.DeletePerson(ctx, id)
 }
 
-// Create creates e. References to other records must be their canonical ids
-// (see readmodel.CheckRefs).
-func Create[T any, PT domain.EntityPtr[T]](ctx context.Context, c *Client, svc *service.Resource[T, PT], e PT) (PT, error) {
-	if err := c.catalog.CheckRefs(ctx, e); err != nil {
+// Create creates entity. References to other records must be their canonical
+// ids (see readmodel.CheckRefs).
+func Create[T any, PT domain.EntityPtr[T]](ctx context.Context, c *Client, svc *service.Resource[T, PT], entity PT) (PT, error) {
+	if err := c.catalog.CheckRefs(ctx, entity); err != nil {
 		return nil, err
 	}
-	return svc.Create(ctx, e)
+	return svc.Create(ctx, entity)
 }
 
-// Update replaces the entity id with e; id wins over e's own id. References
-// are checked as in Create.
-func Update[T any, PT domain.EntityPtr[T]](ctx context.Context, c *Client, svc *service.Resource[T, PT], id string, e PT) (PT, error) {
-	e.SetID(id)
-	if err := c.catalog.CheckRefs(ctx, e); err != nil {
+// Update replaces the entity id with entity; id wins over entity's own id.
+// References are checked as in Create.
+func Update[T any, PT domain.EntityPtr[T]](ctx context.Context, c *Client, svc *service.Resource[T, PT], id string, entity PT) (PT, error) {
+	entity.SetID(id)
+	if err := c.catalog.CheckRefs(ctx, entity); err != nil {
 		return nil, err
 	}
-	return svc.Update(ctx, e)
+	return svc.Update(ctx, entity)
 }
 
 // Delete deletes the entity id.

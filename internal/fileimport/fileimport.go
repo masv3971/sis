@@ -65,14 +65,22 @@ func Run(ctx context.Context, cfg *model.Cfg, catalog *readmodel.Client, log *lo
 	return nil
 }
 
-// Import loads one file and returns how many records it stored.
+// Import loads one file and returns how many records it stored. Reading and
+// decoding cannot be interrupted, so ctx is checked after each; Populate
+// checks it before every write.
 func Import(ctx context.Context, catalog *readmodel.Client, path string) (int, error) {
 	data, err := os.ReadFile(path) //nolint:gosec // path comes from operator config
 	if err != nil {
 		return 0, err
 	}
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
 	b, err := Decode(data)
 	if err != nil {
+		return 0, err
+	}
+	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
 	items, err := catalog.Populate(ctx, b, nil)
