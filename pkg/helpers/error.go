@@ -170,6 +170,9 @@ func NewErrorFromError(err error) *Error {
 		// The operation's deadline (request, command) passed; retrying may
 		// succeed, so 503 rather than 500.
 		return &Error{Title: ErrUnavailable, Err: MsgTimedOut, HTTPStatus: http.StatusServiceUnavailable}
+	case errors.Is(err, context.Canceled):
+		// Usually server shutdown; a client that left never reads the reply.
+		return &Error{Title: ErrUnavailable, Err: MsgCanceled, HTTPStatus: http.StatusServiceUnavailable}
 	}
 
 	return &Error{Title: ErrInternal, Err: err.Error(), HTTPStatus: http.StatusInternalServerError, unclassified: true}
@@ -194,24 +197,28 @@ func NewErrorFromError(err error) *Error {
 // deadline is pulled in to now, which interrupts a body still arriving. It
 // is never pushed later, so sis.httpserver.read_timeout still applies. A
 // request whose context has ended, before or during decoding, gets its ctx
-// error (deadline: 503), never decoded input, so a command is not dispatched
-// after the deadline.
+// error (503), never decoded input, so a command is not dispatched after the
+// deadline.
 func BindJSON(gc *gin.Context, v any) error {
 	if gc.Request == nil || gc.Request.Body == nil {
 		return DecodeJSON(nil, v)
 	}
 	ctx := gc.Request.Context()
-	done := make(chan struct{})
+	// Read gc.Writer here, not on the callback's goroutine. gin reuses gc and
+	// its writer once the handler returns, so BindJSON also waits for a
+	// started callback below.
+	controller := http.NewResponseController(gc.Writer)
+	callbackDone := make(chan struct{})
 	stop := context.AfterFunc(ctx, func() {
-		defer close(done)
+		defer close(callbackDone)
 		// ErrNotSupported outside a real server (httptest recorders);
 		// the ctx check below still applies there.
-		_ = http.NewResponseController(gc.Writer).SetReadDeadline(time.Now())
+		_ = controller.SetReadDeadline(time.Now())
 	})
 	body, err := io.ReadAll(gc.Request.Body)
 	if !stop() {
-		// The callback uses gc, which gin reuses once the handler returns.
-		<-done
+		// The callback has started; let it finish before gc can be reused.
+		<-callbackDone
 	}
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return fmt.Errorf("read request body: %w", ctxErr)

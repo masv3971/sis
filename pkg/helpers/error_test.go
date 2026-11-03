@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -33,6 +32,7 @@ func TestWriteErrorRecordsRedactedCause(t *testing.T) {
 		{"unclassified", errors.New("pg: connection refused"), http.StatusInternalServerError, true},
 		{"not found", domain.ErrNotFound, http.StatusNotFound, false},
 		{"deadline", fmt.Errorf("query: %w", context.DeadlineExceeded), http.StatusServiceUnavailable, false},
+		{"canceled", fmt.Errorf("query: %w", context.Canceled), http.StatusServiceUnavailable, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -91,40 +91,18 @@ func TestBindJSONRequiresSingleValue(t *testing.T) {
 	}
 }
 
-// slowDeadlineWriter records when the read-deadline callback finishes.
+// slowDeadlineWriter is a response writer whose SetReadDeadline takes a
+// while, so a BindJSON that returns before its cancellation callback ends is
+// caught.
 type slowDeadlineWriter struct {
-	gin.ResponseWriter
-	finished atomic.Bool
+	*httptest.ResponseRecorder
+	done atomic.Bool
 }
 
 func (w *slowDeadlineWriter) SetReadDeadline(time.Time) error {
 	time.Sleep(50 * time.Millisecond)
-	w.finished.Store(true)
+	w.done.Store(true)
 	return nil
-}
-
-// cancelOnRead cancels the request context as the body reaches EOF.
-type cancelOnRead struct{ cancel context.CancelFunc }
-
-func (r cancelOnRead) Read([]byte) (int, error) {
-	r.cancel()
-	return 0, io.EOF
-}
-
-// TestBindJSONWaitsForDeadlineCallback checks BindJSON does not return while
-// its cancellation callback still uses gc, which gin reuses afterwards.
-func TestBindJSONWaitsForDeadlineCallback(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	gc, _ := gin.CreateTestContext(httptest.NewRecorder())
-	writer := &slowDeadlineWriter{ResponseWriter: gc.Writer}
-	gc.Writer = writer
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	gc.Request = httptest.NewRequestWithContext(ctx, http.MethodPost, "/", io.NopCloser(cancelOnRead{cancel}))
-
-	err := BindJSON(gc, &struct{}{})
-	require.ErrorIs(t, err, context.Canceled)
-	assert.True(t, writer.finished.Load(), "BindJSON returned before the callback finished")
 }
 
 // cancelOnDecode cancels the request context while it is being decoded.
@@ -146,4 +124,42 @@ func TestBindJSONRejectsContextEndedDuringDecode(t *testing.T) {
 
 	err := BindJSON(gc, &cancelOnDecode{cancel: cancel})
 	require.ErrorIs(t, err, context.Canceled)
+}
+
+// TestBindJSONWaitsForCancelCallback checks BindJSON does not return while
+// its read-deadline callback is still running: gin reuses the context and
+// writer once the handler returns, so a late callback would race with the
+// next request.
+func TestBindJSONWaitsForCancelCallback(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := &slowDeadlineWriter{ResponseRecorder: httptest.NewRecorder()}
+	gc, _ := gin.CreateTestContext(w)
+	ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+	defer cancel()
+	gc.Request = httptest.NewRequestWithContext(ctx, http.MethodPost, "/", strings.NewReader(`{"name":"a"}`))
+
+	var bound struct{ Name string }
+	err := BindJSON(gc, &bound)
+
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.True(t, w.done.Load(), "BindJSON returned before its callback finished")
+}
+
+// TestBindJSONCanceled checks a request cancelled while the body was read
+// (server shutdown or client gone) is a retryable 503, not a 400 that tells
+// the client its request was wrong.
+func TestBindJSONCanceled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	gc, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	gc.Request = httptest.NewRequestWithContext(ctx, http.MethodPost, "/", strings.NewReader(`{"name":"a"}`))
+
+	var bound struct{ Name string }
+	err := BindJSON(gc, &bound)
+
+	require.ErrorIs(t, err, context.Canceled)
+	apiErr := NewErrorFromError(err)
+	assert.False(t, apiErr.IsUnclassified(), "unclassified (err=%v)", err)
+	assert.Equal(t, http.StatusServiceUnavailable, apiErr.Status())
 }

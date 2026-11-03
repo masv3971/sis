@@ -53,8 +53,8 @@ type HTTPServer struct {
 	ReadTimeout time.Duration `yaml:"read_timeout" default:"15s" validate:"gt=0"`
 	// WriteTimeout bounds the request's work, reading its body included:
 	// when it passes, the handler's context is cancelled, so database
-	// calls stop and the request ends with 503. Sending the response may take 5s more, so
-	// that 503 reaches the client.
+	// calls stop and the request ends with 503. Sending the response may
+	// take 5s more, so that 503 reaches the client.
 	WriteTimeout time.Duration `yaml:"write_timeout" default:"15s" validate:"gt=0"`
 	Web          Web           `yaml:"web"`
 	Swagger      Swagger       `yaml:"swagger"`
