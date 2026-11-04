@@ -21,16 +21,25 @@ import (
 //	hasClaim LearningAchievement             -> Result for the subject, plus what it is for:
 //	  specifiedBy Qualification              ->   Program
 //	  specifiedBy (any other specification)  ->   Course
-//	  wasDerivedFrom LearningAssessment      ->   the Result's grade
-//	  wasInfluencedBy LearningActivity       ->   Offering (+ AcademicSession from temporal) and Enrollment
+//	  provenBy LearningAssessment            ->   the Result's grade
+//	  influencedBy LearningActivity          ->   Offering (+ AcademicSession from temporal) and Enrollment;
+//	                                              for a Program result, of the activity's own Course
+//	  entitlesTo LearningEntitlement         ->   Entitlement linked to the Result
 //	  hasPart                                ->   nested achievements, mapped the same way
+//	hasClaim LearningActivity                -> Course (from specifiedBy), Offering and Enrollment;
+//	                                            no Result (a certificate of participation)
+//	hasClaim LearningEntitlement             -> Entitlement for the subject
+//
+// The pre-v3 names wasDerivedFrom and wasInfluencedBy are read as well. An
+// achievement without a title (e.g. a credit-only claim) takes its
+// specification's title, else a generated one.
 //
 // sourcedIds are the ELM node ids, so re-sending a document converges on the
 // same records. A node without an id gets a deterministic one derived from
 // the credential id (or a hash of the document) and the node's path.
 //
 // Parts that cannot be mapped (other claim types, organisations without a
-// name, activities of a qualification) are skipped with a warning; records
+// name) are skipped with a warning; records
 // that are mapped but invalid (e.g. a subject without a name) fail the whole
 // conversion with a domain.ValidationError naming the document path.
 //
@@ -198,14 +207,97 @@ func (b *elmBuilder) person(subject *elm.Node) (string, error) {
 	return sid, nil
 }
 
-// claim maps one claim of the subject. Only learning achievements carry
-// enough to map; other claim types are skipped with a warning.
+// claim maps one claim of the subject. An untyped claim is taken to be an
+// achievement; claim types other than achievement, activity and entitlement
+// are skipped with a warning.
 func (b *elmBuilder) claim(claim *elm.Node, person, org string) error {
-	if types := claim.Types(); len(types) > 0 && !claim.Is("LearningAchievement") {
-		b.warn(claim.Path, "claim type %s is not mapped; skipped", strings.Join(types, ","))
-		return nil
+	switch {
+	case claim.Is("LearningActivity"):
+		return b.activity(claim, person, org)
+	case claim.Is("LearningEntitlement"):
+		_, err := b.entitlement(claim, person, org, "")
+		return err
+	case claim.Is("LearningAchievement") || len(claim.Types()) == 0:
+		return b.achievement(claim, person, org)
 	}
-	return b.achievement(claim, person, org)
+	b.warn(claim.Path, "claim type %s is not mapped; skipped", strings.Join(claim.Types(), ","))
+	return nil
+}
+
+// nodes returns the nodes of every given property, each node once.
+func nodes(node *elm.Node, props ...string) []*elm.Node {
+	var out []*elm.Node
+	seen := map[string]bool{}
+	for _, prop := range props {
+		for _, n := range node.Nodes(prop) {
+			if id := n.ID(); id != "" {
+				if seen[id] {
+					continue
+				}
+				seen[id] = true
+			}
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// awardingOrg maps the awarding bodies of node's awardedBy and returns the
+// first one mapped, else fallback.
+func (b *elmBuilder) awardingOrg(node *elm.Node, fallback string) string {
+	awarded := node.Node("awardedBy")
+	if awarded == nil {
+		return fallback
+	}
+	org := ""
+	for _, body := range awarded.Nodes("awardingBody") {
+		if bodySID := b.org(body); bodySID != "" && org == "" {
+			org = bodySID
+		}
+	}
+	return firstNonEmpty(org, fallback)
+}
+
+// activity maps a LearningActivity claim (a certificate of participation)
+// to the Course its specification describes, an Offering of it and the
+// subject's Enrollment. Nothing was achieved, so no Result is made.
+func (b *elmBuilder) activity(activity *elm.Node, person, org string) error {
+	org = b.awardingOrg(activity, org)
+	spec := activity.Node("specifiedBy")
+	title := activity.Text("title")
+	if spec != nil {
+		title = firstNonEmpty(spec.Text("title"), title)
+	}
+	course, err := b.course(spec, activity, title, org)
+	if err != nil {
+		return err
+	}
+	_, err = b.offering(activity, course, org, person)
+	return err
+}
+
+// entitlement maps a LearningEntitlement to an Entitlement for person,
+// optionally linked to the result it came with.
+func (b *elmBuilder) entitlement(node *elm.Node, person, org, result string) (string, error) {
+	sid := b.sid(node)
+	if ref, ok := b.seen("entitlement", sid); ok {
+		return ref, nil
+	}
+	b.mark("entitlement", sid, sid)
+	org = b.awardingOrg(node, org)
+	title := node.Text("title")
+	if spec := node.Node("specifiedBy"); spec != nil {
+		title = firstNonEmpty(spec.Text("title"), title)
+	}
+	entitlement := &domain.Entitlement{
+		Base: base(sid), PersonID: person, ResultID: result, Title: title, OrgID: org,
+		IssuedDate: isoDate(node.String("issuedDate")), ExpiryDate: isoDate(node.String("expiryDate")),
+	}
+	if err := check(node.Path, "entitlement", entitlement); err != nil {
+		return "", err
+	}
+	b.bundle.Entitlements = append(b.bundle.Entitlements, entitlement)
+	return sid, nil
 }
 
 // achievement maps a LearningAchievement to a Result for person, plus the
@@ -219,17 +311,15 @@ func (b *elmBuilder) achievement(achievement *elm.Node, person, org string) erro
 	b.mark("result", sid, sid)
 
 	awarded := achievement.Node("awardedBy")
-	if awarded != nil {
-		for i, body := range awarded.Nodes("awardingBody") {
-			if bodySID := b.org(body); bodySID != "" && i == 0 {
-				org = bodySID
-			}
-		}
-	}
+	org = b.awardingOrg(achievement, org)
 	spec := achievement.Node("specifiedBy")
 	title := achievement.Text("title")
 	if spec != nil {
 		title = firstNonEmpty(spec.Text("title"), title)
+	}
+	if title == "" {
+		title = untitledAchievement
+		b.warn(achievement.Path, "achievement has no title; titled %q", title)
 	}
 
 	result := &domain.Result{Base: base(sid), PersonID: person, Credits: b.credits(achievement, spec)}
@@ -245,7 +335,7 @@ func (b *elmBuilder) achievement(achievement *elm.Node, person, org string) erro
 	if awarded != nil {
 		result.ResultDate = isoDate(awarded.String("awardingDate"))
 	}
-	for _, assessment := range achievement.Nodes("wasDerivedFrom") {
+	for _, assessment := range nodes(achievement, "provenBy", "wasDerivedFrom") {
 		if gradeText := grade(assessment); gradeText != "" {
 			result.Grade = gradeText
 			if result.ResultDate == "" {
@@ -256,9 +346,12 @@ func (b *elmBuilder) achievement(achievement *elm.Node, person, org string) erro
 			break
 		}
 	}
-	for _, activity := range achievement.Nodes("wasInfluencedBy") {
+	for _, activity := range nodes(achievement, "influencedBy", "wasInfluencedBy") {
 		if result.CourseID == "" {
-			b.warn(activity.Path, "activity of a qualification is not mapped (an offering needs a course); skipped")
+			// A qualification is no course: the activity offers the course its specification describes.
+			if err := b.activity(activity, person, org); err != nil {
+				return err
+			}
 			continue
 		}
 		offeringSID, err := b.offering(activity, result.CourseID, org, person)
@@ -274,6 +367,11 @@ func (b *elmBuilder) achievement(achievement *elm.Node, person, org string) erro
 	}
 	b.bundle.Results = append(b.bundle.Results, result)
 
+	for _, entitled := range achievement.Nodes("entitlesTo") {
+		if _, err := b.entitlement(entitled, person, org, sid); err != nil {
+			return err
+		}
+	}
 	for _, part := range achievement.Nodes("hasPart") {
 		if err := b.claim(part, person, org); err != nil {
 			return err
@@ -405,6 +503,9 @@ func (b *elmBuilder) credits(achievement, spec *elm.Node) float64 {
 	}
 	return 0
 }
+
+// untitledAchievement titles an achievement that names nothing it is for.
+const untitledAchievement = "Credits"
 
 // ectsConcept is the EU education-credit vocabulary concept for ECTS.
 const ectsConcept = "http://data.europa.eu/snb/education-credit/6fcec5c5af"

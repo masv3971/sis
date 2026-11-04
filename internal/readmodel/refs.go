@@ -58,6 +58,12 @@ func refsOf(e domain.Entity) []ref {
 			{"program", "programId", &v.ProgramID, v.ProgramID != ""},
 			{"offering", "offeringId", &v.OfferingID, false},
 		}
+	case *domain.Entitlement:
+		return []ref{
+			{"person", "personId", &v.PersonID, true},
+			{"organization", "orgId", &v.OrgID, false},
+			{"result", "resultId", &v.ResultID, false},
+		}
 	}
 	return nil
 }
@@ -186,6 +192,8 @@ func (c *Client) sourcedIDs(ctx context.Context, typ string, ids []string) (map[
 		return c.offeringSourcedIDs(ctx, ids)
 	case "program":
 		return entitySourcedIDs(ctx, c.Programs, ids)
+	case "result":
+		return entitySourcedIDs(ctx, c.Results, ids)
 	}
 	return nil, errUnknownRefType(typ)
 }

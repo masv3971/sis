@@ -2,7 +2,7 @@
 title ELM v3: from student information to credentials
 
 rectangle "Student records\n(Ladok, SIS)" as src
-rectangle "ELM v3 student information\n--\nPerson (credentialSubject)\n  hasClaim: LearningAchievement\n    specifiedBy: Qualification / Specification\n    wasDerivedFrom: LearningAssessment (grade)\n    wasInfluencedBy: LearningActivity\n    awardedBy: Organisation\n    creditReceived (ECTS)" as elm
+rectangle "ELM v3 student information\n--\nPerson (credentialSubject)\n  hasClaim: LearningAchievement\n    specifiedBy: Qualification / Specification\n    provenBy: LearningAssessment (grade)\n    influencedBy: LearningActivity\n    entitlesTo: LearningEntitlement\n    awardedBy: Organisation\n    creditReceived (ECTS)\n  hasClaim: LearningActivity (participation)\n  hasClaim: LearningEntitlement" as elm
 rectangle "European Digital Credential (EDC)\n--\nELM content\n+ W3C VC envelope:\n  @context, type, issuer,\n  issued, validFrom, credentialSchema" as edc
 rectangle "Sealed EDC\n--\nJAdES:\n{ payload, signatures }" as sealed
 rectangle "Micro-credential\n--\nan EDC whose claim fills\nall Annex I fields\n(ECTS, EQF level, outcomes,\nassessment, participation, QA)" as mc

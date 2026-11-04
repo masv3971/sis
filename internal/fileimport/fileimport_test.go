@@ -31,6 +31,7 @@ func newCatalog() *readmodel.Client {
 		Enrollments:      service.NewResource(memory.NewDocRepo[domain.Enrollment](), nil, nil, log),
 		Programs:         service.NewResource(memory.NewDocRepo[domain.Program](), nil, nil, log),
 		Results:          service.NewResource(memory.NewDocRepo[domain.Result](), nil, nil, log),
+		Entitlements:     service.NewResource(memory.NewDocRepo[domain.Entitlement](), nil, nil, log),
 	}
 }
 

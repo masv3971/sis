@@ -185,6 +185,39 @@ definitions:
       updatedAt:
         type: string
     type: object
+  domain.Entitlement:
+    properties:
+      createdAt:
+        type: string
+      expiresAt:
+        description: |-
+          ExpiresAt is when the record stops being served and becomes eligible
+          for deletion; nil means it never expires. Server-managed: only
+          POST /api/v1/populate with a ttl sets it, and /api/v1 writes ignore it.
+        type: string
+      expiryDate:
+        type: string
+      id:
+        type: string
+      issuedDate:
+        description: IssuedDate and ExpiryDate are ISO 8601 dates.
+        type: string
+      orgId:
+        type: string
+      personId:
+        type: string
+      resultId:
+        description: ResultID optionally names the result that confers the entitlement.
+        type: string
+      sourcedId:
+        type: string
+      status:
+        $ref: '#/definitions/domain.Status'
+      title:
+        type: string
+      updatedAt:
+        type: string
+    type: object
   domain.Identifier:
     properties:
       type:
@@ -437,6 +470,21 @@ definitions:
       items:
         items:
           $ref: '#/definitions/domain.Enrollment'
+        type: array
+      limit:
+        description: Limit is the effective page size after defaulting and clamping.
+        type: integer
+      offset:
+        type: integer
+      total:
+        description: Total is the number of entities across all pages.
+        type: integer
+    type: object
+  restadmin.ListReply-domain_Entitlement:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/domain.Entitlement'
         type: array
       limit:
         description: Limit is the effective page size after defaulting and clamping.
@@ -1213,6 +1261,232 @@ paths:
       summary: Replace enrollment
       tags:
       - enrollments
+  /entitlements:
+    get:
+      description: Lists entitlements with limit/offset paging.
+      operationId: list-entitlements
+      parameters:
+      - description: Page size; defaults to default_limit and is clamped to max_limit
+        in: query
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Number of items to skip
+        in: query
+        minimum: 0
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/restadmin.ListReply-domain_Entitlement'
+        "400":
+          description: Invalid paging parameters
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List entitlements
+      tags:
+      - entitlements
+    post:
+      consumes:
+      - application/json
+      description: Creates an entitlement. personId and title are required; orgId
+        and resultId are optional. All references must be the ids (not sourcedIds)
+        of existing records. id is generated when empty, sourcedId defaults to id,
+        and createdAt/updatedAt are set by the server.
+      operationId: create-entitlement
+      parameters:
+      - description: Entitlement to create
+        in: body
+        name: entitlement
+        required: true
+        schema:
+          $ref: '#/definitions/domain.Entitlement'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/domain.Entitlement'
+        "400":
+          description: Malformed body or validation error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "409":
+          description: id or sourcedId already in use
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "413":
+          description: Request body too large
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create entitlement
+      tags:
+      - entitlements
+  /entitlements/{id}:
+    delete:
+      description: Deletes one entitlement by id.
+      operationId: delete-entitlement
+      parameters:
+      - description: Entitlement id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete entitlement
+      tags:
+      - entitlements
+    get:
+      description: Returns one entitlement by id.
+      operationId: get-entitlement
+      parameters:
+      - description: Entitlement id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/domain.Entitlement'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get entitlement
+      tags:
+      - entitlements
+    put:
+      consumes:
+      - application/json
+      description: Replaces an entitlement. References must be the ids of existing
+        records. The path id wins over any id in the body; createdAt is preserved
+        and an empty sourcedId keeps the stored one.
+      operationId: update-entitlement
+      parameters:
+      - description: Entitlement id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Replacement entitlement
+        in: body
+        name: entitlement
+        required: true
+        schema:
+          $ref: '#/definitions/domain.Entitlement'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/domain.Entitlement'
+        "400":
+          description: Malformed body or validation error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "409":
+          description: sourcedId already in use
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "413":
+          description: Request body too large
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Replace entitlement
+      tags:
+      - entitlements
   /offerings:
     get:
       description: Lists offerings with limit/offset paging.

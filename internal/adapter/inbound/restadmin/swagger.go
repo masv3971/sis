@@ -41,6 +41,8 @@ package restadmin
 //	@tag.description			Structured collections of courses leading to a qualification
 //	@tag.name					results
 //	@tag.description			A person's grade and credits for a course or program
+//	@tag.name					entitlements
+//	@tag.description			Rights a person holds, e.g. access to further studies (not published via OEAPI/Edu-API)
 //	@tag.name					convert
 //	@tag.description			Convert external formats (ELM) to Edu-API/OEAPI, and load them
 
@@ -610,3 +612,84 @@ package restadmin
 //	@Failure		404	{object}	helpers.ErrorResponse	"Not Found"
 //	@Failure		500	{object}	helpers.ErrorResponse	"Internal Server Error"
 //	@Router			/results/{id} [delete]
+
+// -- entitlements -------------------------------------------------------------
+
+//	@Summary		List entitlements
+//	@ID				list-entitlements
+//	@Description	Lists entitlements with limit/offset paging.
+//	@Tags			entitlements
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			limit	query		int										false	"Page size; defaults to default_limit and is clamped to max_limit"	minimum(1)
+//	@Param			offset	query		int										false	"Number of items to skip"											minimum(0)
+//	@Success		200		{object}	restadmin.ListReply[domain.Entitlement]	"Success"
+//	@Failure		400		{object}	helpers.ErrorResponse					"Invalid paging parameters"
+//	@Failure		401		{object}	auth.ErrorResponse						"Missing, invalid or untrusted token"
+//	@Failure		403		{object}	auth.ErrorResponse						"Token lacks the required scope"
+//	@Failure		500		{object}	helpers.ErrorResponse					"Internal Server Error"
+//	@Router			/entitlements [get]
+
+//	@Summary		Create entitlement
+//	@ID				create-entitlement
+//	@Description	Creates an entitlement. personId and title are required; orgId and resultId are optional. All references must be the ids (not sourcedIds) of existing records. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.
+//	@Tags			entitlements
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			entitlement	body		domain.Entitlement		true	"Entitlement to create"
+//	@Success		201			{object}	domain.Entitlement		"Created"
+//	@Failure		400			{object}	helpers.ErrorResponse	"Malformed body or validation error"
+//	@Failure		401			{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403			{object}	auth.ErrorResponse		"Token lacks the required scope"
+//	@Failure		409			{object}	helpers.ErrorResponse	"id or sourcedId already in use"
+//	@Failure		413			{object}	helpers.ErrorResponse	"Request body too large"
+//	@Failure		500			{object}	helpers.ErrorResponse	"Internal Server Error"
+//	@Router			/entitlements [post]
+
+//	@Summary		Get entitlement
+//	@ID				get-entitlement
+//	@Description	Returns one entitlement by id.
+//	@Tags			entitlements
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			id	path		string					true	"Entitlement id"
+//	@Success		200	{object}	domain.Entitlement		"Success"
+//	@Failure		401	{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403	{object}	auth.ErrorResponse		"Token lacks the required scope"
+//	@Failure		404	{object}	helpers.ErrorResponse	"Not Found"
+//	@Failure		500	{object}	helpers.ErrorResponse	"Internal Server Error"
+//	@Router			/entitlements/{id} [get]
+
+//	@Summary		Replace entitlement
+//	@ID				update-entitlement
+//	@Description	Replaces an entitlement. References must be the ids of existing records. The path id wins over any id in the body; createdAt is preserved and an empty sourcedId keeps the stored one.
+//	@Tags			entitlements
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			id			path		string					true	"Entitlement id"
+//	@Param			entitlement	body		domain.Entitlement		true	"Replacement entitlement"
+//	@Success		200			{object}	domain.Entitlement		"Success"
+//	@Failure		400			{object}	helpers.ErrorResponse	"Malformed body or validation error"
+//	@Failure		401			{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403			{object}	auth.ErrorResponse		"Token lacks the required scope"
+//	@Failure		404			{object}	helpers.ErrorResponse	"Not Found"
+//	@Failure		409			{object}	helpers.ErrorResponse	"sourcedId already in use"
+//	@Failure		413			{object}	helpers.ErrorResponse	"Request body too large"
+//	@Failure		500			{object}	helpers.ErrorResponse	"Internal Server Error"
+//	@Router			/entitlements/{id} [put]
+
+//	@Summary		Delete entitlement
+//	@ID				delete-entitlement
+//	@Description	Deletes one entitlement by id.
+//	@Tags			entitlements
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			id	path	string	true	"Entitlement id"
+//	@Success		204	"No Content"
+//	@Failure		401	{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403	{object}	auth.ErrorResponse		"Token lacks the required scope"
+//	@Failure		404	{object}	helpers.ErrorResponse	"Not Found"
+//	@Failure		500	{object}	helpers.ErrorResponse	"Internal Server Error"
+//	@Router			/entitlements/{id} [delete]

@@ -30,6 +30,10 @@ type Repository[T any, PT domain.EntityPtr[T]] interface {
 	// GetBySourcedIDs is GetByIDs by sourcedId.
 	GetBySourcedIDs(ctx context.Context, sourcedIDs []string) ([]PT, error)
 	List(ctx context.Context, params ListParams) (Page[PT], error)
+	// ListByRef is List restricted to the entities whose reference field
+	// (its JSON name, e.g. "personId") equals id. field is a constant chosen
+	// by the caller, never request input.
+	ListByRef(ctx context.Context, field, id string, params ListParams) (Page[PT], error)
 	Delete(ctx context.Context, id string) error
 	// DeleteExpired removes every record expired at now and returns their
 	// ids, in no particular order.

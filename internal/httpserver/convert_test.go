@@ -36,6 +36,7 @@ func memCatalog(clock func() time.Time, log *logger.Log) *readmodel.Client {
 		Enrollments:      service.NewResource(memory.NewDocRepo[domain.Enrollment]().WithClock(clock), nil, clock, log),
 		Programs:         service.NewResource(memory.NewDocRepo[domain.Program]().WithClock(clock), nil, clock, log),
 		Results:          service.NewResource(memory.NewDocRepo[domain.Result]().WithClock(clock), nil, clock, log),
+		Entitlements:     service.NewResource(memory.NewDocRepo[domain.Entitlement]().WithClock(clock), nil, clock, log),
 	}
 }
 
@@ -115,7 +116,7 @@ func TestParseAndPopulate(t *testing.T) {
 	t.Run("populate with ttl", func(t *testing.T) {
 		out := do(t, writer, http.MethodPost, "/api/v1/populate", envelope(`{"input_format":"elm"}`, `,"ttl":"1h"`), http.StatusOK)
 		items, _ := out["items"].([]any)
-		require.Len(t, items, 10, "populate reply = %v", out)
+		require.Len(t, items, 11, "populate reply = %v", out)
 		require.NotNil(t, out["expiresAt"], "populate reply = %v", out)
 		got := do(t, reader, http.MethodGet, course, "", http.StatusOK)
 		gotCourse, _ := got["course"].(map[string]any)

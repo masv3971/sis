@@ -11,7 +11,8 @@
 //	  "offerings":        [{"sourcedId": "TDDE01-ht2026", "courseId": "TDDE01", "academicSessionId": "ht2026"}],
 //	  "persons":          [{"sourcedId": "anna", "givenName": "Anna", "familyName": "Andersson", "status": "active"}],
 //	  "enrollments":      [{"sourcedId": "anna-TDDE01", "personId": "anna", "offeringId": "TDDE01-ht2026"}],
-//	  "results":          [...]
+//	  "results":          [...],
+//	  "entitlements":     [...]
 //	}
 //
 // Records use the /api/v1 field names, with two differences: every record
@@ -49,6 +50,7 @@ type File struct {
 	Persons          []domain.Person           `json:"persons"`
 	Enrollments      []*domain.Enrollment      `json:"enrollments"`
 	Results          []*domain.Result          `json:"results"`
+	Entitlements     []*domain.Entitlement     `json:"entitlements"`
 }
 
 // Run imports every file in cfg.SIS.FileImport.Files, in order. The first
@@ -107,6 +109,7 @@ func Decode(data []byte) (*domain.Bundle, error) {
 		noNulls("offerings", f.Offerings),
 		noNulls("enrollments", f.Enrollments),
 		noNulls("results", f.Results),
+		noNulls("entitlements", f.Entitlements),
 	); err != nil {
 		return nil, err
 	}
@@ -124,6 +127,7 @@ func Decode(data []byte) (*domain.Bundle, error) {
 		Offerings:        f.Offerings,
 		Enrollments:      f.Enrollments,
 		Results:          f.Results,
+		Entitlements:     f.Entitlements,
 	}, nil
 }
 

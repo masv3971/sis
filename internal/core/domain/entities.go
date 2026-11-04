@@ -164,6 +164,38 @@ type Result struct {
 	ResultDate string `json:"resultDate,omitempty"`
 }
 
+// Entitlement is a right a person holds, e.g. access to further studies or
+// to practise a profession (ELM LearningEntitlement). Not published through
+// OEAPI or Edu-API, which have no such resource.
+type Entitlement struct {
+	Base
+	PersonID string `json:"personId"`
+	Title    string `json:"title"`
+	OrgID    string `json:"orgId,omitempty"`
+	// ResultID optionally names the result that confers the entitlement.
+	ResultID string `json:"resultId,omitempty"`
+	// IssuedDate and ExpiryDate are ISO 8601 dates.
+	IssuedDate string `json:"issuedDate,omitempty"`
+	ExpiryDate string `json:"expiryDate,omitempty"`
+}
+
+// EntityType returns the stable type tag.
+func (e *Entitlement) EntityType() string { return "entitlement" }
+
+// Validate checks required invariants.
+func (e *Entitlement) Validate() error {
+	if err := e.validateStatus(); err != nil {
+		return err
+	}
+	if e.PersonID == "" {
+		return Required("personId")
+	}
+	if e.Title == "" {
+		return Required("title")
+	}
+	return nil
+}
+
 // EntityType returns the stable type tag.
 func (r *Result) EntityType() string { return "result" }
 

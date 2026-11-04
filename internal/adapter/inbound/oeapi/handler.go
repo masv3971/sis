@@ -119,6 +119,110 @@ func Get[T any, PT domain.EntityPtr[T], D any](c *Client, svc *service.Resource[
 	}
 }
 
+// ListAssociations publishes enrollments as OEAPI associations, each with
+// the person's result in the offering nested.
+func (c *Client) ListAssociations(gc *gin.Context) {
+	pageNumber, pageSize, params, err := c.page(gc)
+	if err != nil {
+		helpers.WriteError(gc, err)
+		return
+	}
+	page, err := c.catalog.Enrollments.List(gc.Request.Context(), params)
+	if err != nil {
+		helpers.WriteError(gc, err)
+		return
+	}
+	out, err := c.associations(gc, page.Items)
+	if err != nil {
+		helpers.WriteError(gc, err)
+		return
+	}
+	gc.JSON(http.StatusOK, dto.NewPage(out, pageNumber, pageSize, page.Total))
+}
+
+// GetAssociation publishes one enrollment by sourcedId as an OEAPI
+// association, with its result nested.
+func (c *Client) GetAssociation(gc *gin.Context) {
+	enrollment, err := c.catalog.Enrollments.GetBySourcedID(gc.Request.Context(), gc.Param("id"))
+	if err != nil {
+		helpers.WriteError(gc, err)
+		return
+	}
+	out, err := c.associations(gc, []*domain.Enrollment{enrollment})
+	if err != nil {
+		helpers.WriteError(gc, err)
+		return
+	}
+	if len(out) == 0 {
+		helpers.WriteError(gc, domain.ErrNotFound)
+		return
+	}
+	gc.JSON(http.StatusOK, out[0])
+}
+
+// associations maps the publishable enrollments to associations, nesting
+// the result each person obtained in the offering. Results are looked up
+// once per distinct offering, before references are rewritten to sourcedIds.
+func (c *Client) associations(gc *gin.Context, enrollments []*domain.Enrollment) ([]dto.Association, error) {
+	ctx := gc.Request.Context()
+	byOffering := map[string][]*domain.Result{}
+	matched := make([]*domain.Result, len(enrollments))
+	for i, enrollment := range enrollments {
+		results, ok := byOffering[enrollment.OfferingID]
+		if !ok {
+			page, err := c.catalog.Results.ListByRef(ctx, "offeringId", enrollment.OfferingID, port.ListParams{})
+			if err != nil {
+				return nil, err
+			}
+			results = page.Items
+			byOffering[enrollment.OfferingID] = results
+		}
+		for _, result := range results {
+			if result.PersonID == enrollment.PersonID {
+				own := *result // PublishRefs rewrites in place; never share
+				matched[i] = &own
+				break
+			}
+		}
+	}
+
+	entities := make([]domain.Entity, 0, 2*len(enrollments))
+	for _, enrollment := range enrollments {
+		entities = append(entities, enrollment)
+	}
+	for _, result := range matched {
+		if result != nil {
+			entities = append(entities, result)
+		}
+	}
+	publishable, err := c.catalog.PublishRefs(ctx, entities...)
+	if err != nil {
+		return nil, err
+	}
+	resultOK := publishable[len(enrollments):]
+	out := make([]dto.Association, 0, len(enrollments))
+	for i, enrollment := range enrollments {
+		result := matched[i]
+		if result != nil {
+			ok := resultOK[0]
+			resultOK = resultOK[1:]
+			if !ok {
+				result = nil
+			}
+		}
+		if !publishable[i] {
+			continue
+		}
+		association := dto.FromAssociation(enrollment)
+		if result != nil {
+			nested := dto.FromResult(result)
+			association.Result = &nested
+		}
+		out = append(out, association)
+	}
+	return out, nil
+}
+
 // publishRefs rewrites the items' references to other records into those
 // records' sourcedIds (see readmodel.Client.PublishRefs), so every
 // relationship in the response can be followed through this provider, and
