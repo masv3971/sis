@@ -6,12 +6,15 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/SUNET/sis/internal/core/domain"
+	"github.com/SUNET/sis/pkg/elm"
 	"github.com/SUNET/sis/pkg/logger"
 )
 
@@ -321,6 +324,83 @@ func TestParseELMSpeclessActivityOrder(t *testing.T) {
 			assert.Equal(t, map[string]string{"urn:ach1": "urn:act", "urn:ach2": ""}, linked)
 			assert.Len(t, parsed.Warnings, 1, "the second achievement is not linked")
 			requireResultsMatchOfferings(t, bundle)
+		})
+	}
+}
+
+// cyclicELMClaims are claims whose hasPart refers back to an ancestor or to
+// themselves, each with the achievements expected from Parse.
+var cyclicELMClaims = map[string]struct {
+	claims  string
+	results []string
+}{
+	"self reference": {
+		`{"id": "urn:a", "type": "LearningAchievement", "title": "A", "hasPart": {"id": "urn:a"}}`,
+		[]string{"urn:a"},
+	},
+	"two-node cycle": {
+		`{"id": "urn:a", "type": "LearningAchievement", "title": "A", "hasPart": {"id": "urn:b"}},
+		 {"id": "urn:b", "type": "LearningAchievement", "title": "B", "hasPart": {"id": "urn:a"}}`,
+		[]string{"urn:a", "urn:b"},
+	},
+	"cycle through a third node": {
+		`{"id": "urn:a", "type": "LearningAchievement", "title": "A", "hasPart": {"id": "urn:b", "type": "LearningAchievement", "title": "B",
+			"hasPart": {"id": "urn:c", "type": "LearningAchievement", "title": "C", "hasPart": {"id": "urn:a"}}}}`,
+		[]string{"urn:a", "urn:b", "urn:c"},
+	},
+}
+
+// withinTime fails the test when fn does not return in time, so a runaway
+// recursion is reported instead of hanging the run.
+func withinTime(t *testing.T, fn func()) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		fn()
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("did not return: claims are walked without a cycle guard")
+	}
+}
+
+// TestParseELMCyclicParts checks claims that contain themselves through
+// hasPart are mapped once each and neither recurse forever in the planning
+// pass nor in achievement().
+func TestParseELMCyclicParts(t *testing.T) {
+	for name, tc := range cyclicELMClaims {
+		t.Run(name, func(t *testing.T) {
+			doc := `{"credentialSubject": {"id": "urn:p", "givenName": "A", "familyName": "B", "hasClaim": [` + tc.claims + `]}}`
+			var parsed *Parsed
+			var err error
+			withinTime(t, func() { parsed, err = newClient(t).Parse(FormatELM, []byte(doc), "data") })
+			require.NoError(t, err)
+			var got []string
+			for _, result := range parsed.Bundle.Results {
+				got = append(got, result.SourcedID)
+			}
+			assert.ElementsMatch(t, tc.results, got, "each achievement once")
+			assert.Empty(t, parsed.Warnings)
+		})
+	}
+}
+
+// TestPlanActivitiesCyclicParts checks the planning pass alone ends on the
+// same documents and still plans the activity of a claim inside the cycle.
+func TestPlanActivitiesCyclicParts(t *testing.T) {
+	for name, tc := range cyclicELMClaims {
+		t.Run(name, func(t *testing.T) {
+			// urn:act has no specification; urn:a, the first claim, names it.
+			claims := strings.Replace(tc.claims, `"title": "A"`, `"title": "A", "specifiedBy": {"id": "urn:specA"}, "influencedBy": {"id": "urn:act", "type": "LearningActivity"}`, 1)
+			raw := `{"credentialSubject": {"id": "urn:p", "hasClaim": [` + claims + `]}}`
+			doc, err := elm.Parse([]byte(raw), "data")
+			require.NoError(t, err)
+			b := &elmBuilder{base: "b", rootPath: "data", planned: map[string]string{}, planSeen: map[string]bool{}}
+			subject := doc.Root.Nodes("credentialSubject")[0]
+			withinTime(t, func() { b.planActivities(subject.Nodes("hasClaim")) })
+			assert.Equal(t, map[string]string{"urn:act": "urn:specA"}, b.planned)
 		})
 	}
 }

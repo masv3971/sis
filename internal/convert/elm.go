@@ -61,7 +61,7 @@ func parseELM(data []byte, path string) (*Parsed, error) {
 		return nil, &domain.ValidationError{Field: path + ".credentialSubject", Msg: "required: data must be an ELM credential"}
 	}
 
-	b := &elmBuilder{base: root.ID(), memo: map[string]string{}, inProgress: map[string]bool{}, planned: map[string]string{}, warnings: envelopeWarnings}
+	b := &elmBuilder{base: root.ID(), memo: map[string]string{}, inProgress: map[string]bool{}, planned: map[string]string{}, planSeen: map[string]bool{}, warnings: envelopeWarnings}
 	if b.base == "" {
 		sum := sha256.Sum256(data)
 		b.base = "elm:sha256:" + hex.EncodeToString(sum[:16])
@@ -97,6 +97,7 @@ type elmBuilder struct {
 	// planned maps the sourcedId of an activity without a specification to
 	// the course of the first achievement it influenced (see planActivities).
 	planned  map[string]string
+	planSeen map[string]bool // achievements planActivities has visited (cycle guard)
 	warnings []string
 }
 
@@ -295,6 +296,12 @@ func (b *elmBuilder) planActivities(claims []*elm.Node) {
 		if !claim.Is("LearningAchievement") && len(claim.Types()) != 0 {
 			continue
 		}
+		// Like achievement(), only the first visit counts; hasPart may point back.
+		claimSID := b.sid(claim)
+		if b.planSeen[claimSID] {
+			continue
+		}
+		b.planSeen[claimSID] = true
 		course := ""
 		if spec := claim.Node("specifiedBy"); spec == nil {
 			course = b.sid(claim) + "#specification"
