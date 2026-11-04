@@ -32,9 +32,11 @@ import (
 )
 
 func testCfg(addr string) *model.Cfg {
-	return &model.Cfg{SIS: model.SIS{
+	cfg := &model.Cfg{SIS: model.SIS{
 		HTTPServer: model.HTTPServer{Addr: addr, ReadTimeout: time.Second, WriteTimeout: time.Second},
 	}}
+	cfg.SIS.Adapter.Inbound.EduAPI.RecordLanguage = "en"
+	return cfg
 }
 
 func newTestServer(t *testing.T, addr string) (*Service, error) {
@@ -185,6 +187,7 @@ func TestScopesGateAPIs(t *testing.T) {
 	base := "http://" + srv.Addr().String()
 
 	read, write, both := iss.Token(t, "sunet-vc", "sis.read"), iss.Token(t, "w", "sis.write"), iss.Token(t, "liu", "sis.read sis.write")
+	specRead := iss.Token(t, "client", "http://purl.1edtech.org/spec/eduapi/v1p0/scope/core.readonly")
 	status := func(token, method, path, body string) int {
 		req, _ := http.NewRequestWithContext(t.Context(), method, base+path, strings.NewReader(body))
 		req.Header.Set("Authorization", "Bearer "+token)
@@ -202,12 +205,15 @@ func TestScopesGateAPIs(t *testing.T) {
 		{"read cannot create", read, http.MethodPost, "/api/v1/persons", person, http.StatusForbidden},
 		{"write creates", write, http.MethodPost, "/api/v1/persons", person, http.StatusCreated},
 		{"write cannot list", write, http.MethodGet, "/api/v1/persons", "", http.StatusForbidden},
-		{"write cannot use eduapi", write, http.MethodGet, "/eduapi/persons", "", http.StatusForbidden},
+		{"write cannot use eduapi", write, http.MethodGet, eduBase + "/persons", "", http.StatusForbidden},
 		{"read lists", read, http.MethodGet, "/api/v1/persons", "", http.StatusOK},
-		{"read eduapi", read, http.MethodGet, "/eduapi/persons/p1", "", http.StatusOK},
+		{"read eduapi", read, http.MethodGet, eduBase + "/persons/p1", "", http.StatusOK},
+		{"spec scope reads eduapi", specRead, http.MethodGet, eduBase + "/persons/p1", "", http.StatusOK},
+		{"spec scope is only for eduapi", specRead, http.MethodGet, "/oeapi/persons/p1", "", http.StatusForbidden},
+		{"old eduapi path is gone", read, http.MethodGet, "/eduapi/persons/p1", "", http.StatusNotFound},
 		{"read oeapi", read, http.MethodGet, "/oeapi/persons/p1", "", http.StatusOK},
 		{"both lists", both, http.MethodGet, "/api/v1/persons", "", http.StatusOK},
-		{"no token", "", http.MethodGet, "/eduapi/persons", "", http.StatusUnauthorized},
+		{"no token", "", http.MethodGet, eduBase + "/persons", "", http.StatusUnauthorized},
 		{"untrusted issuer", authtest.NewIssuer(t).Token(t, "x", "sis.read sis.write"), http.MethodGet, "/api/v1/persons", "", http.StatusUnauthorized},
 	}
 	for _, tc := range cases {
@@ -296,7 +302,7 @@ func TestIDsWithSlashesRoundTrip(t *testing.T) {
 		require.Equal(t, id, got["id"], "PUT = %v", got)
 		require.Equal(t, "C", got["givenName"], "PUT = %v", got)
 		do(t, http.MethodGet, "/oeapi/persons/"+esc(sid), "", http.StatusOK)
-		do(t, http.MethodGet, "/eduapi/persons/"+esc(sid), "", http.StatusOK)
+		do(t, http.MethodGet, eduBase+"/persons/"+esc(sid), "", http.StatusOK)
 		do(t, http.MethodDelete, "/api/v1/persons/"+esc(id), "", http.StatusNoContent)
 		do(t, http.MethodGet, "/api/v1/persons/"+esc(id), "", http.StatusNotFound)
 	})
@@ -310,7 +316,7 @@ func TestIDsWithSlashesRoundTrip(t *testing.T) {
 		require.Equal(t, id, got["id"], "PUT = %v", got)
 		require.Equal(t, "V", got["name"], "PUT = %v", got)
 		do(t, http.MethodGet, "/oeapi/organizations/"+esc(sid), "", http.StatusOK)
-		do(t, http.MethodGet, "/eduapi/orgs/"+esc(sid), "", http.StatusOK)
+		do(t, http.MethodGet, eduBase+"/organizations/"+esc(sid), "", http.StatusOK)
 		do(t, http.MethodDelete, "/api/v1/organizations/"+esc(id), "", http.StatusNoContent)
 		do(t, http.MethodGet, "/api/v1/organizations/"+esc(id), "", http.StatusNotFound)
 	})

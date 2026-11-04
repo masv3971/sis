@@ -3,6 +3,7 @@ package auth
 import (
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -64,6 +65,25 @@ func RequireScope(scope string) gin.HandlerFunc {
 		if !claims.HasScope(scope) {
 			challenge(gc, `error="insufficient_scope", scope="`+scope+`"`)
 			abort(gc, http.StatusForbidden, helpers.MsgLacksScope(scope))
+			return
+		}
+		gc.Next()
+	}
+}
+
+// RequireAnyScope is RequireScope for a route that several scopes open. The
+// challenge names the first scope.
+func RequireAnyScope(scopes ...string) gin.HandlerFunc {
+	return func(gc *gin.Context) {
+		claims := ClaimsFrom(gc)
+		if claims == nil {
+			challenge(gc, "")
+			abort(gc, http.StatusUnauthorized, helpers.MsgUnauthenticated)
+			return
+		}
+		if !slices.ContainsFunc(scopes, claims.HasScope) {
+			challenge(gc, `error="insufficient_scope", scope="`+scopes[0]+`"`)
+			abort(gc, http.StatusForbidden, helpers.MsgLacksScope(scopes[0]))
 			return
 		}
 		gc.Next()

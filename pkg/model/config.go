@@ -221,6 +221,9 @@ type OEAPI struct {
 type EduAPI struct {
 	DefaultLimit int `yaml:"default_limit" default:"100" validate:"gt=0"`
 	MaxLimit     int `yaml:"max_limit" default:"500" validate:"gtefield=DefaultLimit"`
+	// RecordLanguage is the BCP 47 tag the spec requires on every record and
+	// text. SIS stores no language, so all records get this one.
+	RecordLanguage string `yaml:"record_language" default:"en" validate:"required"`
 }
 
 type Outbound struct {

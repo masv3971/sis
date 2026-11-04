@@ -5,7 +5,7 @@
 # The AMQP API has no parse command and no replies, so this publishes a
 # populate command (with a TTL) to the sis.commands queue through the
 # RabbitMQ management HTTP API, waits until SIS has consumed it, and reads
-# the records back from /eduapi. Unlike test_parse-elm-eduapi.sh the records
+# the records back from the Edu-API. Unlike test_parse-elm-eduapi.sh the records
 # ARE stored (until TTL expires).
 #
 # Usage:
@@ -53,8 +53,10 @@ DLQ="${DLQ:-sis.commands.dlq}"
 TTL="${TTL-1h}"
 TIMEOUT="${TIMEOUT:-30}"
 
-# Edu-API list endpoints (path == response key), in parse output order.
-EDU_TYPES=(persons orgs academicSessions courses programs classes enrollments results)
+# Edu-API list endpoints (path == key in the parse output). Edu-API has no
+# result resource, so results are not read back.
+EDU_BASE=/1edtech/eduapi/base/v1p0
+EDU_TYPES=(persons organizations academicSessions courseTemplates collectionTemplates courseOfferings enrollments)
 PAGE=500
 
 fail() { echo "error: $*" >&2; exit 1; }
@@ -98,21 +100,21 @@ header() {
 }
 
 # edu_list TYPE: every TYPE record modified since T0, one JSON per line.
-# SIS clamps limit to sis.adapter.inbound.eduapi.max_limit, so the offset
-# advances by the page size it applied (X-Limit), not by PAGE or by the
-# items returned (orphans are left out of a page).
+# SIS clamps limit to sis.adapter.inbound.eduapi.max_limit and leaves out
+# records whose required references are gone, so a page can be shorter than
+# the limit without being the last. The offset therefore advances by the
+# items returned (by 1 for an empty page) until it reaches X-Total-Count;
+# a record can be read twice, which collect removes.
 edu_list() {
-    local typ=$1 offset=0 total limit
+    local typ=$1 offset=0 total count
     while :; do
-        sis "/eduapi/${typ}?limit=${PAGE}&offset=${offset}" \
+        sis "${EDU_BASE}/${typ}?limit=${PAGE}&offset=${offset}" \
             -D "$tmp/headers" -o "$tmp/page" >/dev/null
-        jq -c --arg k "$typ" --arg t "$T0" \
-            '.[$k][]? | select((.dateLastModified // "") >= $t)' "$tmp/page" || return
+        jq -c --arg t "$T0" '.[] | select((.dateLastModified // "") >= $t)' "$tmp/page" || return
         total="$(header X-Total-Count)"
-        limit="$(header X-Limit)"
-        [[ "$total" =~ ^[0-9]+$ ]] || fail "/eduapi/${typ}: no X-Total-Count header"
-        [[ "$limit" =~ ^[1-9][0-9]*$ ]] || fail "/eduapi/${typ}: no X-Limit header"
-        offset=$((offset + limit))
+        [[ "$total" =~ ^[0-9]+$ ]] || fail "${EDU_BASE}/${typ}: no X-Total-Count header"
+        count="$(jq length "$tmp/page")" || return
+        offset=$((offset + (count > 0 ? count : 1)))
         ((offset < total)) || break
     done
 }
@@ -125,29 +127,46 @@ collect() {
     local typ
     : >"$tmp/collect" || return
     for typ in "${EDU_TYPES[@]}"; do
-        edu_list "$typ" | jq -cs --arg k "$typ" '{($k): .}' >>"$tmp/collect" || return
+        edu_list "$typ" | jq -cs --arg k "$typ" '{($k): unique_by(.sourcedId)}' >>"$tmp/collect" || return
     done
     jq -cs 'add | with_entries(select(.value | length > 0))' "$tmp/collect"
 }
 
+# oe_results PERSONS: the OEAPI results of the persons (a JSON array of
+# sourcedIds), as {key, value} lines. Edu-API has no results and OEAPI
+# results carry no timestamp, so this takes all results of those persons.
+oe_results() {
+    local page=1
+    while :; do
+        sis "/oeapi/results?pageNumber=${page}&pageSize=${PAGE}" -o "$tmp/page" >/dev/null
+        jq -c --argjson p "$1" \
+            '.items[] | select(.personId as $id | $p | index($id)) | {key: "results", value: .}' \
+            "$tmp/page" || return
+        [[ "$(jq -r .hasNextPage "$tmp/page")" == true ]] || break
+        page=$((page + 1))
+    done
+}
+
 # render_oeapi BUNDLE: fetch each record of an Edu-API bundle from /oeapi.
 render_oeapi() {
-    jq -r 'to_entries[] | .key as $k | .value[] | "\($k)\t\(.sourcedId)"' <<<"$1" |
-        while IFS=$'\t' read -r typ sid; do
-            case "$typ" in
-            persons) path=persons key=persons ;;
-            orgs) path=organizations key=organizations ;;
-            academicSessions) path=academic-sessions key=academicSessions ;;
-            courses) path=courses key=courses ;;
-            programs) path=programs key=programs ;;
-            classes) path=offerings key=offerings ;;
-            enrollments) path=associations key=associations ;;
-            results) path=results key=results ;;
-            *) fail "unexpected type ${typ}" ;;
-            esac
-            sis "/oeapi/${path}/$(jq -rn --arg s "$sid" '$s|@uri')" |
-                jq -c --arg k "$key" '{key: $k, value: .}'
-        done | jq -s 'reduce .[] as $e ({}; .[$e.key] += [$e.value])'
+    {
+        jq -r 'to_entries[] | .key as $k | .value[] | "\($k)\t\(.sourcedId)"' <<<"$1" |
+            while IFS=$'\t' read -r typ sid; do
+                case "$typ" in
+                persons) path=persons key=persons ;;
+                organizations) path=organizations key=organizations ;;
+                academicSessions) path=academic-sessions key=academicSessions ;;
+                courseTemplates) path=courses key=courses ;;
+                collectionTemplates) path=programs key=programs ;;
+                courseOfferings) path=offerings key=offerings ;;
+                enrollments) path=associations key=associations ;;
+                *) fail "unexpected type ${typ}" ;;
+                esac
+                sis "/oeapi/${path}/$(jq -rn --arg s "$sid" '$s|@uri')" |
+                    jq -c --arg k "$key" '{key: $k, value: .}'
+            done
+        oe_results "$(jq -c '[.persons[]?.sourcedId]' <<<"$1")"
+    } | jq -s 'reduce .[] as $e ({}; .[$e.key] += [$e.value])'
 }
 
 TOKEN="$(curl -sS --cacert "$CA_FILE" -X POST "$TOKEN_URL" \
@@ -189,7 +208,7 @@ while :; do
         fail "SIS rejected ${message_id}: dead-lettered to ${DLQ} (reason in the SIS log)"
     fi
     if ((queued == 0)); then
-        bundle="$(collect)" || fail "reading the records back from /eduapi failed"
+        bundle="$(collect)" || fail "reading the records back from the Edu-API failed"
         [[ "$bundle" != "{}" && "$bundle" == "$prev" ]] && break
         prev="$bundle"
     fi

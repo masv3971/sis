@@ -1,10 +1,12 @@
 // Package eduapi is the inbound Edu-API v1.0 read provider: it publishes the
-// canonical data in Edu-API shapes (read-only GET). Entry points are methods
-// on Client; route declarations live in the httpserver package.
+// canonical data in Edu-API shapes (read-only GET) under dto.BasePath. Entry
+// points are methods on Client; route declarations live in the httpserver
+// package.
 package eduapi
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -30,43 +32,85 @@ import (
 type Client struct {
 	cfg     *model.Cfg
 	catalog *readmodel.Client
+	mapper  dto.Mapper
 	log     *logger.Log
 }
 
 // New builds the eduapi Client.
 func New(_ context.Context, cfg *model.Cfg, catalog *readmodel.Client, log *logger.Log) (*Client, error) {
-	return &Client{cfg: cfg, catalog: catalog, log: log.New("eduapi")}, nil
+	mapper := dto.NewMapper(cfg.SIS.Adapter.Inbound.EduAPI.RecordLanguage)
+	return &Client{cfg: cfg, catalog: catalog, mapper: mapper, log: log.New("eduapi")}, nil
 }
 
-// ListPersons publishes persons in Edu-API shape with X-Total-Count and
-// X-Limit headers (see pageHeaders).
+// Mapper returns the mapper that tags records with the configured language,
+// for the route table.
+func (c *Client) Mapper() dto.Mapper { return c.mapper }
+
+// ListPersons publishes persons in Edu-API shape.
 func (c *Client) ListPersons(gc *gin.Context) {
 	params, err := c.limitOffset(gc)
 	if err != nil {
-		helpers.WriteError(gc, err)
+		writeError(gc, err)
 		return
 	}
 	page, err := c.catalog.Persons.ListPersons(gc.Request.Context(), params)
 	if err != nil {
-		helpers.WriteError(gc, err)
+		writeError(gc, err)
 		return
 	}
 	out := make([]dto.Person, 0, len(page.Items))
 	for _, person := range page.Items {
-		out = append(out, dto.FromPerson(person))
+		out = append(out, c.mapper.Person(person))
 	}
-	pageHeaders(gc, params, page.Total)
-	gc.JSON(http.StatusOK, gin.H{"persons": out})
+	totalCount(gc, page.Total)
+	gc.JSON(http.StatusOK, out)
 }
 
 // GetPerson publishes a single person by sourcedId in Edu-API shape.
 func (c *Client) GetPerson(gc *gin.Context) {
 	person, err := c.catalog.Persons.GetPersonBySourcedID(gc.Request.Context(), gc.Param("id"))
 	if err != nil {
-		helpers.WriteError(gc, err)
+		writeError(gc, err)
 		return
 	}
-	gc.JSON(http.StatusOK, gin.H{"person": dto.FromPerson(person)})
+	gc.JSON(http.StatusOK, c.mapper.Person(person))
+}
+
+// ListCourseOfferings publishes offerings as course offerings. The dates the
+// spec requires come from each offering's academic session.
+func (c *Client) ListCourseOfferings(gc *gin.Context) {
+	listWith(c, gc, c.catalog.Offerings, c.offeringDTOs)
+}
+
+// GetCourseOffering publishes one offering by sourcedId.
+func (c *Client) GetCourseOffering(gc *gin.Context) {
+	getWith(c, gc, c.catalog.Offerings, c.offeringDTOs)
+}
+
+// offeringDTOs maps offerings, whose academic session reference is already a
+// sourcedId, with one batched session lookup.
+func (c *Client) offeringDTOs(ctx context.Context, offerings []*domain.Offering) ([]dto.CourseOffering, error) {
+	var sourcedIDs []string
+	for _, offering := range offerings {
+		if offering.AcademicSessionID != "" {
+			sourcedIDs = append(sourcedIDs, offering.AcademicSessionID)
+		}
+	}
+	sessions := map[string]*domain.AcademicSession{}
+	if len(sourcedIDs) > 0 {
+		found, err := c.catalog.AcademicSessions.GetBySourcedIDs(ctx, sourcedIDs)
+		if err != nil {
+			return nil, err
+		}
+		for _, session := range found {
+			sessions[session.SourcedID] = session
+		}
+	}
+	out := make([]dto.CourseOffering, 0, len(offerings))
+	for _, offering := range offerings {
+		out = append(out, c.mapper.CourseOffering(offering, sessions[offering.AcademicSessionID]))
+	}
+	return out, nil
 }
 
 // The generic handlers below could not be methods on *Client: Go does not
@@ -74,67 +118,92 @@ func (c *Client) GetPerson(gc *gin.Context) {
 // *Client as the first argument. Each returns a gin.HandlerFunc the
 // httpserver can mount directly.
 
-// List builds a list handler for an entity type, mapping each item under key.
-func List[T any, PT domain.EntityPtr[T], D any](c *Client, svc *service.Resource[T, PT], key string, toDTO func(PT) D) gin.HandlerFunc {
-	return func(gc *gin.Context) {
-		params, err := c.limitOffset(gc)
-		if err != nil {
-			helpers.WriteError(gc, err)
-			return
-		}
-		page, err := svc.List(gc.Request.Context(), params)
-		if err != nil {
-			helpers.WriteError(gc, err)
-			return
-		}
-		items, err := publishRefs(c, gc, page.Items...)
-		if err != nil {
-			helpers.WriteError(gc, err)
-			return
-		}
+// each lifts a per-record mapper to a batch mapper.
+func each[PT, D any](toDTO func(PT) D) func(context.Context, []PT) ([]D, error) {
+	return func(_ context.Context, items []PT) ([]D, error) {
 		out := make([]D, 0, len(items))
 		for _, e := range items {
 			out = append(out, toDTO(e))
 		}
-		pageHeaders(gc, params, page.Total)
-		gc.JSON(http.StatusOK, gin.H{key: out})
+		return out, nil
 	}
+}
+
+// List builds a list handler for an entity type, mapping each item.
+func List[T any, PT domain.EntityPtr[T], D any](c *Client, svc *service.Resource[T, PT], toDTO func(PT) D) gin.HandlerFunc {
+	return func(gc *gin.Context) { listWith(c, gc, svc, each(toDTO)) }
 }
 
 // Get builds a get-by-sourcedId handler for an entity type.
-func Get[T any, PT domain.EntityPtr[T], D any](c *Client, svc *service.Resource[T, PT], key string, toDTO func(PT) D) gin.HandlerFunc {
-	return func(gc *gin.Context) {
-		e, err := svc.GetBySourcedID(gc.Request.Context(), gc.Param("id"))
-		if err != nil {
-			helpers.WriteError(gc, err)
-			return
-		}
-		items, err := publishRefs(c, gc, e)
-		if err != nil {
-			helpers.WriteError(gc, err)
-			return
-		}
-		if len(items) == 0 {
-			helpers.WriteError(gc, domain.ErrNotFound)
-			return
-		}
-		gc.JSON(http.StatusOK, gin.H{key: toDTO(e)})
+func Get[T any, PT domain.EntityPtr[T], D any](c *Client, svc *service.Resource[T, PT], toDTO func(PT) D) gin.HandlerFunc {
+	return func(gc *gin.Context) { getWith(c, gc, svc, each(toDTO)) }
+}
+
+// listWith answers a list request with a bare JSON array, as the spec
+// requires, and X-Total-Count.
+func listWith[T any, PT domain.EntityPtr[T], D any](c *Client, gc *gin.Context, svc *service.Resource[T, PT], toDTOs func(context.Context, []PT) ([]D, error)) {
+	params, err := c.limitOffset(gc)
+	if err != nil {
+		writeError(gc, err)
+		return
 	}
+	ctx := gc.Request.Context()
+	page, err := svc.List(ctx, params)
+	if err != nil {
+		writeError(gc, err)
+		return
+	}
+	items, err := publishRefs(ctx, c, page.Items...)
+	if err != nil {
+		writeError(gc, err)
+		return
+	}
+	out, err := toDTOs(ctx, items)
+	if err != nil {
+		writeError(gc, err)
+		return
+	}
+	totalCount(gc, page.Total)
+	gc.JSON(http.StatusOK, out)
+}
+
+func getWith[T any, PT domain.EntityPtr[T], D any](c *Client, gc *gin.Context, svc *service.Resource[T, PT], toDTOs func(context.Context, []PT) ([]D, error)) {
+	ctx := gc.Request.Context()
+	e, err := svc.GetBySourcedID(ctx, gc.Param("id"))
+	if err != nil {
+		writeError(gc, err)
+		return
+	}
+	items, err := publishRefs(ctx, c, e)
+	if err != nil {
+		writeError(gc, err)
+		return
+	}
+	if len(items) == 0 {
+		writeError(gc, domain.ErrNotFound)
+		return
+	}
+	out, err := toDTOs(ctx, items)
+	if err != nil {
+		writeError(gc, err)
+		return
+	}
+	gc.JSON(http.StatusOK, out[0])
 }
 
 // publishRefs rewrites the items' references to other records into those
-// records' sourcedIds (see readmodel.Client.PublishRefs), so every GUIDRef in
-// the response can be followed through this provider, and returns the items
-// that are publishable: orphans (a required reference no longer resolves)
-// are dropped, so a page may hold fewer than limit items while
+// records' sourcedIds (see readmodel.Client.PublishRefs), so every reference
+// in the response can be followed through this provider, and returns the
+// items that are publishable: orphans (a required reference no longer
+// resolves) are dropped, so a page may hold fewer than limit items while
 // X-Total-Count still counts stored records. A free function for the same
 // reason as List/Get: it is generic over PT.
-func publishRefs[PT domain.Entity](c *Client, gc *gin.Context, items ...PT) ([]PT, error) {
+func publishRefs[PT domain.Entity](ctx context.Context, c *Client, items ...PT) ([]PT, error) {
 	entities := make([]domain.Entity, len(items))
 	for i, e := range items {
 		entities[i] = e
 	}
-	publishable, err := c.catalog.PublishRefs(gc.Request.Context(), entities...)
+	publishable, err := c.catalog.PublishRefs(ctx, entities...)
 	if err != nil {
 		return nil, err
 	}
@@ -147,21 +216,40 @@ func publishRefs[PT domain.Entity](c *Client, gc *gin.Context, items ...PT) ([]P
 	return out, nil
 }
 
-// pageHeaders sets X-Total-Count (stored records) and X-Limit (the page size
-// actually applied, after clamping to max_limit). A client pages with
-// offset += X-Limit while offset < X-Total-Count. It must not count the
-// returned items instead: orphans are dropped from a page (publishRefs), so
-// a page can be short without being the last.
-func pageHeaders(gc *gin.Context, params port.ListParams, total int) {
+// totalCount sets X-Total-Count to the number of stored records. A client
+// pages with offset += limit while offset < X-Total-Count; it must not
+// count the returned items instead: orphans are dropped from a page, so a
+// page can be short without being the last.
+func totalCount(gc *gin.Context, total int) {
 	gc.Header("X-Total-Count", strconv.Itoa(total))
-	gc.Header("X-Limit", strconv.Itoa(params.Limit))
 }
 
-// limitOffset parses OneRoster-style limit/offset query parameters. An
-// omitted limit takes sis.adapter.inbound.eduapi.default_limit; a given one
-// must be positive and is clamped to .max_limit, so a caller can never
-// request an unbounded page.
+// limitOffset parses the limit/offset query parameters. An omitted limit
+// takes sis.adapter.inbound.eduapi.default_limit; a given one must be
+// positive and is clamped to .max_limit, so a caller can never request an
+// unbounded page. sort and filter are optional in the spec and answered
+// with 400.
 func (c *Client) limitOffset(gc *gin.Context) (port.ListParams, error) {
 	eduapiCfg := c.cfg.SIS.Adapter.Inbound.EduAPI
 	return helpers.ParseLimitOffset(gc, eduapiCfg.DefaultLimit, eduapiCfg.MaxLimit)
+}
+
+// writeError answers with the spec's error body, Imsx_StatusInfo, for the
+// status the shared classifier picks. The detail of an unclassified error is
+// dropped, as in helpers.WriteError.
+func writeError(gc *gin.Context, err error) {
+	apiErr := helpers.NewErrorFromError(err)
+	if apiErr == nil {
+		apiErr = helpers.NewErrorWithStatus(helpers.ErrInternal, http.StatusInternalServerError)
+	}
+	if apiErr.IsUnclassified() {
+		_ = gc.Error(err)
+		apiErr = helpers.NewErrorWithStatus(apiErr.Title, apiErr.Status())
+	}
+	description := apiErr.Title
+	if apiErr.Err != nil {
+		description = fmt.Sprintf("%s: %v", apiErr.Title, apiErr.Err)
+	}
+	status := apiErr.Status()
+	gc.JSON(status, dto.NewStatusInfo(status, description))
 }

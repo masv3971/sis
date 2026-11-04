@@ -5,7 +5,7 @@ three API surfaces and an admin web UI.
 
 - `/api/v1`: native read/write API
 - `/oeapi`: Open Education API v6.0 (read-only)
-- `/eduapi`: Edu-API v1.0 (read-only)
+- `/1edtech/eduapi/base/v1p0`: Edu-API v1.0 (read-only)
 - Web UI: React + TypeScript admin SPA
 
 ## Quick start
@@ -109,7 +109,7 @@ sequenceDiagram
     participant S as SIS
     C->>I: client credentials, or sign-in
     I-->>C: JWT {iss, aud, exp, scope: "sis.read"}
-    C->>S: GET /eduapi/persons (Bearer JWT)
+    C->>S: GET /1edtech/eduapi/base/v1p0/persons (Bearer JWT)
     S->>S: signed by a trusted issuer? not expired? right aud?
     S->>S: scope contains sis.read?
     S-->>C: 200, 401 or 403
@@ -146,7 +146,7 @@ sis:
 
 | Scope | Allows |
 | ----- | ------ |
-| `sis.read`  | `GET` on `/api/v1/*`, `POST /api/v1/parse`, everything under `/oeapi` and `/eduapi` |
+| `sis.read`  | `GET` on `/api/v1/*`, `POST /api/v1/parse`, everything under `/oeapi` and the Edu-API |
 | `sis.write` | `POST`, `PUT`, `DELETE` on `/api/v1/*`, `POST /api/v1/populate` |
 
 - **The scopes are independent.** `sis.write` does not include `sis.read`.
@@ -179,7 +179,7 @@ curl -s --cacert developer_tools/pki/rootCA.crt -X POST https://localhost:8080/a
   -d '{"sourcedId":"liu:nils.ny","givenName":"Nils","familyName":"Ny","status":"active"}'
 
 # SUNET vc reads it through Edu-API (by sourcedId): 200
-curl -s --cacert developer_tools/pki/rootCA.crt -H "Authorization: Bearer $VC" https://localhost:8080/eduapi/persons/liu:nils.ny
+curl -s --cacert developer_tools/pki/rootCA.crt -H "Authorization: Bearer $VC" https://localhost:8080/1edtech/eduapi/base/v1p0/persons/liu:nils.ny
 
 # SUNET vc tries to create one: 403 forbidden
 curl -s --cacert developer_tools/pki/rootCA.crt -X POST https://localhost:8080/api/v1/persons \
@@ -347,24 +347,48 @@ If the broker was started before these queues were added, recreate it
 `persons`, `organizations`, `academic-sessions`, `courses`, `offerings`,
 `associations`, `programs`, `results`
 
-### `/eduapi`: Edu-API v1.0 (read-only)
+### `/1edtech/eduapi/base/v1p0`: Edu-API v1.0 (read-only)
 
+The Final release (Oct 2026), under the base path the spec requires.
 `GET` list (`?limit=&offset=`) and `GET /:id` for:
 
-`persons`, `orgs`, `academicSessions`, `courses`, `classes`, `enrollments`,
-`programs`, `results`
+`persons`, `organizations`, `academicSessions`, `courseTemplates`,
+`courseOfferings`, `collectionTemplates` (programs), `enrollments`
 
-A list response carries `X-Total-Count` (stored records) and `X-Limit` (the
-page size applied: `limit` capped at `sis.adapter.inbound.eduapi.max_limit`).
-To read everything, add `X-Limit` to `offset` until it reaches
-`X-Total-Count`. Don't count the items instead: records whose required
-references are gone are left out, so a page can be short without being the
-last.
+A list is a bare JSON array. It carries `X-Total-Count` (stored records);
+`limit` is capped at `sis.adapter.inbound.eduapi.max_limit`. To read
+everything, advance `offset` by `limit` until it reaches `X-Total-Count`.
+Records whose required references are gone are left out, so a page can be
+short without being the last. `sort` and `filter` are optional in the spec
+and answer 400. Errors use the spec's `Imsx_StatusInfo` body.
+
+A token needs `sis.read` or the spec's scope
+`http://purl.1edtech.org/spec/eduapi/v1p0/scope/core.readonly`.
+
+What SIS cannot fill from its own data:
+
+- Every record and text carries `sis.adapter.inbound.eduapi.record_language`
+  (default `en`): SIS stores no language.
+- Required fields SIS has no data for get the spec's extension term
+  `ext:unspecified` (`level`, `creditType`, `offeringFormat`) or a fixed
+  value (`registrationStatus: closed`; `gradingScheme: unspecified`). A
+  program's EQF level maps to `level` where it can (6 is `undergraduate`, 7
+  `graduate`, 8 `doctoral`).
+- A course offering's `startDate` and `endDate` come from its academic
+  session, and are left out without one.
+- `organization` is required by the spec on templates and offerings, but a
+  SIS record's `orgId` is optional: without it the field is left out and the
+  record is not schema-valid. Set `orgId` on courses, programs and offerings
+  that consumers validate strictly.
+- A person has no `roles`: the spec puts role on the enrollment.
+- Not published: results (they belong to the separate Edu-API Gradebook
+  spec), entitlements, `affiliation`, component templates and offerings,
+  collection offerings, and the nested routes such as `/students`.
 
 Both standards APIs address resources by `sourcedId`, not by canonical id:
 
 ```bash
-curl -s --cacert developer_tools/pki/rootCA.crt -H "Authorization: Bearer $TOKEN" https://localhost:8080/eduapi/courses | jq
+curl -s --cacert developer_tools/pki/rootCA.crt -H "Authorization: Bearer $TOKEN" https://localhost:8080/1edtech/eduapi/base/v1p0/courseTemplates | jq
 ```
 
 ## Development

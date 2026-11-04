@@ -1,7 +1,7 @@
 // Package convertapi is the inbound adapter for document conversion: POST
 // /api/v1/parse converts a document (e.g. an ELM credential) to Edu-API or
 // OEAPI and returns it; POST /api/v1/populate converts it and stores the
-// records, optionally time-limited, so the /eduapi and /oeapi providers
+// records, optionally time-limited, so the Edu-API and /oeapi providers
 // serve them. Entry points are methods on Client; route declarations live in
 // the httpserver package.
 package convertapi
@@ -57,10 +57,11 @@ type ParseRequest struct {
 type ParseReply struct {
 	Metadata command.Metadata `json:"metadata"`
 	// Data holds the converted records, one array per resource collection of
-	// the output format (Edu-API: persons, orgs, academicSessions, courses,
-	// programs, classes, enrollments, results; OEAPI: persons, organizations,
-	// academicSessions, courses, programs, offerings, associations, results).
-	// References between them are sourcedIds.
+	// the output format (Edu-API: persons, organizations, academicSessions,
+	// courseTemplates, collectionTemplates, courseOfferings, enrollments, with
+	// no results; OEAPI: persons, organizations, academicSessions, courses,
+	// programs, offerings, associations, results). References between them
+	// are sourcedIds.
 	Data any `json:"data" swaggertype:"object"`
 	// Warnings name the parts of the document that were not converted.
 	Warnings []string `json:"warnings"`
@@ -111,7 +112,7 @@ func (c *Client) Parse(gc *gin.Context) {
 //
 //	@Summary		Load a document
 //	@ID				populate
-//	@Description	Converts data from metadata.input_format (elm, plain or in an EDCI envelope as for parse) and upserts every record by sourcedId, so /eduapi and /oeapi (and /api/v1) serve them. With ttl the records stop being served after that duration and are then deleted; re-populating refreshes the expiry, but a record that already existed without expiry keeps none. References in the document must resolve within it or to stored records. The document is checked completely before anything is stored; a storage failure part-way leaves earlier records stored, and retrying the same request converges. Requires scope sis.write.
+//	@Description	Converts data from metadata.input_format (elm, plain or in an EDCI envelope as for parse) and upserts every record by sourcedId, so the Edu-API and /oeapi (and /api/v1) serve them. With ttl the records stop being served after that duration and are then deleted; re-populating refreshes the expiry, but a record that already existed without expiry keeps none. References in the document must resolve within it or to stored records. The document is checked completely before anything is stored; a storage failure part-way leaves earlier records stored, and retrying the same request converges. Requires scope sis.write.
 //	@Tags			convert
 //	@Accept			json
 //	@Produce		json
