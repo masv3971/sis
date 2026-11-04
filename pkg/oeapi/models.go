@@ -206,23 +206,23 @@ func FromBundle(b *domain.Bundle) Bundle {
 	for _, person := range b.Persons {
 		out.Persons = append(out.Persons, FromPerson(person))
 	}
-	for i := range out.Associations {
-		out.Associations[i].Result = AssociationResult(out.Associations[i], b.Results)
-	}
-	return out
-}
-
-// AssociationResult returns, in OEAPI shape, the first of results obtained
-// by the association's person in its offering, or nil. References in both
-// must be in the same namespace (all sourcedIds or all canonical ids).
-func AssociationResult(association Association, results []*domain.Result) *Result {
-	for _, result := range results {
-		if result.OfferingID != "" && result.OfferingID == association.OfferingID && result.PersonID == association.PersonID {
-			out := FromResult(result)
-			return &out
+	// The first result per person and offering; references in both must be
+	// in the same namespace (all sourcedIds or all canonical ids).
+	type key struct{ person, offering string }
+	first := make(map[key]*domain.Result, len(b.Results))
+	for _, result := range b.Results {
+		k := key{result.PersonID, result.OfferingID}
+		if _, ok := first[k]; !ok && result.OfferingID != "" {
+			first[k] = result
 		}
 	}
-	return nil
+	for i := range out.Associations {
+		if result, ok := first[key{out.Associations[i].PersonID, out.Associations[i].OfferingID}]; ok {
+			nested := FromResult(result)
+			out.Associations[i].Result = &nested
+		}
+	}
+	return out
 }
 
 func mapAll[E, D any](in []E, fn func(E) D) []D {
