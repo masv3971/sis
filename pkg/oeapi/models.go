@@ -206,13 +206,14 @@ func FromBundle(b *domain.Bundle) Bundle {
 	for _, person := range b.Persons {
 		out.Persons = append(out.Persons, FromPerson(person))
 	}
-	// The first result per person and offering; references in both must be
-	// in the same namespace (all sourcedIds or all canonical ids).
+	// The result with the smallest sourcedId per person and offering, as the
+	// live OEAPI provider picks; references in both must be in the same
+	// namespace (all sourcedIds or all canonical ids).
 	type key struct{ person, offering string }
 	first := make(map[key]*domain.Result, len(b.Results))
 	for _, result := range b.Results {
 		k := key{result.PersonID, result.OfferingID}
-		if _, ok := first[k]; !ok && result.OfferingID != "" {
+		if held, ok := first[k]; result.OfferingID != "" && (!ok || result.SourcedID < held.SourcedID) {
 			first[k] = result
 		}
 	}
