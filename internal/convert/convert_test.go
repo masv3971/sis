@@ -205,6 +205,87 @@ func TestParseELMParticipation(t *testing.T) {
 	assert.Empty(t, parsed.Warnings)
 }
 
+// requireResultsMatchOfferings fails when a result is linked to an offering
+// of a different course.
+func requireResultsMatchOfferings(t *testing.T, bundle *domain.Bundle) {
+	t.Helper()
+	courseOf := map[string]string{}
+	for _, offering := range bundle.Offerings {
+		courseOf[offering.SourcedID] = offering.CourseID
+	}
+	for _, result := range bundle.Results {
+		if result.OfferingID != "" {
+			assert.Equal(t, courseOf[result.OfferingID], result.CourseID, "result %s and its offering are of different courses", result.SourcedID)
+		}
+	}
+}
+
+// TestParseELMSharedActivityCourse checks an activity shared by a
+// participation claim and an achievement of another course is an offering
+// of its own specification's course in either claim order, and the result
+// is not linked to an offering of a different course.
+func TestParseELMSharedActivityCourse(t *testing.T) {
+	activity := `{"id": "urn:act", "type": "LearningActivity", "title": "Webinar",
+		"specifiedBy": {"id": "urn:specX", "type": "LearningActivitySpecification", "title": "X"}}`
+	achievement := func(spec string) string {
+		return `{"id": "urn:ach", "type": "LearningAchievement", "title": "Y",
+			"specifiedBy": {"id": "` + spec + `", "type": "LearningAchievementSpecification", "title": "Y"},
+			"influencedBy": {"id": "urn:act", "type": "LearningActivity"}}`
+	}
+	for name, tc := range map[string]struct {
+		claims     string
+		linked     bool
+		wantWarned int
+	}{
+		"activity first":                        {activity + "," + achievement("urn:specY"), false, 1},
+		"achievement first":                     {achievement("urn:specY") + "," + activity, false, 1},
+		"same specification, activity first":    {activity + "," + achievement("urn:specX"), true, 0},
+		"same specification, achievement first": {achievement("urn:specX") + "," + activity, true, 0},
+	} {
+		t.Run(name, func(t *testing.T) {
+			doc := `{"credentialSubject": {"id": "urn:p", "givenName": "A", "familyName": "B", "hasClaim": [` + tc.claims + `]}}`
+			parsed, err := newClient(t).Parse(FormatELM, []byte(doc), "data")
+			require.NoError(t, err)
+			bundle := parsed.Bundle
+			require.Len(t, bundle.Offerings, 1)
+			assert.Equal(t, "urn:specX", bundle.Offerings[0].CourseID, "the activity's own specification")
+			require.Len(t, bundle.Results, 1)
+			if tc.linked {
+				assert.Equal(t, "urn:act", bundle.Results[0].OfferingID)
+			} else {
+				assert.Empty(t, bundle.Results[0].OfferingID)
+			}
+			assert.Len(t, parsed.Warnings, tc.wantWarned)
+			requireResultsMatchOfferings(t, bundle)
+		})
+	}
+}
+
+// TestParseELMSharedActivityParentChild checks a child achievement sharing
+// the activity of its qualification, which has no specification of its own,
+// is not linked to an offering of the activity's own course.
+func TestParseELMSharedActivityParentChild(t *testing.T) {
+	doc := `{"credentialSubject": {"id": "urn:p", "givenName": "A", "familyName": "B",
+		"hasClaim": {"id": "urn:parent", "type": "LearningAchievement", "title": "BSc",
+			"specifiedBy": {"id": "urn:qual", "type": "Qualification", "title": "BSc"},
+			"influencedBy": {"id": "urn:act", "type": "LearningActivity", "title": "Study"},
+			"hasPart": {"id": "urn:child", "type": "LearningAchievement", "title": "Course",
+				"specifiedBy": {"id": "urn:course", "type": "LearningAchievementSpecification", "title": "Course"},
+				"influencedBy": {"id": "urn:act", "type": "LearningActivity"}}}}}`
+	parsed, err := newClient(t).Parse(FormatELM, []byte(doc), "data")
+	require.NoError(t, err)
+	bundle := parsed.Bundle
+	require.Len(t, bundle.Offerings, 1)
+	require.Len(t, bundle.Results, 2)
+	for _, result := range bundle.Results {
+		if result.SourcedID == "urn:child" {
+			assert.Empty(t, result.OfferingID, "the offering is of the activity's own course")
+		}
+	}
+	assert.Len(t, parsed.Warnings, 1)
+	requireResultsMatchOfferings(t, bundle)
+}
+
 // TestParseELMCreditOnly checks an achievement naming nothing but credits
 // is kept as a result with a generated title, and a warning.
 func TestParseELMCreditOnly(t *testing.T) {

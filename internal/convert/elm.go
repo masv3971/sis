@@ -263,17 +263,28 @@ func (b *elmBuilder) awardingOrg(node *elm.Node, fallback string) string {
 // subject's Enrollment. Nothing was achieved, so no Result is made.
 func (b *elmBuilder) activity(activity *elm.Node, person, org string) error {
 	org = b.awardingOrg(activity, org)
-	spec := activity.Node("specifiedBy")
-	title := activity.Text("title")
-	if spec != nil {
-		title = firstNonEmpty(spec.Text("title"), title)
-	}
-	course, err := b.course(spec, activity, title, org)
+	course, err := b.activityCourse(activity, org)
 	if err != nil {
 		return err
 	}
-	_, err = b.offering(activity, course, org, person)
+	if course == "" {
+		// No specification: the activity describes the course itself.
+		if course, err = b.course(nil, activity, activity.Text("title"), org); err != nil {
+			return err
+		}
+	}
+	_, _, err = b.offering(activity, course, org, person)
 	return err
+}
+
+// activityCourse maps the specification of activity to a Course, or returns
+// "" when the activity has none.
+func (b *elmBuilder) activityCourse(activity *elm.Node, org string) (string, error) {
+	spec := activity.Node("specifiedBy")
+	if spec == nil {
+		return "", nil
+	}
+	return b.course(spec, activity, firstNonEmpty(spec.Text("title"), activity.Text("title")), org)
 }
 
 // entitlement maps a LearningEntitlement to an Entitlement for person,
@@ -365,9 +376,13 @@ func (b *elmBuilder) achievement(achievement *elm.Node, person, org string) erro
 			}
 			continue
 		}
-		offeringSID, err := b.offering(activity, result.CourseID, org, person)
+		offeringSID, offeringCourse, err := b.offering(activity, result.CourseID, org, person)
 		if err != nil {
 			return err
+		}
+		if offeringCourse != result.CourseID {
+			b.warn(activity.Path, "activity is an offering of course %s, not of the achievement's course %s; result not linked to it", offeringCourse, result.CourseID)
+			continue
 		}
 		if result.OfferingID == "" {
 			result.OfferingID = offeringSID
@@ -430,28 +445,36 @@ func (b *elmBuilder) program(spec *elm.Node, title, org string) (string, error) 
 	return sid, nil
 }
 
-// offering maps a LearningActivity to an Offering of course, with the
-// subject's Enrollment in it.
-func (b *elmBuilder) offering(activity *elm.Node, course, org, person string) (string, error) {
-	sid := b.sid(activity)
-	if _, ok := b.seen("offering", sid); !ok {
+// offering maps a LearningActivity to an Offering, with the subject's
+// Enrollment in it, and returns its sourcedId and the course it is of. That
+// is the course the activity's own specification describes, else fallback,
+// and is fixed by the first visit, so it never depends on claim order.
+func (b *elmBuilder) offering(activity *elm.Node, fallback, org, person string) (sid, course string, err error) {
+	sid = b.sid(activity)
+	course, ok := b.seen("offering", sid)
+	if !ok {
+		own, err := b.activityCourse(activity, b.awardingOrg(activity, org))
+		if err != nil {
+			return "", "", err
+		}
+		course = firstNonEmpty(own, fallback)
 		title := activity.Text("title")
 		if spec := activity.Node("specifiedBy"); spec != nil {
 			title = firstNonEmpty(title, spec.Text("title"))
 		}
 		offering := &domain.Offering{Base: base(sid), Title: title, CourseID: course, AcademicSessionID: b.session(activity), OrgID: org}
 		if err := check(activity.Path, "offering", offering); err != nil {
-			return "", err
+			return "", "", err
 		}
 		b.bundle.Offerings = append(b.bundle.Offerings, offering)
-		b.mark("offering", sid, sid)
+		b.mark("offering", sid, course)
 	}
 	enrollmentSID := sid + "#enrollment:" + person
 	if _, ok := b.seen("enrollment", enrollmentSID); !ok {
 		b.bundle.Enrollments = append(b.bundle.Enrollments, &domain.Enrollment{Base: base(enrollmentSID), PersonID: person, OfferingID: sid, Role: domain.RoleStudent})
 		b.mark("enrollment", enrollmentSID, enrollmentSID)
 	}
-	return sid, nil
+	return sid, course, nil
 }
 
 // session maps an activity's temporal period to an AcademicSession. Periods
