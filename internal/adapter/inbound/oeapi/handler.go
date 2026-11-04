@@ -7,6 +7,7 @@ package oeapi
 import (
 	"context"
 	"net/http"
+	"sort"
 
 	"github.com/gin-gonic/gin"
 
@@ -161,28 +162,34 @@ func (c *Client) GetAssociation(gc *gin.Context) {
 }
 
 // associations maps the publishable enrollments to associations, nesting
-// the result each person obtained in the offering. Results are looked up
-// once per distinct offering, before references are rewritten to sourcedIds.
+// the result each person obtained in the offering. Results come from one
+// query for all the offerings, before references are rewritten to sourcedIds.
 func (c *Client) associations(gc *gin.Context, enrollments []*domain.Enrollment) ([]dto.Association, error) {
 	ctx := gc.Request.Context()
-	byOffering := map[string][]*domain.Result{}
+	offeringIDs := make([]string, 0, len(enrollments))
+	for _, enrollment := range enrollments {
+		offeringIDs = append(offeringIDs, enrollment.OfferingID)
+	}
+	results, err := c.catalog.Results.ListByRefs(ctx, "offeringId", offeringIDs)
+	if err != nil {
+		return nil, err
+	}
+	// First result per person and offering, in sourcedId order, as the
+	// stored order is not defined.
+	sort.Slice(results, func(i, j int) bool { return results[i].SourcedID < results[j].SourcedID })
+	type key struct{ person, offering string }
+	first := make(map[key]*domain.Result, len(results))
+	for _, result := range results {
+		k := key{result.PersonID, result.OfferingID}
+		if _, ok := first[k]; !ok {
+			first[k] = result
+		}
+	}
 	matched := make([]*domain.Result, len(enrollments))
 	for i, enrollment := range enrollments {
-		results, ok := byOffering[enrollment.OfferingID]
-		if !ok {
-			page, err := c.catalog.Results.ListByRef(ctx, "offeringId", enrollment.OfferingID, port.ListParams{})
-			if err != nil {
-				return nil, err
-			}
-			results = page.Items
-			byOffering[enrollment.OfferingID] = results
-		}
-		for _, result := range results {
-			if result.PersonID == enrollment.PersonID {
-				own := *result // PublishRefs rewrites in place; never share
-				matched[i] = &own
-				break
-			}
+		if result, ok := first[key{enrollment.PersonID, enrollment.OfferingID}]; ok {
+			own := *result // PublishRefs rewrites in place; never share
+			matched[i] = &own
 		}
 	}
 

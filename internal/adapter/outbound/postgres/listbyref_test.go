@@ -48,4 +48,13 @@ func TestListByRef(t *testing.T) {
 
 	_, err = results.ListByRef(ctx, "offeringId' OR '1'='1", offering, port.ListParams{})
 	assert.Error(t, err, "field name must be checked")
+
+	items, err := results.ListByRefs(ctx, "offeringId", []string{offering, "other-" + suffix, "none"})
+	require.NoError(t, err)
+	assert.Len(t, items, 3, "live matches of every id")
+	items, err = results.ListByRefs(ctx, "offeringId", nil)
+	require.NoError(t, err)
+	assert.Empty(t, items)
+	_, err = results.ListByRefs(ctx, "offeringId' OR '1'='1", []string{offering})
+	assert.Error(t, err, "field name must be checked")
 }

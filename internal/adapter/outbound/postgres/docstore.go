@@ -175,6 +175,36 @@ func (r *DocRepo[T, PT]) ListByRef(ctx context.Context, field, id string, params
 	return r.list(ctx, "type=$1 AND data->>'"+field+"' = $2 AND "+liveFilter, []any{r.typeName, id}, params)
 }
 
+// ListByRefs returns the live entities whose reference field equals any of
+// ids in one query.
+func (r *DocRepo[T, PT]) ListByRefs(ctx context.Context, field string, ids []string) ([]PT, error) {
+	if !refField.MatchString(field) {
+		return nil, fmt.Errorf("postgres: invalid reference field %q", field)
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	rows, err := r.pool.Query(ctx, `SELECT data FROM entities WHERE type=$1 AND data->>'`+field+`' = ANY($2) AND `+liveFilter, r.typeName, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]PT, 0, preallocCap(len(ids)))
+	for rows.Next() {
+		var data []byte
+		if err := rows.Scan(&data); err != nil {
+			return nil, err
+		}
+		e, err := unmarshalDoc[T, PT](data)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, e)
+	}
+	return items, rows.Err()
+}
+
 // list returns the page of entities matching where (a constant condition,
 // never input, with its values in args as $1..$n).
 func (r *DocRepo[T, PT]) list(ctx context.Context, where string, args []any, params port.ListParams) (port.Page[PT], error) {

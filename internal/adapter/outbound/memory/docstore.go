@@ -232,16 +232,36 @@ func (r *DocRepo[T, PT]) List(_ context.Context, params port.ListParams) (port.P
 // JSON string property, as Postgres' data->>field) equals id.
 func (r *DocRepo[T, PT]) ListByRef(_ context.Context, field, id string, params port.ListParams) (port.Page[PT], error) {
 	return r.list(func(data []byte) (bool, error) {
-		var fields map[string]json.RawMessage
-		if err := json.Unmarshal(data, &fields); err != nil {
-			return false, err
-		}
-		var value string
-		if raw, ok := fields[field]; !ok || json.Unmarshal(raw, &value) != nil {
-			return false, nil // absent or not a string: no match, as ->> on a non-string
-		}
-		return value == id, nil
+		value, ok, err := refValue(data, field)
+		return ok && value == id, err
 	}, params)
+}
+
+// refValue returns the string property field of the stored JSON; ok is false
+// when it is absent or not a string, as ->> on a non-string never matches.
+func refValue(data []byte, field string) (value string, ok bool, err error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return "", false, err
+	}
+	raw, present := fields[field]
+	if !present || json.Unmarshal(raw, &value) != nil {
+		return "", false, nil
+	}
+	return value, true, nil
+}
+
+// ListByRefs returns the live entities whose reference field equals any of ids.
+func (r *DocRepo[T, PT]) ListByRefs(_ context.Context, field string, ids []string) ([]PT, error) {
+	wanted := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		wanted[id] = true
+	}
+	page, err := r.list(func(data []byte) (bool, error) {
+		value, ok, err := refValue(data, field)
+		return ok && wanted[value], err
+	}, port.ListParams{})
+	return page.Items, err
 }
 
 // list returns the page of live entities whose stored JSON keep accepts
