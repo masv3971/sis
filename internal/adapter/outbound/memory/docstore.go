@@ -225,6 +225,48 @@ func (r *DocRepo[T, PT]) GetBySourcedIDs(_ context.Context, sourcedIDs []string)
 
 // List returns a page of live entities ordered by sourcedId.
 func (r *DocRepo[T, PT]) List(_ context.Context, params port.ListParams) (port.Page[PT], error) {
+	return r.list(nil, params)
+}
+
+// ListByRef is List restricted to the entities whose reference field (a
+// JSON string property, as Postgres' data->>field) equals id.
+func (r *DocRepo[T, PT]) ListByRef(_ context.Context, field, id string, params port.ListParams) (port.Page[PT], error) {
+	return r.list(func(data []byte) (bool, error) {
+		value, ok, err := refValue(data, field)
+		return ok && value == id, err
+	}, params)
+}
+
+// refValue returns the string property field of the stored JSON; ok is false
+// when it is absent or not a string, as ->> on a non-string never matches.
+func refValue(data []byte, field string) (value string, ok bool, err error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return "", false, err
+	}
+	raw, present := fields[field]
+	if !present || json.Unmarshal(raw, &value) != nil {
+		return "", false, nil
+	}
+	return value, true, nil
+}
+
+// ListByRefs returns the live entities whose reference field equals any of ids.
+func (r *DocRepo[T, PT]) ListByRefs(_ context.Context, field string, ids []string) ([]PT, error) {
+	wanted := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		wanted[id] = true
+	}
+	page, err := r.list(func(data []byte) (bool, error) {
+		value, ok, err := refValue(data, field)
+		return ok && wanted[value], err
+	}, port.ListParams{})
+	return page.Items, err
+}
+
+// list returns the page of live entities whose stored JSON keep accepts
+// (all of them when keep is nil), ordered by sourcedId.
+func (r *DocRepo[T, PT]) list(keep func(data []byte) (bool, error), params port.ListParams) (port.Page[PT], error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	now := r.now()
@@ -232,6 +274,15 @@ func (r *DocRepo[T, PT]) List(_ context.Context, params port.ListParams) (port.P
 	for _, stored := range r.byID {
 		if domain.Expired(stored.expiresAt, now) {
 			continue
+		}
+		if keep != nil {
+			ok, err := keep(stored.data)
+			if err != nil {
+				return port.Page[PT]{}, err
+			}
+			if !ok {
+				continue
+			}
 		}
 		e, err := unmarshalDoc[T, PT](stored.data)
 		if err != nil {

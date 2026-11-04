@@ -81,6 +81,8 @@ type Association struct {
 	OfferingID    string `json:"offeringId"`
 	Role          string `json:"role,omitempty"`
 	State         string `json:"state,omitempty"`
+	// Result is the person's result in the offering, when there is one.
+	Result *Result `json:"result,omitempty"`
 }
 
 // Program is an OEAPI program.
@@ -92,9 +94,10 @@ type Program struct {
 	OrganizationID       string `json:"organizationId,omitempty"`
 }
 
-// Result is an OEAPI result. In OEAPI a result hangs off an association;
-// here it is published as its own resource carrying the person and the
-// course or program it is for.
+// Result is an OEAPI result. As in the spec, a result obtained in an
+// offering is nested in its association (Association.Result). Every result
+// is also published as its own resource carrying the person and the course
+// or program it is for, since a program result has no association.
 type Result struct {
 	ResultID   string  `json:"resultId"`
 	PersonID   string  `json:"personId"`
@@ -202,6 +205,23 @@ func FromBundle(b *domain.Bundle) Bundle {
 	}
 	for _, person := range b.Persons {
 		out.Persons = append(out.Persons, FromPerson(person))
+	}
+	// The result with the smallest sourcedId per person and offering, as the
+	// live OEAPI provider picks; references in both must be in the same
+	// namespace (all sourcedIds or all canonical ids).
+	type key struct{ person, offering string }
+	first := make(map[key]*domain.Result, len(b.Results))
+	for _, result := range b.Results {
+		k := key{result.PersonID, result.OfferingID}
+		if held, ok := first[k]; result.OfferingID != "" && (!ok || result.SourcedID < held.SourcedID) {
+			first[k] = result
+		}
+	}
+	for i := range out.Associations {
+		if result, ok := first[key{out.Associations[i].PersonID, out.Associations[i].OfferingID}]; ok {
+			nested := FromResult(result)
+			out.Associations[i].Result = &nested
+		}
 	}
 	return out
 }

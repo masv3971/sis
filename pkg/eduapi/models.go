@@ -93,8 +93,10 @@ type Enrollment struct {
 }
 
 // Program is an academic program (a structured set of courses leading to a
-// qualification). Edu-API 1.0 has no first-class program resource; the shape
-// follows the 1EdTech conventions used by the other resources here.
+// qualification). Edu-API 1.0 final models it as a collectionTemplate
+// (collectionType "program"; title, primaryCode, level, organization); this
+// shape keeps the OneRoster conventions of the other resources here until
+// the whole provider moves to the final spec.
 type Program struct {
 	SourcedID        string   `json:"sourcedId"`
 	Status           string   `json:"status,omitempty"`
@@ -106,7 +108,9 @@ type Program struct {
 }
 
 // Result is a person's outcome for a course or program (OneRoster lineage:
-// score/scoreDate), extended with the program link and credits.
+// score/scoreDate), extended with the program link and credits. Edu-API 1.0
+// final has no result resource; results belong to the separate Edu-API
+// Gradebook spec.
 type Result struct {
 	SourcedID        string   `json:"sourcedId"`
 	Status           string   `json:"status,omitempty"`

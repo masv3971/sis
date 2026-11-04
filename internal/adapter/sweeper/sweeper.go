@@ -82,6 +82,7 @@ func (s *Service) sweepBounded(ctx context.Context) int {
 // an expiry, so they normally go together.)
 func sweepsOf(catalog *readmodel.Client) []sweepFunc {
 	return []sweepFunc{
+		{"entitlement", catalog.Entitlements.DeleteExpired},
 		{"result", catalog.Results.DeleteExpired},
 		{"enrollment", catalog.Enrollments.DeleteExpired},
 		{"person", catalog.Persons.DeleteExpiredPersons},

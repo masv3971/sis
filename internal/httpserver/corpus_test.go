@@ -40,6 +40,13 @@ var corpora = []corpus{
 // file starts to pass fails the test, so the list stays accurate.
 var knownFailures = map[string]string{}
 
+// wantMapped lists, by file name prefix, the Edu-API collections a document
+// must yield, so a claim that is silently dropped fails the test.
+var wantMapped = map[string][]string{
+	"ec-certofpart": {"courses", "classes", "enrollments"},
+	"ec-mc-annex1":  {"programs", "results", "classes", "enrollments"},
+}
+
 // eduPaths and oePaths map a populate item type to the provider path that
 // serves it.
 var (
@@ -110,6 +117,14 @@ func runCorpus(t *testing.T, files []string) {
 					}
 					for _, warning := range reply.Warnings {
 						t.Log("warning:", warning)
+						assert.NotContains(t, warning, "is not mapped", "claim dropped")
+					}
+					for prefix, keys := range wantMapped {
+						if strings.HasPrefix(name, prefix) {
+							for _, key := range keys {
+								assert.NotZero(t, records[key], "no %s mapped", key)
+							}
+						}
 					}
 				}
 			}
@@ -124,9 +139,13 @@ func runCorpus(t *testing.T, files []string) {
 			for _, count := range records {
 				total += count
 			}
-			require.Len(t, reply.Items, total, "populate stored a different number of records than parse returned (%v)", records)
+			// Entitlements are stored but not published by either provider.
+			published := slices.DeleteFunc(slices.Clone(reply.Items), func(item readmodel.PopulateItem) bool {
+				return item.Type == "entitlement"
+			})
+			require.Len(t, published, total, "populate stored a different number of records than parse returned (%v)", records)
 
-			for _, item := range reply.Items {
+			for _, item := range published {
 				id := url.PathEscape(item.SourcedID)
 				require.Contains(t, eduPaths, item.Type, "unknown item type")
 				srv.get(t, "/eduapi/"+eduPaths[item.Type]+"/"+id)

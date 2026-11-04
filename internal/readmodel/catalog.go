@@ -21,4 +21,5 @@ type Client struct {
 	Enrollments      *service.Resource[domain.Enrollment, *domain.Enrollment]
 	Programs         *service.Resource[domain.Program, *domain.Program]
 	Results          *service.Resource[domain.Result, *domain.Result]
+	Entitlements     *service.Resource[domain.Entitlement, *domain.Entitlement]
 }

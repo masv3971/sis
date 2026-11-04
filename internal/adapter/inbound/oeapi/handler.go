@@ -7,6 +7,7 @@ package oeapi
 import (
 	"context"
 	"net/http"
+	"sort"
 
 	"github.com/gin-gonic/gin"
 
@@ -117,6 +118,116 @@ func Get[T any, PT domain.EntityPtr[T], D any](c *Client, svc *service.Resource[
 		}
 		gc.JSON(http.StatusOK, toDTO(e))
 	}
+}
+
+// ListAssociations publishes enrollments as OEAPI associations, each with
+// the person's result in the offering nested.
+func (c *Client) ListAssociations(gc *gin.Context) {
+	pageNumber, pageSize, params, err := c.page(gc)
+	if err != nil {
+		helpers.WriteError(gc, err)
+		return
+	}
+	page, err := c.catalog.Enrollments.List(gc.Request.Context(), params)
+	if err != nil {
+		helpers.WriteError(gc, err)
+		return
+	}
+	out, err := c.associations(gc, page.Items)
+	if err != nil {
+		helpers.WriteError(gc, err)
+		return
+	}
+	gc.JSON(http.StatusOK, dto.NewPage(out, pageNumber, pageSize, page.Total))
+}
+
+// GetAssociation publishes one enrollment by sourcedId as an OEAPI
+// association, with its result nested.
+func (c *Client) GetAssociation(gc *gin.Context) {
+	enrollment, err := c.catalog.Enrollments.GetBySourcedID(gc.Request.Context(), gc.Param("id"))
+	if err != nil {
+		helpers.WriteError(gc, err)
+		return
+	}
+	out, err := c.associations(gc, []*domain.Enrollment{enrollment})
+	if err != nil {
+		helpers.WriteError(gc, err)
+		return
+	}
+	if len(out) == 0 {
+		helpers.WriteError(gc, domain.ErrNotFound)
+		return
+	}
+	gc.JSON(http.StatusOK, out[0])
+}
+
+// associations maps the publishable enrollments to associations, nesting
+// the result each person obtained in the offering. Results come from one
+// query for all the offerings, before references are rewritten to sourcedIds.
+func (c *Client) associations(gc *gin.Context, enrollments []*domain.Enrollment) ([]dto.Association, error) {
+	ctx := gc.Request.Context()
+	offeringIDs := make([]string, 0, len(enrollments))
+	for _, enrollment := range enrollments {
+		offeringIDs = append(offeringIDs, enrollment.OfferingID)
+	}
+	results, err := c.catalog.Results.ListByRefs(ctx, "offeringId", offeringIDs)
+	if err != nil {
+		return nil, err
+	}
+	// First result per person and offering, in sourcedId order, as the
+	// stored order is not defined.
+	sort.Slice(results, func(i, j int) bool { return results[i].SourcedID < results[j].SourcedID })
+	type key struct{ person, offering string }
+	first := make(map[key]*domain.Result, len(results))
+	for _, result := range results {
+		k := key{result.PersonID, result.OfferingID}
+		if _, ok := first[k]; !ok {
+			first[k] = result
+		}
+	}
+	matched := make([]*domain.Result, len(enrollments))
+	for i, enrollment := range enrollments {
+		if result, ok := first[key{enrollment.PersonID, enrollment.OfferingID}]; ok {
+			own := *result // PublishRefs rewrites in place; never share
+			matched[i] = &own
+		}
+	}
+
+	entities := make([]domain.Entity, 0, 2*len(enrollments))
+	for _, enrollment := range enrollments {
+		entities = append(entities, enrollment)
+	}
+	for _, result := range matched {
+		if result != nil {
+			entities = append(entities, result)
+		}
+	}
+	publishable, err := c.catalog.PublishRefs(ctx, entities...)
+	if err != nil {
+		return nil, err
+	}
+	resultOK := publishable[len(enrollments):]
+	out := make([]dto.Association, 0, len(enrollments))
+	for i, enrollment := range enrollments {
+		result := matched[i]
+		if result != nil {
+			ok := resultOK[0]
+			resultOK = resultOK[1:]
+			if !ok {
+				result = nil
+			}
+		}
+		if !publishable[i] {
+			continue
+		}
+		association := dto.FromAssociation(enrollment)
+		if result != nil {
+			nested := dto.FromResult(result)
+			association.Result = &nested
+		}
+		out = append(out, association)
+	}
+	return out, nil
 }
 
 // publishRefs rewrites the items' references to other records into those

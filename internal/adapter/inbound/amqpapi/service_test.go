@@ -120,6 +120,7 @@ func newFixture(t *testing.T, scopes ...string) *fixture {
 		Enrollments:      service.NewResource(memory.NewDocRepo[domain.Enrollment](), nil, nil, log),
 		Programs:         service.NewResource(memory.NewDocRepo[domain.Program](), nil, nil, log),
 		Results:          service.NewResource(memory.NewDocRepo[domain.Result](), nil, nil, log),
+		Entitlements:     service.NewResource(memory.NewDocRepo[domain.Entitlement](), nil, nil, log),
 	}
 	iss := authtest.NewIssuer(t)
 	cfg := &model.Cfg{SIS: model.SIS{Auth: model.Auth{Issuers: []model.Issuer{iss.Config()}}}}

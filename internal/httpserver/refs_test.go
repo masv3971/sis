@@ -30,6 +30,7 @@ func TestProvidersPublishReferencesAsSourcedIDs(t *testing.T) {
 		Courses:          service.NewResource(memory.NewDocRepo[domain.Course](), nil, nil, log),
 		Offerings:        service.NewResource(memory.NewDocRepo[domain.Offering](), nil, nil, log),
 		Enrollments:      service.NewResource(memory.NewDocRepo[domain.Enrollment](), nil, nil, log),
+		Results:          service.NewResource(memory.NewDocRepo[domain.Result](), nil, nil, log),
 	}
 	must := func(_ any, err error) {
 		t.Helper()
@@ -42,6 +43,7 @@ func TestProvidersPublishReferencesAsSourcedIDs(t *testing.T) {
 	must(catalog.Courses.Create(ctx, &domain.Course{ID: "c-internal", SourcedID: "DA101", Title: "C", OrgID: "o-dept"}))
 	must(catalog.Offerings.Create(ctx, &domain.Offering{ID: "f-internal", SourcedID: "DA101-ht26", CourseID: "c-internal", AcademicSessionID: "s-internal", OrgID: "o-dept"}))
 	must(catalog.Enrollments.Create(ctx, &domain.Enrollment{ID: "e-internal", SourcedID: "enr-1", PersonID: "p-internal", OfferingID: "f-internal", Role: domain.RoleStudent}))
+	must(catalog.Results.Create(ctx, &domain.Result{ID: "r-internal", SourcedID: "res-1", PersonID: "p-internal", CourseID: "c-internal", OfferingID: "f-internal", Grade: "A"}))
 
 	cfg := testCfg("127.0.0.1:0")
 	cfg.SIS.Adapter.Inbound.OEAPI.DefaultPageSize, cfg.SIS.Adapter.Inbound.OEAPI.MaxPageSize = 10, 10
@@ -70,13 +72,22 @@ func TestProvidersPublishReferencesAsSourcedIDs(t *testing.T) {
 		get(t, "/oeapi/courses/DA101", &course)
 		var off struct{ CourseID, AcademicSessionID string }
 		get(t, "/oeapi/offerings/DA101-ht26", &off)
-		var assoc struct{ PersonID, OfferingID string }
+		type nested struct{ ResultID, PersonID, CourseID, OfferingID, Score string }
+		var assoc struct {
+			PersonID, OfferingID string
+			Result               *nested
+		}
 		get(t, "/oeapi/associations/enr-1", &assoc)
 		var list struct {
-			Items []struct{ PersonID, OfferingID string }
+			Items []struct {
+				PersonID, OfferingID string
+				Result               *nested
+			}
 		}
 		get(t, "/oeapi/associations", &list)
 		require.Len(t, list.Items, 1)
+		require.NotNil(t, assoc.Result, "association must nest its result")
+		require.NotNil(t, list.Items[0].Result, "listed association must nest its result")
 
 		checks := []struct{ name, got, want string }{
 			{"organization.parentOrganization", org.ParentOrganization, "uni"},
@@ -86,6 +97,12 @@ func TestProvidersPublishReferencesAsSourcedIDs(t *testing.T) {
 			{"association.personId", assoc.PersonID, "p-external"},
 			{"association.offeringId", assoc.OfferingID, "DA101-ht26"},
 			{"list association.personId", list.Items[0].PersonID, "p-external"},
+			{"association.result.resultId", assoc.Result.ResultID, "res-1"},
+			{"association.result.personId", assoc.Result.PersonID, "p-external"},
+			{"association.result.courseId", assoc.Result.CourseID, "DA101"},
+			{"association.result.offeringId", assoc.Result.OfferingID, "DA101-ht26"},
+			{"association.result.score", assoc.Result.Score, "A"},
+			{"list association.result.resultId", list.Items[0].Result.ResultID, "res-1"},
 		}
 		for _, check := range checks {
 			assert.Equal(t, check.want, check.got, check.name)

@@ -59,7 +59,17 @@
       "personId": "urn:epass:person:liu-student-4711",
       "offeringId": "urn:epass:learningActivity:bi101-ht25",
       "role": "student",
-      "state": "active"
+      "state": "active",
+      "result": {
+        "resultId": "urn:epass:learningAchievement:bi101",
+        "personId": "urn:epass:person:liu-student-4711",
+        "courseId": "urn:epass:learningAchievementSpec:bi101",
+        "offeringId": "urn:epass:learningActivity:bi101-ht25",
+        "state": "active",
+        "score": "A",
+        "ects": 7.5,
+        "resultDate": "2026-01-20"
+      }
     }
   ],
   "results": [

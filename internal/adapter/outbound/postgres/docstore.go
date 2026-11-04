@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"regexp"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -157,15 +159,65 @@ func (r *DocRepo[T, PT]) GetBySourcedID(ctx context.Context, sourcedID string) (
 // from the same statement as the page, so the two always agree; a page past
 // the end is one row with NULL data that carries only the total.
 func (r *DocRepo[T, PT]) List(ctx context.Context, params port.ListParams) (port.Page[PT], error) {
+	return r.list(ctx, "type=$1 AND "+liveFilter, []any{r.typeName}, params)
+}
+
+// refField is the shape of a reference field name. ListByRef splices the
+// name into the SQL, so it is checked even though callers pass constants.
+var refField = regexp.MustCompile(`^[A-Za-z]+$`)
+
+// ListByRef is List restricted to the entities whose reference field equals
+// id.
+func (r *DocRepo[T, PT]) ListByRef(ctx context.Context, field, id string, params port.ListParams) (port.Page[PT], error) {
+	if !refField.MatchString(field) {
+		return port.Page[PT]{}, fmt.Errorf("postgres: invalid reference field %q", field)
+	}
+	return r.list(ctx, "type=$1 AND data->>'"+field+"' = $2 AND "+liveFilter, []any{r.typeName, id}, params)
+}
+
+// ListByRefs returns the live entities whose reference field equals any of
+// ids in one query.
+func (r *DocRepo[T, PT]) ListByRefs(ctx context.Context, field string, ids []string) ([]PT, error) {
+	if !refField.MatchString(field) {
+		return nil, fmt.Errorf("postgres: invalid reference field %q", field)
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	rows, err := r.pool.Query(ctx, `SELECT data FROM entities WHERE type=$1 AND data->>'`+field+`' = ANY($2) AND `+liveFilter, r.typeName, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]PT, 0, preallocCap(len(ids)))
+	for rows.Next() {
+		var data []byte
+		if err := rows.Scan(&data); err != nil {
+			return nil, err
+		}
+		e, err := unmarshalDoc[T, PT](data)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, e)
+	}
+	return items, rows.Err()
+}
+
+// list returns the page of entities matching where (a constant condition,
+// never input, with its values in args as $1..$n).
+func (r *DocRepo[T, PT]) list(ctx context.Context, where string, args []any, params port.ListParams) (port.Page[PT], error) {
 	var limit any // nil: LIMIT NULL, no limit
 	if params.Limit > 0 {
 		limit = params.Limit
 	}
-	rows, err := r.pool.Query(ctx, `SELECT p.data, t.n
-		FROM (SELECT count(*) AS n FROM entities WHERE type=$1 AND `+liveFilter+`) t
-		LEFT JOIN LATERAL (SELECT data, sourced_id FROM entities WHERE type=$1 AND `+liveFilter+`
-			ORDER BY sourced_id OFFSET $2 LIMIT $3) p ON true
-		ORDER BY p.sourced_id`, r.typeName, params.Offset, limit)
+	query := fmt.Sprintf(`SELECT p.data, t.n
+		FROM (SELECT count(*) AS n FROM entities WHERE %[1]s) t
+		LEFT JOIN LATERAL (SELECT data, sourced_id FROM entities WHERE %[1]s
+			ORDER BY sourced_id OFFSET $%[2]d LIMIT $%[3]d) p ON true
+		ORDER BY p.sourced_id`, where, len(args)+1, len(args)+2)
+	rows, err := r.pool.Query(ctx, query, append(args, params.Offset, limit)...)
 	if err != nil {
 		return port.Page[PT]{}, err
 	}

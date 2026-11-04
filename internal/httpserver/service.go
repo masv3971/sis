@@ -154,6 +154,7 @@ func New(ctx context.Context, cfg *model.Cfg, verifier *auth.Verifier, catalog *
 	registerResource(api, guards, "enrollments", restAdmin, catalog.Enrollments)
 	registerResource(api, guards, "programs", restAdmin, catalog.Programs)
 	registerResource(api, guards, "results", restAdmin, catalog.Results)
+	registerResource(api, guards, "entitlements", restAdmin, catalog.Entitlements)
 
 	// Document conversion: parse is pure (read guard), populate stores.
 	api.POST("/parse", guards.Read, convertAPI.Parse)
@@ -171,8 +172,8 @@ func New(ctx context.Context, cfg *model.Cfg, verifier *auth.Verifier, catalog *
 	oe.GET("/courses/:id", oeapi.Get(oeAPI, catalog.Courses, oedto.FromCourse))
 	oe.GET("/offerings", oeapi.List(oeAPI, catalog.Offerings, oedto.FromOffering))
 	oe.GET("/offerings/:id", oeapi.Get(oeAPI, catalog.Offerings, oedto.FromOffering))
-	oe.GET("/associations", oeapi.List(oeAPI, catalog.Enrollments, oedto.FromAssociation))
-	oe.GET("/associations/:id", oeapi.Get(oeAPI, catalog.Enrollments, oedto.FromAssociation))
+	oe.GET("/associations", oeAPI.ListAssociations)
+	oe.GET("/associations/:id", oeAPI.GetAssociation)
 	oe.GET("/programs", oeapi.List(oeAPI, catalog.Programs, oedto.FromProgram))
 	oe.GET("/programs/:id", oeapi.Get(oeAPI, catalog.Programs, oedto.FromProgram))
 	oe.GET("/results", oeapi.List(oeAPI, catalog.Results, oedto.FromResult))
