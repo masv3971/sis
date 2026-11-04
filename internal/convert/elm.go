@@ -61,7 +61,7 @@ func parseELM(data []byte, path string) (*Parsed, error) {
 		return nil, &domain.ValidationError{Field: path + ".credentialSubject", Msg: "required: data must be an ELM credential"}
 	}
 
-	b := &elmBuilder{base: root.ID(), memo: map[string]string{}, inProgress: map[string]bool{}, warnings: envelopeWarnings}
+	b := &elmBuilder{base: root.ID(), memo: map[string]string{}, inProgress: map[string]bool{}, planned: map[string]string{}, warnings: envelopeWarnings}
 	if b.base == "" {
 		sum := sha256.Sum256(data)
 		b.base = "elm:sha256:" + hex.EncodeToString(sum[:16])
@@ -69,6 +69,9 @@ func parseELM(data []byte, path string) (*Parsed, error) {
 	b.rootPath = path
 
 	issuer := b.org(root.Node("issuer"))
+	for _, subject := range subjects {
+		b.planActivities(subject.Nodes("hasClaim"))
+	}
 	for _, subject := range subjects {
 		person, err := b.person(subject)
 		if err != nil {
@@ -91,7 +94,10 @@ type elmBuilder struct {
 	// node was skipped), so a node reached twice is mapped once.
 	memo       map[string]string
 	inProgress map[string]bool // organisations being mapped (cycle guard)
-	warnings   []string
+	// planned maps the sourcedId of an activity without a specification to
+	// the course of the first achievement it influenced (see planActivities).
+	planned  map[string]string
+	warnings []string
 }
 
 // sid returns the node's sourcedId: its id, or one derived from its path.
@@ -268,13 +274,42 @@ func (b *elmBuilder) activity(activity *elm.Node, person, org string) error {
 		return err
 	}
 	if course == "" {
-		// No specification: the activity describes the course itself.
+		course = b.planned[b.sid(activity)]
+	}
+	if course == "" {
+		// No specification and no achievement: the activity describes the course itself.
 		if course, err = b.course(nil, activity, activity.Text("title"), org); err != nil {
 			return err
 		}
 	}
 	_, _, err = b.offering(activity, course, org, person)
 	return err
+}
+
+// planActivities walks the claims before anything is mapped and records, for
+// each activity without a specification, the course of the first achievement
+// (in document order) it influenced. Without it the course of such an
+// activity would depend on which claim reached it first.
+func (b *elmBuilder) planActivities(claims []*elm.Node) {
+	for _, claim := range claims {
+		if !claim.Is("LearningAchievement") && len(claim.Types()) != 0 {
+			continue
+		}
+		course := ""
+		if spec := claim.Node("specifiedBy"); spec == nil {
+			course = b.sid(claim) + "#specification"
+		} else if !spec.Is("Qualification") {
+			course = b.sid(spec)
+		}
+		if course != "" {
+			for _, activity := range nodes(claim, "influencedBy", "wasInfluencedBy") {
+				if sid := b.sid(activity); activity.Node("specifiedBy") == nil && b.planned[sid] == "" {
+					b.planned[sid] = course
+				}
+			}
+		}
+		b.planActivities(claim.Nodes("hasPart"))
+	}
 }
 
 // activityCourse maps the specification of activity to a Course, or returns
@@ -453,11 +488,12 @@ func (b *elmBuilder) offering(activity *elm.Node, fallback, org, person string) 
 	sid = b.sid(activity)
 	course, ok := b.seen("offering", sid)
 	if !ok {
-		own, err := b.activityCourse(activity, b.awardingOrg(activity, org))
+		org = b.awardingOrg(activity, org)
+		own, err := b.activityCourse(activity, org)
 		if err != nil {
 			return "", "", err
 		}
-		course = firstNonEmpty(own, fallback)
+		course = firstNonEmpty(own, b.planned[sid], fallback)
 		title := activity.Text("title")
 		if spec := activity.Node("specifiedBy"); spec != nil {
 			title = firstNonEmpty(title, spec.Text("title"))

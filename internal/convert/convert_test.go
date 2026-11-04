@@ -262,8 +262,8 @@ func TestParseELMSharedActivityCourse(t *testing.T) {
 }
 
 // TestParseELMSharedActivityParentChild checks a child achievement sharing
-// the activity of its qualification, which has no specification of its own,
-// is not linked to an offering of the activity's own course.
+// the activity of its qualification, which names no course, decides the
+// course of the activity's offering and is linked to it.
 func TestParseELMSharedActivityParentChild(t *testing.T) {
 	doc := `{"credentialSubject": {"id": "urn:p", "givenName": "A", "familyName": "B",
 		"hasClaim": {"id": "urn:parent", "type": "LearningAchievement", "title": "BSc",
@@ -276,14 +276,93 @@ func TestParseELMSharedActivityParentChild(t *testing.T) {
 	require.NoError(t, err)
 	bundle := parsed.Bundle
 	require.Len(t, bundle.Offerings, 1)
+	assert.Equal(t, "urn:course", bundle.Offerings[0].CourseID)
 	require.Len(t, bundle.Results, 2)
 	for _, result := range bundle.Results {
 		if result.SourcedID == "urn:child" {
-			assert.Empty(t, result.OfferingID, "the offering is of the activity's own course")
+			assert.Equal(t, "urn:act", result.OfferingID)
 		}
 	}
-	assert.Len(t, parsed.Warnings, 1)
+	assert.Empty(t, parsed.Warnings)
 	requireResultsMatchOfferings(t, bundle)
+}
+
+// TestParseELMSpeclessActivityOrder checks an activity without a
+// specification, shared by a participation claim and achievements, is an
+// offering of the first achievement's course in any claim order, and only
+// that achievement's result is linked to it.
+func TestParseELMSpeclessActivityOrder(t *testing.T) {
+	activity := `{"id": "urn:act", "type": "LearningActivity", "title": "Webinar"}`
+	achievement := func(id, spec string) string {
+		return `{"id": "` + id + `", "type": "LearningAchievement", "title": "` + id + `",
+			"specifiedBy": {"id": "` + spec + `", "type": "LearningAchievementSpecification", "title": "` + id + `"},
+			"influencedBy": {"id": "urn:act", "type": "LearningActivity"}}`
+	}
+	one, two := achievement("urn:ach1", "urn:spec1"), achievement("urn:ach2", "urn:spec2")
+	for name, claims := range map[string]string{
+		"activity first":   activity + "," + one + "," + two,
+		"activity between": one + "," + activity + "," + two,
+		"activity last":    one + "," + two + "," + activity,
+	} {
+		t.Run(name, func(t *testing.T) {
+			doc := `{"credentialSubject": {"id": "urn:p", "givenName": "A", "familyName": "B", "hasClaim": [` + claims + `]}}`
+			parsed, err := newClient(t).Parse(FormatELM, []byte(doc), "data")
+			require.NoError(t, err)
+			bundle := parsed.Bundle
+			require.Len(t, bundle.Offerings, 1)
+			assert.Equal(t, "urn:spec1", bundle.Offerings[0].CourseID, "the first achievement's course")
+			for _, course := range bundle.Courses {
+				assert.NotContains(t, course.SourcedID, "#specification", "no synthetic course for the activity")
+			}
+			linked := map[string]string{}
+			for _, result := range bundle.Results {
+				linked[result.SourcedID] = result.OfferingID
+			}
+			assert.Equal(t, map[string]string{"urn:ach1": "urn:act", "urn:ach2": ""}, linked)
+			assert.Len(t, parsed.Warnings, 1, "the second achievement is not linked")
+			requireResultsMatchOfferings(t, bundle)
+		})
+	}
+}
+
+// TestParseELMSpeclessActivityAlone checks an activity without a
+// specification that no achievement names keeps its own course.
+func TestParseELMSpeclessActivityAlone(t *testing.T) {
+	doc := `{"credentialSubject": {"id": "urn:p", "givenName": "A", "familyName": "B",
+		"hasClaim": {"id": "urn:act", "type": "LearningActivity", "title": "Webinar"}}}`
+	parsed, err := newClient(t).Parse(FormatELM, []byte(doc), "data")
+	require.NoError(t, err)
+	require.Len(t, parsed.Bundle.Offerings, 1)
+	assert.Equal(t, "urn:act#specification", parsed.Bundle.Offerings[0].CourseID)
+}
+
+// TestParseELMActivityAwardingOrg checks the offering and its course are of
+// the activity's own awarding body, in either claim order.
+func TestParseELMActivityAwardingOrg(t *testing.T) {
+	activity := `{"id": "urn:act", "type": "LearningActivity", "title": "Webinar",
+		"awardedBy": {"awardingBody": {"id": "urn:org:b", "legalName": "B"}},
+		"specifiedBy": {"id": "urn:spec", "type": "LearningActivitySpecification", "title": "X"}}`
+	achievement := `{"id": "urn:ach", "type": "LearningAchievement", "title": "X",
+		"awardedBy": {"awardingBody": {"id": "urn:org:a", "legalName": "A"}},
+		"specifiedBy": {"id": "urn:achSpec", "type": "LearningAchievementSpecification", "title": "X"},
+		"influencedBy": {"id": "urn:act", "type": "LearningActivity"}}`
+	for name, claims := range map[string]string{
+		"activity first":    activity + "," + achievement,
+		"achievement first": achievement + "," + activity,
+	} {
+		t.Run(name, func(t *testing.T) {
+			doc := `{"credentialSubject": {"id": "urn:p", "givenName": "A", "familyName": "B", "hasClaim": [` + claims + `]}}`
+			parsed, err := newClient(t).Parse(FormatELM, []byte(doc), "data")
+			require.NoError(t, err)
+			require.Len(t, parsed.Bundle.Offerings, 1)
+			assert.Equal(t, "urn:org:b", parsed.Bundle.Offerings[0].OrgID)
+			orgs := map[string]string{}
+			for _, course := range parsed.Bundle.Courses {
+				orgs[course.SourcedID] = course.OrgID
+			}
+			assert.Equal(t, map[string]string{"urn:spec": "urn:org:b", "urn:achSpec": "urn:org:a"}, orgs)
+		})
+	}
 }
 
 // TestParseELMCreditOnly checks an achievement naming nothing but credits
