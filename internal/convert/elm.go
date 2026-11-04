@@ -281,6 +281,13 @@ func (b *elmBuilder) activity(activity *elm.Node, person, org string) error {
 func (b *elmBuilder) entitlement(node *elm.Node, person, org, result string) (string, error) {
 	sid := b.sid(node)
 	if ref, ok := b.seen("entitlement", sid); ok {
+		if result != "" {
+			for _, stored := range b.bundle.Entitlements {
+				if stored.SourcedID == sid && stored.ResultID == "" {
+					stored.ResultID = result
+				}
+			}
+		}
 		return ref, nil
 	}
 	b.mark("entitlement", sid, sid)
@@ -289,9 +296,13 @@ func (b *elmBuilder) entitlement(node *elm.Node, person, org, result string) (st
 	if spec := node.Node("specifiedBy"); spec != nil {
 		title = firstNonEmpty(spec.Text("title"), title)
 	}
+	issued := node.String("issuedDate")
+	if awarded := node.Node("awardedBy"); awarded != nil {
+		issued = firstNonEmpty(awarded.String("awardingDate"), issued)
+	}
 	entitlement := &domain.Entitlement{
 		Base: base(sid), PersonID: person, ResultID: result, Title: title, OrgID: org,
-		IssuedDate: isoDate(node.String("issuedDate")), ExpiryDate: isoDate(node.String("expiryDate")),
+		IssuedDate: isoDate(issued), ExpiryDate: isoDate(node.String("expiryDate")),
 	}
 	if err := check(node.Path, "entitlement", entitlement); err != nil {
 		return "", err

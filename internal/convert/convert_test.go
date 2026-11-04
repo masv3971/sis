@@ -139,6 +139,45 @@ func TestParseELMv3Names(t *testing.T) {
 	assert.Empty(t, parsed.Warnings)
 }
 
+// TestParseELMEntitlementClaimOrder checks an entitlement is linked to its
+// result whether its top-level claim comes before or after the achievement.
+func TestParseELMEntitlementClaimOrder(t *testing.T) {
+	entitlement := `{"id": "urn:ent", "type": "LearningEntitlement", "title": "Access to Y"}`
+	achievement := `{"id": "urn:ach", "type": "LearningAchievement", "title": "Course X",
+		"entitlesTo": {"id": "urn:ent", "type": "LearningEntitlement", "title": "Access to Y"}}`
+	for name, claims := range map[string]string{
+		"entitlement first": entitlement + "," + achievement,
+		"achievement first": achievement + "," + entitlement,
+	} {
+		t.Run(name, func(t *testing.T) {
+			doc := `{"credentialSubject": {"id": "urn:p", "givenName": "A", "familyName": "B", "hasClaim": [` + claims + `]}}`
+			parsed, err := newClient(t).Parse(FormatELM, []byte(doc), "data")
+			require.NoError(t, err)
+			require.Len(t, parsed.Bundle.Entitlements, 1)
+			assert.Equal(t, "urn:ach", parsed.Bundle.Entitlements[0].ResultID)
+		})
+	}
+}
+
+// TestParseELMEntitlementIssuedDate checks the awarding date is the issue
+// date, with issuedDate as the fallback.
+func TestParseELMEntitlementIssuedDate(t *testing.T) {
+	for name, tc := range map[string]struct{ props, want string }{
+		"awardingDate":        {`"awardedBy": {"awardingDate": "2026-02-03T00:00:00Z"}`, "2026-02-03"},
+		"issuedDate fallback": {`"issuedDate": "2026-04-05T00:00:00Z"`, "2026-04-05"},
+		"awardingDate wins":   {`"issuedDate": "2026-04-05T00:00:00Z", "awardedBy": {"awardingDate": "2026-02-03T00:00:00Z"}`, "2026-02-03"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			doc := `{"credentialSubject": {"id": "urn:p", "givenName": "A", "familyName": "B",
+				"hasClaim": {"id": "urn:ent", "type": "LearningEntitlement", "title": "Access to Y", ` + tc.props + `}}}`
+			parsed, err := newClient(t).Parse(FormatELM, []byte(doc), "data")
+			require.NoError(t, err)
+			require.Len(t, parsed.Bundle.Entitlements, 1)
+			assert.Equal(t, tc.want, parsed.Bundle.Entitlements[0].IssuedDate)
+		})
+	}
+}
+
 // TestParseELMParticipation checks a LearningActivity claim (a certificate
 // of participation) yields the course, offering and enrollment, but no
 // result.
