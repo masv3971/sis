@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -116,6 +117,9 @@ func TestEduAPILinks(t *testing.T) {
 	assert.Equal(t, p+"?limit=2&offset=4", linkRel(last, "prev"))
 	assert.Empty(t, linkRel(last, "next"), "no next on the last page")
 	assert.Equal(t, p+"?limit=2&offset=6", linkRel(last, "last"))
+
+	huge := link("?offset=" + strconv.Itoa(math.MaxInt)) // offset+limit would overflow
+	assert.Empty(t, linkRel(huge, "next"), "no next past the end")
 }
 
 // linkRel returns the target of the Link header entry with the given rel, or

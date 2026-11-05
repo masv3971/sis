@@ -245,7 +245,7 @@ func pageHeaders(gc *gin.Context, params port.ListParams, total int) {
 	if offset > 0 {
 		links = append(links, pageLink(gc, "prev", limit, max(0, offset-limit)))
 	}
-	if offset+limit < total {
+	if offset < total && limit < total-offset {
 		links = append(links, pageLink(gc, "next", limit, offset+limit))
 	}
 	if total > 0 {
