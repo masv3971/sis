@@ -22,7 +22,6 @@ var apiRoots = []string{
 	"/auth",
 	"/oeapi",
 	"/1edtech",
-	"/eduapi", // retired Edu-API root: old clients must get a 404, not the SPA
 	"/healthz",
 	"/swagger",
 }

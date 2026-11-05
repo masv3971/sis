@@ -13,8 +13,6 @@ func TestIsAPIPath(t *testing.T) {
 		"/api/v1/persons": true,
 		"/oeapi":          true,
 		"/1edtech":        true,
-		"/eduapi":         true, // retired, but must not serve the SPA
-		"/eduapi/persons": true,
 		"/auth":           true,
 		"/auth/config":    true,
 		"/healthz":        true,
