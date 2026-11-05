@@ -221,6 +221,77 @@ func TestScopesGateAPIs(t *testing.T) {
 	}
 }
 
+// TestEduAPIAuthErrorsUseImsxBody checks that a rejected token or scope on
+// the Edu-API answers with the spec's Imsx_StatusInfo and keeps the status and
+// WWW-Authenticate header, while the other APIs keep their own error body.
+func TestEduAPIAuthErrorsUseImsxBody(t *testing.T) {
+	log := logger.NewWithWriter("test", false, "error", io.Discard)
+	catalog := &readmodel.Client{Persons: service.New(memory.NewPersonRepository(), nil, nil, log)}
+	cfg := testCfg("127.0.0.1:0")
+	cfg.SIS.Adapter.Inbound.EduAPI.DefaultLimit, cfg.SIS.Adapter.Inbound.EduAPI.MaxLimit = 10, 10
+	cfg.SIS.Adapter.Inbound.OEAPI.DefaultPageSize, cfg.SIS.Adapter.Inbound.OEAPI.MaxPageSize = 10, 10
+	srv, iss := startWithIssuer(t, cfg, catalog)
+	base := "http://" + srv.Addr().String()
+
+	get := func(path, token string) (int, string, map[string]any) {
+		req, _ := http.NewRequestWithContext(t.Context(), http.MethodGet, base+path, nil)
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err, path)
+		defer resp.Body.Close()
+		var body map[string]any
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&body), path)
+		return resp.StatusCode, resp.Header.Get("WWW-Authenticate"), body
+	}
+
+	for name, tc := range map[string]struct {
+		token     string
+		status    int
+		challenge string
+	}{
+		"no token":      {"", http.StatusUnauthorized, "Bearer"},
+		"invalid token": {"x.y.z", http.StatusUnauthorized, `Bearer error="invalid_token"`},
+		"insufficient":  {iss.Token(t, "w", "sis.write"), http.StatusForbidden, `Bearer error="insufficient_scope", scope="sis.read"`},
+	} {
+		status, challenge, body := get(eduBase+"/persons", tc.token)
+		assert.Equal(t, tc.status, status, name)
+		assert.Equal(t, tc.challenge, challenge, "%s: WWW-Authenticate", name)
+		assert.Equal(t, "failure", body["imsx_codeMajor"], "%s: Imsx_StatusInfo body, got %v", name, body)
+		assert.Equal(t, "error", body["imsx_severity"], name)
+		assert.NotContains(t, body, "error", "%s: not the native error body", name)
+	}
+
+	// Other APIs are unchanged.
+	_, _, body := get("/oeapi/persons", "")
+	assert.Equal(t, "unauthorized", body["error"], "oeapi keeps its own error body")
+	assert.NotContains(t, body, "imsx_codeMajor")
+}
+
+// TestRetiredEduAPIPrefixIsNotTheSPA checks that with the SPA mounted the
+// old /eduapi paths answer 404, not index.html with 200.
+func TestRetiredEduAPIPrefixIsNotTheSPA(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "index.html"), []byte("<html>spa</html>"))
+	cfg := testCfg("127.0.0.1:0")
+	cfg.SIS.HTTPServer.Web.Root = root
+	srv, err := newTestServerWithCfg(t, cfg)
+	require.NoError(t, err, "New")
+	t.Cleanup(func() { _ = srv.Close(context.Background()) })
+
+	base := "http://" + srv.Addr().String()
+	resp, err := httpGet(t, http.DefaultClient, base+"/eduapi/persons")
+	require.NoError(t, err)
+	_ = resp.Body.Close()
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode, "/eduapi/persons")
+
+	resp, err = httpGet(t, http.DefaultClient, base+"/some/spa/route")
+	require.NoError(t, err)
+	_ = resp.Body.Close()
+	assert.Equal(t, http.StatusOK, resp.StatusCode, "other paths still get the SPA")
+}
+
 // TestSwaggerServesSpecOnlyWhenEnabled checks the generated /api/v1 document
 // is registered and served, and that disabling the toggle unmounts it.
 func TestSwaggerServesSpecOnlyWhenEnabled(t *testing.T) {

@@ -88,18 +88,22 @@ func (c *Client) GetCourseOffering(gc *gin.Context) {
 	getWith(c, gc, c.catalog.Offerings, c.offeringDTOs)
 }
 
-// offeringDTOs maps offerings, whose academic session reference is already a
-// sourcedId, with one batched session lookup.
+// offeringDTOs maps offerings, whose course and academic session references
+// are already sourcedIds, with one batched lookup each. The session supplies
+// the dates and the course the title of an untitled offering.
 func (c *Client) offeringDTOs(ctx context.Context, offerings []*domain.Offering) ([]dto.CourseOffering, error) {
-	var sourcedIDs []string
+	var sessionIDs, courseIDs []string
 	for _, offering := range offerings {
 		if offering.AcademicSessionID != "" {
-			sourcedIDs = append(sourcedIDs, offering.AcademicSessionID)
+			sessionIDs = append(sessionIDs, offering.AcademicSessionID)
+		}
+		if offering.Title == "" && offering.CourseID != "" {
+			courseIDs = append(courseIDs, offering.CourseID)
 		}
 	}
 	sessions := map[string]*domain.AcademicSession{}
-	if len(sourcedIDs) > 0 {
-		found, err := c.catalog.AcademicSessions.GetBySourcedIDs(ctx, sourcedIDs)
+	if len(sessionIDs) > 0 {
+		found, err := c.catalog.AcademicSessions.GetBySourcedIDs(ctx, sessionIDs)
 		if err != nil {
 			return nil, err
 		}
@@ -107,9 +111,19 @@ func (c *Client) offeringDTOs(ctx context.Context, offerings []*domain.Offering)
 			sessions[session.SourcedID] = session
 		}
 	}
+	courseTitles := map[string]string{}
+	if len(courseIDs) > 0 {
+		found, err := c.catalog.Courses.GetBySourcedIDs(ctx, courseIDs)
+		if err != nil {
+			return nil, err
+		}
+		for _, course := range found {
+			courseTitles[course.SourcedID] = course.Title
+		}
+	}
 	out := make([]dto.CourseOffering, 0, len(offerings))
 	for _, offering := range offerings {
-		out = append(out, c.mapper.CourseOffering(offering, sessions[offering.AcademicSessionID]))
+		out = append(out, c.mapper.CourseOffering(offering, sessions[offering.AcademicSessionID], courseTitles[offering.CourseID]))
 	}
 	return out, nil
 }
@@ -258,6 +272,12 @@ func pageLink(gc *gin.Context, rel string, limit, offset int) string {
 func (c *Client) limitOffset(gc *gin.Context) (port.ListParams, error) {
 	eduapiCfg := c.cfg.SIS.Adapter.Inbound.EduAPI
 	return helpers.ParseLimitOffset(gc, eduapiCfg.DefaultLimit, eduapiCfg.MaxLimit)
+}
+
+// AuthError renders a rejected token or scope as the spec's error body, for
+// auth.RenderErrors on the Edu-API route group.
+func (c *Client) AuthError(gc *gin.Context, status int, msg string) {
+	gc.JSON(status, dto.NewStatusInfo(status, msg))
 }
 
 // writeError answers with the spec's error body, Imsx_StatusInfo, for the

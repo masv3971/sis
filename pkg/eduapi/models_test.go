@@ -113,7 +113,7 @@ func TestCourseOffering(t *testing.T) {
 	offering := &domain.Offering{Base: domain.Base{SourcedID: "o"}, CourseID: "c", AcademicSessionID: "ht26", Title: "Biology HT26"}
 	session := &domain.AcademicSession{StartDate: "2026-08-31", EndDate: "2027-01-15"}
 
-	out := mapper.CourseOffering(offering, session)
+	out := mapper.CourseOffering(offering, session, "Biology")
 	assert.Equal(t, "c", out.Course)
 	assert.Equal(t, "ht26", out.AcademicSession)
 	assert.Equal(t, "2026-08-31T00:00:00Z", out.StartDate)
@@ -121,9 +121,28 @@ func TestCourseOffering(t *testing.T) {
 	assert.Equal(t, "closed", out.RegistrationStatus)
 	assert.Equal(t, "o", out.PrimaryCode.Identifier)
 
-	bare := toMap(t, mapper.CourseOffering(offering, nil))
+	bare := toMap(t, mapper.CourseOffering(offering, nil, ""))
 	assert.NotContains(t, bare, "startDate")
 	assert.NotContains(t, bare, "endDate")
+}
+
+// TestUntitledCourseOffering checks an offering without a title still gets
+// the title and description the spec requires: its course's title, else its
+// sourcedId.
+func TestUntitledCourseOffering(t *testing.T) {
+	offering := &domain.Offering{Base: domain.Base{SourcedID: "o"}, CourseID: "c"}
+
+	withCourse := mapper.CourseOffering(offering, nil, "Biology")
+	assert.Equal(t, []LanguageTypedString{{RecordLanguage: "en", Value: "Biology"}}, withCourse.Title)
+	assert.Equal(t, withCourse.Title, withCourse.Description)
+
+	bare := toMap(t, mapper.CourseOffering(offering, nil, ""))
+	assert.Contains(t, bare, "title", "title is required")
+	assert.Contains(t, bare, "description", "description is required")
+	assert.Equal(t, []LanguageTypedString{{RecordLanguage: "en", Value: "o"}}, mapper.CourseOffering(offering, nil, "").Title)
+
+	titled := &domain.Offering{Base: domain.Base{SourcedID: "o"}, CourseID: "c", Title: "Own title"}
+	assert.Equal(t, "Own title", mapper.CourseOffering(titled, nil, "Biology").Title[0].Value, "the offering's own title wins")
 }
 
 func TestEnrollment(t *testing.T) {
@@ -145,6 +164,7 @@ func TestBundle(t *testing.T) {
 	out := mapper.Bundle(&domain.Bundle{
 		Persons:          []domain.Person{{SourcedID: "stu"}},
 		AcademicSessions: []*domain.AcademicSession{{Base: domain.Base{SourcedID: "ht26"}, StartDate: "2026-08-31"}},
+		Courses:          []*domain.Course{{Base: domain.Base{SourcedID: "c"}, Title: "Biology"}},
 		Offerings:        []*domain.Offering{{Base: domain.Base{SourcedID: "o"}, CourseID: "c", AcademicSessionID: "ht26"}},
 		Enrollments:      []*domain.Enrollment{{Base: domain.Base{SourcedID: "e"}, PersonID: "stu", OfferingID: "o"}},
 		Results:          []*domain.Result{{Base: domain.Base{SourcedID: "r"}}},
@@ -152,6 +172,7 @@ func TestBundle(t *testing.T) {
 	assert.Len(t, out.Persons, 1)
 	require.Len(t, out.CourseOfferings, 1)
 	assert.Equal(t, "2026-08-31T00:00:00Z", out.CourseOfferings[0].StartDate, "dates come from the offering's session")
+	assert.Equal(t, "Biology", out.CourseOfferings[0].Title[0].Value, "an untitled offering takes its course's title")
 	require.Len(t, out.Enrollments, 1)
 	assert.Equal(t, "stu", out.Enrollments[0].Person)
 	assert.NotNil(t, out.Organizations, "empty lists must be non-nil")
@@ -165,6 +186,7 @@ func TestNewStatusInfo(t *testing.T) {
 	require.NotNil(t, info.CodeMinor)
 	assert.Equal(t, "not_found", info.CodeMinor.Fields[0].Value)
 	assert.Equal(t, "error", NewStatusInfo(500, "").Severity)
+	assert.Equal(t, "server_busy", NewStatusInfo(503, "").CodeMinor.Fields[0].Value, "503 must not be unknown")
 }
 
 // TestRequiredFields pins the fields the spec's JSON schemas
@@ -193,7 +215,10 @@ func TestRequiredFields(t *testing.T) {
 		{"collectionTemplate", mapper.CollectionTemplate(&domain.Program{Base: domain.Base{SourcedID: "p"}, Title: "P", OrgID: "o"}), append([]string{"collectionType"}, template...)},
 		{"courseOffering", mapper.CourseOffering(&domain.Offering{
 			Base: domain.Base{SourcedID: "f"}, Title: "F", CourseID: "c", AcademicSessionID: "ht26", OrgID: "o",
-		}, session), append([]string{"course"}, offering...)},
+		}, session, ""), append([]string{"course"}, offering...)},
+		{"untitled courseOffering", mapper.CourseOffering(&domain.Offering{
+			Base: domain.Base{SourcedID: "g"}, CourseID: "c", AcademicSessionID: "ht26", OrgID: "o",
+		}, session, ""), append([]string{"course"}, offering...)},
 		{"enrollment", mapper.Enrollment(&domain.Enrollment{Base: domain.Base{SourcedID: "e"}, PersonID: "p", OfferingID: "f"}),
 			[]string{"sourcedId", "recordLanguage", "isActive", "enrollmentStatus", "person", "role", "educationOffering", "offeringType", "recordStatus"}},
 	}

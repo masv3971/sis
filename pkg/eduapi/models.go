@@ -12,6 +12,7 @@
 package eduapi
 
 import (
+	"cmp"
 	"strings"
 	"time"
 
@@ -205,6 +206,9 @@ func NewStatusInfo(status int, description string) StatusInfo {
 		minor = "server_busy"
 	case 500:
 		minor = "internal_server_error"
+	case 503:
+		// The spec has no 503; this is its "retry later" code.
+		minor = "server_busy"
 	}
 	return StatusInfo{
 		CodeMajor: "failure", Severity: severity, Description: description,
@@ -314,13 +318,15 @@ func (m Mapper) CollectionTemplate(program *domain.Program) CollectionTemplate {
 
 // CourseOffering maps a canonical offering. session is the offering's
 // academic session, which supplies the dates the spec requires; nil leaves
-// them out.
-func (m Mapper) CourseOffering(offering *domain.Offering, session *domain.AcademicSession) CourseOffering {
+// them out. An offering may have no title but the spec requires one, so
+// courseTitle (the offering's course) stands in, then the sourcedId.
+func (m Mapper) CourseOffering(offering *domain.Offering, session *domain.AcademicSession, courseTitle string) CourseOffering {
+	title := cmp.Or(offering.Title, courseTitle, offering.SourcedID)
 	out := CourseOffering{
 		OfferingType: "standard", Course: offering.CourseID,
 		education: education{
 			SourcedID: offering.SourcedID, RecordLanguage: m.lang,
-			Title: m.text(offering.Title), Description: m.text(offering.Title),
+			Title: m.text(title), Description: m.text(title),
 			PrimaryCode:  IdentifierEntry{Identifier: offering.SourcedID, IdentifierType: "systemId"},
 			Organization: offering.OrgID, DateLastModified: rfc3339(offering.UpdatedAt), RecordStatus: recordStatus(offering.Status),
 		},
@@ -396,6 +402,10 @@ func (m Mapper) Bundle(b *domain.Bundle) Bundle {
 	for _, session := range b.AcademicSessions {
 		sessions[session.SourcedID] = session
 	}
+	courseTitles := make(map[string]string, len(b.Courses))
+	for _, course := range b.Courses {
+		courseTitles[course.SourcedID] = course.Title
+	}
 	out := Bundle{
 		Persons:             make([]Person, 0, len(b.Persons)),
 		Organizations:       mapAll(b.Organizations, m.Organization),
@@ -409,7 +419,7 @@ func (m Mapper) Bundle(b *domain.Bundle) Bundle {
 		out.Persons = append(out.Persons, m.Person(person))
 	}
 	for _, offering := range b.Offerings {
-		out.CourseOfferings = append(out.CourseOfferings, m.CourseOffering(offering, sessions[offering.AcademicSessionID]))
+		out.CourseOfferings = append(out.CourseOfferings, m.CourseOffering(offering, sessions[offering.AcademicSessionID], courseTitles[offering.CourseID]))
 	}
 	return out
 }

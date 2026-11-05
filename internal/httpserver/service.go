@@ -181,7 +181,8 @@ func New(ctx context.Context, cfg *model.Cfg, verifier *auth.Verifier, catalog *
 
 	// Edu-API v1.0 read provider. The spec's read scope opens it, and so does
 	// sis.read, so tokens for the other APIs keep working.
-	edu := engine.Group(edudto.BasePath, requireAuth, auth.RequireAnyScope(auth.ScopeRead, edudto.ScopeCoreReadonly))
+	edu := engine.Group(edudto.BasePath, auth.RenderErrors(eduAPI.AuthError), requireAuth,
+		auth.RequireAnyScope(auth.ScopeRead, edudto.ScopeCoreReadonly))
 	mapper := eduAPI.Mapper()
 	edu.GET("/persons", eduAPI.ListPersons)
 	edu.GET("/persons/:id", eduAPI.GetPerson)
