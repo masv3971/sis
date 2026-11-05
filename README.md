@@ -355,12 +355,14 @@ The Final release (Oct 2026), under the base path the spec requires.
 `persons`, `organizations`, `academicSessions`, `courseTemplates`,
 `courseOfferings`, `collectionTemplates` (programs), `enrollments`
 
-A list is a bare JSON array. It carries `X-Total-Count` (stored records);
-`limit` is capped at `sis.adapter.inbound.eduapi.max_limit`. To read
-everything, advance `offset` by `limit` until it reaches `X-Total-Count`.
-Records whose required references are gone are left out, so a page can be
-short without being the last. `sort` and `filter` are optional in the spec
-and answer 400. Errors use the spec's `Imsx_StatusInfo` body.
+A list is a bare JSON array. It carries `X-Total-Count` (stored records) and
+a `Link` header with `first`, `prev`, `next` and `last`. `limit` is capped at
+`sis.adapter.inbound.eduapi.max_limit`, and the links carry the limit that
+was applied. To read everything, follow `rel="next"` until it is gone. Do
+not advance `offset` by the `limit` you asked for: it skips records when SIS
+lowered it. Records whose required references are gone are left out, so a
+page can be short without being the last. `sort` and `filter` are optional
+in the spec and answer 400. Errors use the spec's `Imsx_StatusInfo` body.
 
 A token needs `sis.read` or the spec's scope
 `http://purl.1edtech.org/spec/eduapi/v1p0/scope/core.readonly`.

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -62,7 +63,7 @@ func (c *Client) ListPersons(gc *gin.Context) {
 	for _, person := range page.Items {
 		out = append(out, c.mapper.Person(person))
 	}
-	totalCount(gc, page.Total)
+	pageHeaders(gc, params, page.Total)
 	gc.JSON(http.StatusOK, out)
 }
 
@@ -163,7 +164,7 @@ func listWith[T any, PT domain.EntityPtr[T], D any](c *Client, gc *gin.Context, 
 		writeError(gc, err)
 		return
 	}
-	totalCount(gc, page.Total)
+	pageHeaders(gc, params, page.Total)
 	gc.JSON(http.StatusOK, out)
 }
 
@@ -216,12 +217,37 @@ func publishRefs[PT domain.Entity](ctx context.Context, c *Client, items ...PT) 
 	return out, nil
 }
 
-// totalCount sets X-Total-Count to the number of stored records. A client
-// pages with offset += limit while offset < X-Total-Count; it must not
-// count the returned items instead: orphans are dropped from a page, so a
-// page can be short without being the last.
-func totalCount(gc *gin.Context, total int) {
+// pageHeaders sets X-Total-Count (stored records) and the RFC 8288 Link
+// header the spec declares (first, prev, next, last). The links carry the
+// limit actually applied, which max_limit may have lowered, so a client that
+// follows rel="next" never skips records; advancing offset by the limit it
+// asked for would. Orphans are dropped from a page, so a page can be short
+// without being the last: rely on next, not on the page length.
+func pageHeaders(gc *gin.Context, params port.ListParams, total int) {
 	gc.Header("X-Total-Count", strconv.Itoa(total))
+
+	limit, offset := params.Limit, params.Offset
+	links := []string{pageLink(gc, "first", limit, 0)}
+	if offset > 0 {
+		links = append(links, pageLink(gc, "prev", limit, max(0, offset-limit)))
+	}
+	if offset+limit < total {
+		links = append(links, pageLink(gc, "next", limit, offset+limit))
+	}
+	if total > 0 {
+		links = append(links, pageLink(gc, "last", limit, (total-1)/limit*limit))
+	}
+	gc.Header("Link", strings.Join(links, ", "))
+}
+
+// pageLink is one Link entry for the request's own path and query, with limit
+// and offset replaced. The reference is relative to the request, which
+// RFC 8288 allows, so it survives a reverse proxy.
+func pageLink(gc *gin.Context, rel string, limit, offset int) string {
+	query := gc.Request.URL.Query()
+	query.Set("limit", strconv.Itoa(limit))
+	query.Set("offset", strconv.Itoa(offset))
+	return fmt.Sprintf("<%s?%s>; rel=%q", gc.Request.URL.EscapedPath(), query.Encode(), rel)
 }
 
 // limitOffset parses the limit/offset query parameters. An omitted limit

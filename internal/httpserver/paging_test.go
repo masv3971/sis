@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -18,10 +19,9 @@ import (
 	"github.com/SUNET/sis/pkg/logger"
 )
 
-// TestEduAPIPaging pages the Edu-API course offerings: advance offset by
-// limit until it reaches X-Total-Count. Every publishable record must be
-// read although an orphan makes a page short, and a limit above max_limit
-// is clamped.
+// TestEduAPIPaging pages the Edu-API course offerings by following
+// rel="next", asking for more than max_limit. Every publishable record must
+// be read although the limit is clamped and an orphan makes a page short.
 func TestEduAPIPaging(t *testing.T) {
 	ctx := t.Context()
 	log := logger.NewWithWriter("test", false, "error", io.Discard)
@@ -48,39 +48,87 @@ func TestEduAPIPaging(t *testing.T) {
 	token := iss.Token(t, "reader", "sis.read")
 
 	seen := map[string]bool{}
-	const limit = 3 // the configured max_limit
-	for offset, pages := 0, 0; ; pages++ {
+	next := eduBase + "/courseOfferings?limit=500" // above max_limit, which is 3
+	for pages := 0; next != ""; pages++ {
 		require.LessOrEqual(t, pages, stored, "paging does not end")
-		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://%s%s/courseOfferings?limit=%d&offset=%d", srv.Addr(), eduBase, limit, offset), nil)
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+srv.Addr().String()+next, nil)
 		req.Header.Set("Authorization", "Bearer "+token)
 		resp, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
 		var body []struct{ SourcedID string }
 		err = json.NewDecoder(resp.Body).Decode(&body)
 		_ = resp.Body.Close()
-		require.NoError(t, err, "offset %d: a list is a bare array", offset)
-		require.Equal(t, http.StatusOK, resp.StatusCode, "offset %d", offset)
+		require.NoError(t, err, "%s: a list is a bare array", next)
+		require.Equal(t, http.StatusOK, resp.StatusCode, next)
 		require.Empty(t, resp.Header.Get("X-Limit"), "not part of Edu-API")
 		total, _ := strconv.Atoi(resp.Header.Get("X-Total-Count"))
 		require.Equal(t, stored, total, "X-Total-Count")
+		assert.LessOrEqual(t, len(body), 3, "limit above max_limit is clamped")
 		for _, offering := range body {
 			seen[offering.SourcedID] = true
 		}
-		if offset += limit; offset >= total {
-			break
-		}
+		next = linkRel(resp.Header.Get("Link"), "next")
 	}
-
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://%s%s/courseOfferings?limit=500", srv.Addr(), eduBase), nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	resp, err := http.DefaultClient.Do(req)
-	require.NoError(t, err)
-	var clamped []struct{ SourcedID string }
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&clamped))
-	_ = resp.Body.Close()
-	assert.LessOrEqual(t, len(clamped), limit, "limit above max_limit is clamped")
 	assert.Len(t, seen, stored-1, "read %v; want o1..o%d", seen, stored-1)
 	assert.False(t, seen["o0"], "orphan o0 must not be listed")
+}
+
+// TestEduAPILinks checks first/prev/next/last on the first, a middle and the
+// last page, and that the applied (clamped) limit is in every link.
+func TestEduAPILinks(t *testing.T) {
+	log := logger.NewWithWriter("test", false, "error", io.Discard)
+	catalog := &readmodel.Client{
+		Persons: service.New(memory.NewPersonRepository(), nil, nil, log),
+	}
+	for i := range 7 {
+		_, err := catalog.Persons.CreatePerson(t.Context(), domain.Person{
+			ID: fmt.Sprintf("p%d", i), SourcedID: fmt.Sprintf("p%d", i), GivenName: "A", FamilyName: "B", Status: domain.StatusActive,
+		})
+		require.NoError(t, err)
+	}
+	cfg := testCfg("127.0.0.1:0")
+	cfg.SIS.Adapter.Inbound.EduAPI.DefaultLimit, cfg.SIS.Adapter.Inbound.EduAPI.MaxLimit = 2, 3
+	srv, iss := startWithIssuer(t, cfg, catalog)
+	token := iss.Token(t, "reader", "sis.read")
+
+	link := func(query string) string {
+		req, _ := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+srv.Addr().String()+eduBase+"/persons"+query, nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		_ = resp.Body.Close()
+		require.Equal(t, http.StatusOK, resp.StatusCode, query)
+		return resp.Header.Get("Link")
+	}
+	p := eduBase + "/persons"
+
+	first := link("?limit=500")
+	assert.Equal(t, p+"?limit=3&offset=0", linkRel(first, "first"))
+	assert.Equal(t, p+"?limit=3&offset=3", linkRel(first, "next"))
+	assert.Equal(t, p+"?limit=3&offset=6", linkRel(first, "last"))
+	assert.Empty(t, linkRel(first, "prev"), "no prev on the first page")
+
+	middle := link("?limit=500&offset=3")
+	assert.Equal(t, p+"?limit=3&offset=0", linkRel(middle, "prev"))
+	assert.Equal(t, p+"?limit=3&offset=6", linkRel(middle, "next"))
+
+	last := link("?offset=6") // no limit: the default, 2
+	assert.Equal(t, p+"?limit=2&offset=4", linkRel(last, "prev"))
+	assert.Empty(t, linkRel(last, "next"), "no next on the last page")
+	assert.Equal(t, p+"?limit=2&offset=6", linkRel(last, "last"))
+}
+
+// linkRel returns the target of the Link header entry with the given rel, or
+// "" when there is none. It handles the form pageHeaders writes:
+// <target>; rel="name", ...
+func linkRel(header, rel string) string {
+	for _, entry := range strings.Split(header, ", ") {
+		target, params, ok := strings.Cut(entry, ">; ")
+		if ok && params == fmt.Sprintf("rel=%q", rel) {
+			return strings.TrimPrefix(target, "<")
+		}
+	}
+	return ""
 }
 
 // TestEduAPIRejectsSortAndFilter checks the unsupported optional query
