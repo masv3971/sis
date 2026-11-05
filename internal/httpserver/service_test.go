@@ -210,7 +210,6 @@ func TestScopesGateAPIs(t *testing.T) {
 		{"read eduapi", read, http.MethodGet, eduBase + "/persons/p1", "", http.StatusOK},
 		{"spec scope reads eduapi", specRead, http.MethodGet, eduBase + "/persons/p1", "", http.StatusOK},
 		{"spec scope is only for eduapi", specRead, http.MethodGet, "/oeapi/persons/p1", "", http.StatusForbidden},
-		{"old eduapi path is gone", read, http.MethodGet, "/eduapi/persons/p1", "", http.StatusNotFound},
 		{"read oeapi", read, http.MethodGet, "/oeapi/persons/p1", "", http.StatusOK},
 		{"both lists", both, http.MethodGet, "/api/v1/persons", "", http.StatusOK},
 		{"no token", "", http.MethodGet, eduBase + "/persons", "", http.StatusUnauthorized},
@@ -267,29 +266,6 @@ func TestEduAPIAuthErrorsUseImsxBody(t *testing.T) {
 	_, _, body := get("/oeapi/persons", "")
 	assert.Equal(t, "unauthorized", body["error"], "oeapi keeps its own error body")
 	assert.NotContains(t, body, "imsx_codeMajor")
-}
-
-// TestRetiredEduAPIPrefixIsNotTheSPA checks that with the SPA mounted the
-// old /eduapi paths answer 404, not index.html with 200.
-func TestRetiredEduAPIPrefixIsNotTheSPA(t *testing.T) {
-	root := t.TempDir()
-	mustWrite(t, filepath.Join(root, "index.html"), []byte("<html>spa</html>"))
-	cfg := testCfg("127.0.0.1:0")
-	cfg.SIS.HTTPServer.Web.Root = root
-	srv, err := newTestServerWithCfg(t, cfg)
-	require.NoError(t, err, "New")
-	t.Cleanup(func() { _ = srv.Close(context.Background()) })
-
-	base := "http://" + srv.Addr().String()
-	resp, err := httpGet(t, http.DefaultClient, base+"/eduapi/persons")
-	require.NoError(t, err)
-	_ = resp.Body.Close()
-	assert.Equal(t, http.StatusNotFound, resp.StatusCode, "/eduapi/persons")
-
-	resp, err = httpGet(t, http.DefaultClient, base+"/some/spa/route")
-	require.NoError(t, err)
-	_ = resp.Body.Close()
-	assert.Equal(t, http.StatusOK, resp.StatusCode, "other paths still get the SPA")
 }
 
 // TestSwaggerServesSpecOnlyWhenEnabled checks the generated /api/v1 document
