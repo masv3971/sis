@@ -69,16 +69,16 @@ func TestRecordStatus(t *testing.T) {
 }
 
 func TestOrganization(t *testing.T) {
-	org := mapper.Organization(&domain.Organization{SourcedID: "uni", Name: "University", ParentID: "root"})
+	org := mapper.Organization(&domain.Organization{Base: domain.Base{SourcedID: "uni"}, Name: "University", ParentID: "root"})
 	assert.Equal(t, []LanguageTypedString{{RecordLanguage: "en", Value: "University"}}, org.Name)
 	assert.Equal(t, "organization", org.OrganizationType, "organizationType is required")
 	assert.Equal(t, "root", org.Parent)
-	assert.NotContains(t, toMap(t, mapper.Organization(&domain.Organization{SourcedID: "u", Name: "U"})), "parent")
+	assert.NotContains(t, toMap(t, mapper.Organization(&domain.Organization{Base: domain.Base{SourcedID: "u"}, Name: "U"})), "parent")
 }
 
 func TestAcademicSessionDates(t *testing.T) {
 	session := mapper.AcademicSession(&domain.AcademicSession{
-		SourcedID: "ht26", Title: "Autumn 2026", Type: "term", StartDate: "2026-08-31", EndDate: "2027-01-15T10:00:00Z",
+		Base: domain.Base{SourcedID: "ht26"}, Title: "Autumn 2026", Type: "term", StartDate: "2026-08-31", EndDate: "2027-01-15T10:00:00Z",
 	})
 	assert.Equal(t, "term", session.SessionType)
 	assert.Equal(t, "2026-08-31T00:00:00Z", session.StartDate)
