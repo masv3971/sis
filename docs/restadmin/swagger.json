@@ -2469,7 +2469,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Converts data from metadata.input_format (elm, plain or in an EDCI envelope as for parse) and upserts every record by sourcedId, so /eduapi and /oeapi (and /api/v1) serve them. With ttl the records stop being served after that duration and are then deleted; re-populating refreshes the expiry, but a record that already existed without expiry keeps none. References in the document must resolve within it or to stored records. The document is checked completely before anything is stored; a storage failure part-way leaves earlier records stored, and retrying the same request converges. Requires scope sis.write.",
+                "description": "Converts data from metadata.input_format (elm, plain or in an EDCI envelope as for parse) and upserts every record by sourcedId, so the Edu-API and /oeapi (and /api/v1) serve them. With ttl the records stop being served after that duration and are then deleted; re-populating refreshes the expiry, but a record that already existed without expiry keeps none. References in the document must resolve within it or to stored records. The document is checked completely before anything is stored; a storage failure part-way leaves earlier records stored, and retrying the same request converges. Requires scope sis.write.",
                 "consumes": [
                     "application/json"
                 ],
@@ -3301,7 +3301,7 @@
             "type": "object",
             "properties": {
                 "data": {
-                    "description": "Data holds the converted records, one array per resource collection of\nthe output format (Edu-API: persons, orgs, academicSessions, courses,\nprograms, classes, enrollments, results; OEAPI: persons, organizations,\nacademicSessions, courses, programs, offerings, associations, results).\nReferences between them are sourcedIds.",
+                    "description": "Data holds the converted records, one array per resource collection of\nthe output format (Edu-API: persons, organizations, academicSessions,\ncourseTemplates, collectionTemplates, courseOfferings, enrollments, with\nno results; OEAPI: persons, organizations, academicSessions, courses,\nprograms, offerings, associations, results). References between them\nare sourcedIds.",
                     "type": "object"
                 },
                 "metadata": {

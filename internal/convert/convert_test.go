@@ -16,13 +16,16 @@ import (
 	"github.com/SUNET/sis/internal/core/domain"
 	"github.com/SUNET/sis/pkg/elm"
 	"github.com/SUNET/sis/pkg/logger"
+	"github.com/SUNET/sis/pkg/model"
 )
 
 var update = flag.Bool("update", false, "rewrite testdata/*.golden.json")
 
 func newClient(t *testing.T) *Client {
 	t.Helper()
-	client, err := New(t.Context(), nil, logger.NewWithWriter("test", false, "error", io.Discard))
+	cfg := &model.Cfg{}
+	cfg.SIS.Adapter.Inbound.EduAPI.RecordLanguage = "en"
+	client, err := New(t.Context(), cfg, logger.NewWithWriter("test", false, "error", io.Discard))
 	require.NoError(t, err)
 	return client
 }

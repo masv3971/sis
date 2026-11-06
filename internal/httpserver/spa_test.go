@@ -12,7 +12,7 @@ func TestIsAPIPath(t *testing.T) {
 		"/api/":           true,
 		"/api/v1/persons": true,
 		"/oeapi":          true,
-		"/eduapi":         true,
+		"/1edtech":        true,
 		"/auth":           true,
 		"/auth/config":    true,
 		"/healthz":        true,

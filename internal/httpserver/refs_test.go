@@ -116,47 +116,31 @@ func TestProvidersPublishReferencesAsSourcedIDs(t *testing.T) {
 	})
 
 	t.Run("eduapi", func(t *testing.T) {
-		type ref struct{ SourcedID string }
-		var org struct{ Org struct{ Parent *ref } }
-		get(t, "/eduapi/orgs/dept", &org)
-		var course struct{ Course struct{ Org *ref } }
-		get(t, "/eduapi/courses/DA101", &course)
-		var class struct {
-			Class struct {
-				Course *ref
-				Terms  []ref
-				School *ref
-			}
-		}
-		get(t, "/eduapi/classes/DA101-ht26", &class)
-		var enr struct{ Enrollment struct{ User, Class ref } }
-		get(t, "/eduapi/enrollments/enr-1", &enr)
+		var org struct{ Parent string }
+		get(t, eduBase+"/organizations/dept", &org)
+		var course struct{ Organization string }
+		get(t, eduBase+"/courseTemplates/DA101", &course)
+		var offering struct{ Course, AcademicSession, Organization, StartDate string }
+		get(t, eduBase+"/courseOfferings/DA101-ht26", &offering)
+		var enr struct{ Person, EducationOffering string }
+		get(t, eduBase+"/enrollments/enr-1", &enr)
 
-		sid := func(reference *ref) string {
-			if reference == nil {
-				return ""
-			}
-			return reference.SourcedID
-		}
-		var term string
-		if len(class.Class.Terms) == 1 {
-			term = class.Class.Terms[0].SourcedID
-		}
 		checks := []struct{ name, got, want string }{
-			{"org.parent", sid(org.Org.Parent), "uni"},
-			{"course.org", sid(course.Course.Org), "dept"},
-			{"class.course", sid(class.Class.Course), "DA101"},
-			{"class.terms", term, "ht26"},
-			{"class.school", sid(class.Class.School), "dept"},
-			{"enrollment.user", enr.Enrollment.User.SourcedID, "p-external"},
-			{"enrollment.class", enr.Enrollment.Class.SourcedID, "DA101-ht26"},
+			{"organization.parent", org.Parent, "uni"},
+			{"courseTemplate.organization", course.Organization, "dept"},
+			{"courseOffering.course", offering.Course, "DA101"},
+			{"courseOffering.academicSession", offering.AcademicSession, "ht26"},
+			{"courseOffering.organization", offering.Organization, "dept"},
+			{"enrollment.person", enr.Person, "p-external"},
+			{"enrollment.educationOffering", enr.EducationOffering, "DA101-ht26"},
 		}
 		for _, check := range checks {
 			assert.Equal(t, check.want, check.got, check.name)
 		}
-		get(t, "/eduapi/persons/"+enr.Enrollment.User.SourcedID, nil)
-		get(t, "/eduapi/classes/"+enr.Enrollment.Class.SourcedID, nil)
-		get(t, "/eduapi/academicSessions/"+term, nil)
+		get(t, eduBase+"/persons/"+enr.Person, nil)
+		get(t, eduBase+"/courseOfferings/"+enr.EducationOffering, nil)
+		get(t, eduBase+"/academicSessions/"+offering.AcademicSession, nil)
+		get(t, eduBase+"/courseTemplates/"+offering.Course, nil)
 	})
 
 	// Runs last: it deletes records. Enrollments whose person or offering is
@@ -186,8 +170,8 @@ func TestProvidersPublishReferencesAsSourcedIDs(t *testing.T) {
 		for _, path := range []string{
 			"/oeapi/associations/enr-person-gone",
 			"/oeapi/associations/enr-offering-gone",
-			"/eduapi/enrollments/enr-person-gone",
-			"/eduapi/enrollments/enr-offering-gone",
+			eduBase + "/enrollments/enr-person-gone",
+			eduBase + "/enrollments/enr-offering-gone",
 		} {
 			assert.Equal(t, http.StatusNotFound, status(t, path), "GET %s", path)
 		}
@@ -196,18 +180,13 @@ func TestProvidersPublishReferencesAsSourcedIDs(t *testing.T) {
 			Items []struct{ AssociationID, PersonID, OfferingID string }
 		}
 		get(t, "/oeapi/associations", &oe)
-		var edu struct {
-			Enrollments []struct {
-				SourcedID   string
-				User, Class struct{ SourcedID string }
-			}
-		}
-		get(t, "/eduapi/enrollments", &edu)
+		var edu []struct{ SourcedID string }
+		get(t, eduBase+"/enrollments", &edu)
 		if assert.Len(t, oe.Items, 1, "oeapi associations, want only enr-1") {
 			assert.Equal(t, "enr-1", oe.Items[0].AssociationID)
 		}
-		if assert.Len(t, edu.Enrollments, 1, "eduapi enrollments, want only enr-1") {
-			assert.Equal(t, "enr-1", edu.Enrollments[0].SourcedID)
+		if assert.Len(t, edu, 1, "eduapi enrollments, want only enr-1") {
+			assert.Equal(t, "enr-1", edu[0].SourcedID)
 		}
 	})
 }

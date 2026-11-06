@@ -179,24 +179,25 @@ func New(ctx context.Context, cfg *model.Cfg, verifier *auth.Verifier, catalog *
 	oe.GET("/results", oeapi.List(oeAPI, catalog.Results, oedto.FromResult))
 	oe.GET("/results/:id", oeapi.Get(oeAPI, catalog.Results, oedto.FromResult))
 
-	// Edu-API v1.0 read provider, behind the read scope.
-	edu := engine.Group("/eduapi", requireAuth, guards.Read)
+	// Edu-API v1.0 read provider. The spec's read scope opens it, and so does
+	// sis.read, so tokens for the other APIs keep working.
+	edu := engine.Group(edudto.BasePath, auth.RenderErrors(eduAPI.AuthError), requireAuth,
+		auth.RequireAnyScope(auth.ScopeRead, edudto.ScopeCoreReadonly))
+	mapper := eduAPI.Mapper()
 	edu.GET("/persons", eduAPI.ListPersons)
 	edu.GET("/persons/:id", eduAPI.GetPerson)
-	edu.GET("/orgs", eduapi.List(eduAPI, catalog.Organizations, "orgs", edudto.FromOrg))
-	edu.GET("/orgs/:id", eduapi.Get(eduAPI, catalog.Organizations, "org", edudto.FromOrg))
-	edu.GET("/academicSessions", eduapi.List(eduAPI, catalog.AcademicSessions, "academicSessions", edudto.FromAcademicSession))
-	edu.GET("/academicSessions/:id", eduapi.Get(eduAPI, catalog.AcademicSessions, "academicSession", edudto.FromAcademicSession))
-	edu.GET("/courses", eduapi.List(eduAPI, catalog.Courses, "courses", edudto.FromCourse))
-	edu.GET("/courses/:id", eduapi.Get(eduAPI, catalog.Courses, "course", edudto.FromCourse))
-	edu.GET("/classes", eduapi.List(eduAPI, catalog.Offerings, "classes", edudto.FromClass))
-	edu.GET("/classes/:id", eduapi.Get(eduAPI, catalog.Offerings, "class", edudto.FromClass))
-	edu.GET("/enrollments", eduapi.List(eduAPI, catalog.Enrollments, "enrollments", edudto.FromEnrollment))
-	edu.GET("/enrollments/:id", eduapi.Get(eduAPI, catalog.Enrollments, "enrollment", edudto.FromEnrollment))
-	edu.GET("/programs", eduapi.List(eduAPI, catalog.Programs, "programs", edudto.FromProgram))
-	edu.GET("/programs/:id", eduapi.Get(eduAPI, catalog.Programs, "program", edudto.FromProgram))
-	edu.GET("/results", eduapi.List(eduAPI, catalog.Results, "results", edudto.FromResult))
-	edu.GET("/results/:id", eduapi.Get(eduAPI, catalog.Results, "result", edudto.FromResult))
+	edu.GET("/organizations", eduapi.List(eduAPI, catalog.Organizations, mapper.Organization))
+	edu.GET("/organizations/:id", eduapi.Get(eduAPI, catalog.Organizations, mapper.Organization))
+	edu.GET("/academicSessions", eduapi.List(eduAPI, catalog.AcademicSessions, mapper.AcademicSession))
+	edu.GET("/academicSessions/:id", eduapi.Get(eduAPI, catalog.AcademicSessions, mapper.AcademicSession))
+	edu.GET("/courseTemplates", eduapi.List(eduAPI, catalog.Courses, mapper.CourseTemplate))
+	edu.GET("/courseTemplates/:id", eduapi.Get(eduAPI, catalog.Courses, mapper.CourseTemplate))
+	edu.GET("/collectionTemplates", eduapi.List(eduAPI, catalog.Programs, mapper.CollectionTemplate))
+	edu.GET("/collectionTemplates/:id", eduapi.Get(eduAPI, catalog.Programs, mapper.CollectionTemplate))
+	edu.GET("/courseOfferings", eduAPI.ListCourseOfferings)
+	edu.GET("/courseOfferings/:id", eduAPI.GetCourseOffering)
+	edu.GET("/enrollments", eduapi.List(eduAPI, catalog.Enrollments, mapper.Enrollment))
+	edu.GET("/enrollments/:id", eduapi.Get(eduAPI, catalog.Enrollments, mapper.Enrollment))
 
 	httpCfg := cfg.SIS.HTTPServer
 
