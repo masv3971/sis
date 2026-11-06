@@ -116,6 +116,29 @@ func TestNewAMQPAPIRules(t *testing.T) {
 	}
 }
 
+func TestNewEduAPIRecordLanguage(t *testing.T) {
+	lang := func(tag string) string {
+		return "sis:\n  adapter:\n    inbound:\n      eduapi:\n        record_language: " + tag + "\n"
+	}
+	cases := []struct {
+		name    string
+		body    string
+		wantErr string
+	}{
+		{"language only", lang("sv"), ""},
+		{"language and region", lang("sv-SE"), ""},
+		{"not a tag", lang(`"en us"`), "record_language"},
+		{"empty", lang(`""`), "record_language"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("SIS_CONFIG_YAML", writeConfig(t, tc.body))
+			_, err := configuration.New(t.Context(), "sis")
+			assertErr(t, tc.wantErr, err)
+		})
+	}
+}
+
 // TestMaxBelowDefaultRejected checks that a maximum smaller than its default
 // fails startup rather than silently shrinking the default.
 func TestMaxBelowDefaultRejected(t *testing.T) {
