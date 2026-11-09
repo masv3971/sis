@@ -180,6 +180,9 @@ func parseQuoted(s string) (value, rest string, err error) {
 		}
 		if i+1 < len(s) && s[i+1] == '\'' {
 			b.WriteByte('\'')
+			if b.Len() > maxFilterValue {
+				return "", "", pagingError("filter", "value too long")
+			}
 			i++
 			continue
 		}

@@ -2,6 +2,7 @@ package helpers
 
 import (
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -110,6 +111,11 @@ func TestParseListQueryFilterValueIsBounded(t *testing.T) {
 	require.Error(t, err)
 	_, err = parse(t, filterQuery("title='"+string(long[:maxFilterValue])+"'"))
 	assert.NoError(t, err, "the limit itself is allowed")
+
+	_, err = parse(t, filterQuery("title='"+strings.Repeat("''", maxFilterValue+1)+"'"))
+	require.Error(t, err, "escaped quotes count toward the limit")
+	_, err = parse(t, filterQuery("title='"+strings.Repeat("''", maxFilterValue)+"'"))
+	assert.NoError(t, err, "the limit itself is allowed with escaped quotes")
 }
 
 func TestParseListQueryKeepsLimitOffset(t *testing.T) {
