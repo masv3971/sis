@@ -8,6 +8,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -47,18 +49,44 @@ func New(_ context.Context, cfg *model.Cfg, catalog *readmodel.Client, log *logg
 // for the route table.
 func (c *Client) Mapper() dto.Mapper { return c.mapper }
 
+// The fields a client may sort and filter on, by the name the published
+// resource carries (dot notation for nested ones, as the spec has it), and
+// the stored key each one reads. A field is listed only when its stored value
+// is its published value. References (stored as ids, published as sourcedIds)
+// and mapped or multi-valued fields are left out: sorting or filtering on
+// them would disagree with what the response shows.
+var (
+	sourcedIDFields = helpers.ListFields{"sourcedId": "sourcedId"}
+	personFields    = helpers.ListFields{
+		"sourcedId":            "sourcedId",
+		"legalName.familyName": "familyName",
+		"legalName.givenName":  "givenName",
+		"dateOfBirth":          "dateOfBirth",
+	}
+)
+
 // ListPersons publishes persons in Edu-API shape.
 func (c *Client) ListPersons(gc *gin.Context) {
-	params, err := c.limitOffset(gc)
+	c.listPersonsWith(gc, personFields, c.catalog.Persons.ListPersons)
+}
+
+// listPersonsWith answers a person list request with the page fetch returns.
+// fields are the names sort and filter accept; nil rejects both.
+func (c *Client) listPersonsWith(gc *gin.Context, fields helpers.ListFields, fetch func(context.Context, port.ListParams) (port.Page[domain.Person], error)) {
+	params, err := c.listParams(gc, fields)
 	if err != nil {
 		writeError(gc, err)
 		return
 	}
-	page, err := c.catalog.Persons.ListPersons(gc.Request.Context(), params)
+	page, err := fetch(gc.Request.Context(), params)
 	if err != nil {
 		writeError(gc, err)
 		return
 	}
+	c.writePersons(gc, params, page)
+}
+
+func (c *Client) writePersons(gc *gin.Context, params port.ListParams, page port.Page[domain.Person]) {
 	out := make([]dto.Person, 0, len(page.Items))
 	for _, person := range page.Items {
 		out = append(out, c.mapper.Person(person))
@@ -75,6 +103,167 @@ func (c *Client) GetPerson(gc *gin.Context) {
 		return
 	}
 	gc.JSON(http.StatusOK, c.mapper.Person(person))
+}
+
+// Roles that make a person a student or staff member of an offering. The
+// spec puts role on the enrollment, so these select enrollments.
+var (
+	studentRoles = []domain.Role{domain.RoleStudent}
+	staffRoles   = []domain.Role{domain.RoleStaff, domain.RoleFaculty}
+)
+
+// ListStudents publishes the persons with the student role.
+func (c *Client) ListStudents(gc *gin.Context) {
+	c.listPersonsWith(gc, personFields, func(ctx context.Context, params port.ListParams) (port.Page[domain.Person], error) {
+		return c.catalog.Persons.ListPersonsByRoles(ctx, studentRoles, params)
+	})
+}
+
+// ListStaff publishes the persons with the staff or faculty role.
+func (c *Client) ListStaff(gc *gin.Context) {
+	c.listPersonsWith(gc, personFields, func(ctx context.Context, params port.ListParams) (port.Page[domain.Person], error) {
+		return c.catalog.Persons.ListPersonsByRoles(ctx, staffRoles, params)
+	})
+}
+
+// ListOfferingEnrollments publishes the enrollments on one course offering.
+func (c *Client) ListOfferingEnrollments(gc *gin.Context) {
+	offering, ok := c.publishableOffering(gc)
+	if !ok {
+		return
+	}
+	listFrom(c, gc, sourcedIDFields, func(ctx context.Context, params port.ListParams) (port.Page[*domain.Enrollment], error) {
+		return c.catalog.Enrollments.ListByRef(ctx, "offeringId", offering.ID, params)
+	}, each(c.mapper.Enrollment))
+}
+
+// ListOfferingStudents publishes the persons enrolled on one course offering
+// as students.
+func (c *Client) ListOfferingStudents(gc *gin.Context) { c.listOfferingPersons(gc, studentRoles) }
+
+// ListOfferingStaff publishes the persons enrolled on one course offering as
+// staff.
+func (c *Client) ListOfferingStaff(gc *gin.Context) { c.listOfferingPersons(gc, staffRoles) }
+
+// listOfferingPersons pages in memory, so it cannot sort or filter.
+func (c *Client) listOfferingPersons(gc *gin.Context, roles []domain.Role) {
+	offering, ok := c.publishableOffering(gc)
+	if !ok {
+		return
+	}
+	c.listPersonsWith(gc, nil, func(ctx context.Context, params port.ListParams) (port.Page[domain.Person], error) {
+		enrollments, err := c.catalog.Enrollments.ListByRefs(ctx, "offeringId", []string{offering.ID})
+		if err != nil {
+			return port.Page[domain.Person]{}, err
+		}
+		var personIDs []string
+		seen := map[string]bool{}
+		for _, enrollment := range enrollments {
+			if slices.Contains(roles, enrollment.Role) && !seen[enrollment.PersonID] {
+				seen[enrollment.PersonID] = true
+				personIDs = append(personIDs, enrollment.PersonID)
+			}
+		}
+		persons, err := c.catalog.Persons.GetPersons(ctx, personIDs)
+		if err != nil {
+			return port.Page[domain.Person]{}, err
+		}
+		sort.Slice(persons, func(i, j int) bool {
+			a, b := persons[i], persons[j]
+			if a.FamilyName != b.FamilyName {
+				return a.FamilyName < b.FamilyName
+			}
+			if a.GivenName != b.GivenName {
+				return a.GivenName < b.GivenName
+			}
+			return a.ID < b.ID
+		})
+		return slicePage(persons, params), nil
+	})
+}
+
+// ListSessionOfferings publishes the course offerings in one academic
+// session.
+func (c *Client) ListSessionOfferings(gc *gin.Context) {
+	session, ok := c.sessionParent(gc)
+	if !ok {
+		return
+	}
+	listFrom(c, gc, sourcedIDFields, func(ctx context.Context, params port.ListParams) (port.Page[*domain.Offering], error) {
+		return c.catalog.Offerings.ListByRef(ctx, "academicSessionId", session.ID, params)
+	}, c.offeringDTOs)
+}
+
+// ListSessionEnrollments publishes the enrollments on the offerings of one
+// academic session. It pages in memory, so it cannot sort or filter.
+func (c *Client) ListSessionEnrollments(gc *gin.Context) {
+	session, ok := c.sessionParent(gc)
+	if !ok {
+		return
+	}
+	listFrom(c, gc, nil, func(ctx context.Context, params port.ListParams) (port.Page[*domain.Enrollment], error) {
+		offerings, err := c.catalog.Offerings.ListByRefs(ctx, "academicSessionId", []string{session.ID})
+		if err != nil {
+			return port.Page[*domain.Enrollment]{}, err
+		}
+		offeringIDs := make([]string, 0, len(offerings))
+		for _, offering := range offerings {
+			offeringIDs = append(offeringIDs, offering.ID)
+		}
+		if len(offeringIDs) == 0 {
+			return port.Page[*domain.Enrollment]{}, nil
+		}
+		enrollments, err := c.catalog.Enrollments.ListByRefs(ctx, "offeringId", offeringIDs)
+		if err != nil {
+			return port.Page[*domain.Enrollment]{}, err
+		}
+		sort.Slice(enrollments, func(i, j int) bool { return enrollments[i].SourcedID < enrollments[j].SourcedID })
+		return slicePage(enrollments, params), nil
+	}, each(c.mapper.Enrollment))
+}
+
+// publishableOffering resolves the :id offering, answering 404 itself when it
+// does not exist or is an orphan, as getWith does.
+func (c *Client) publishableOffering(gc *gin.Context) (*domain.Offering, bool) {
+	ctx := gc.Request.Context()
+	offering, err := c.catalog.Offerings.GetBySourcedID(ctx, gc.Param("id"))
+	if err != nil {
+		writeError(gc, err)
+		return nil, false
+	}
+	// The ID is not a reference, so PublishRefs leaves it alone.
+	items, err := publishRefs(ctx, c, offering)
+	if err != nil {
+		writeError(gc, err)
+		return nil, false
+	}
+	if len(items) == 0 {
+		writeError(gc, domain.ErrNotFound)
+		return nil, false
+	}
+	return offering, true
+}
+
+// sessionParent resolves the :id academic session, answering 404 itself.
+func (c *Client) sessionParent(gc *gin.Context) (*domain.AcademicSession, bool) {
+	session, err := c.catalog.AcademicSessions.GetBySourcedID(gc.Request.Context(), gc.Param("id"))
+	if err != nil {
+		writeError(gc, err)
+		return nil, false
+	}
+	return session, true
+}
+
+// slicePage pages an in-memory result, for the nested routes whose rows come
+// from more than one lookup. The total counts every item. offset and limit are
+// never added, so a huge offset cannot overflow.
+func slicePage[T any](items []T, params port.ListParams) port.Page[T] {
+	lo := min(max(params.Offset, 0), len(items))
+	hi := len(items)
+	if params.Limit > 0 && params.Limit < hi-lo {
+		hi = lo + params.Limit
+	}
+	return port.Page[T]{Items: items[lo:hi], Total: len(items)}
 }
 
 // ListCourseOfferings publishes offerings as course offerings. The dates the
@@ -157,13 +346,19 @@ func Get[T any, PT domain.EntityPtr[T], D any](c *Client, svc *service.Resource[
 // listWith answers a list request with a bare JSON array, as the spec
 // requires, and X-Total-Count.
 func listWith[T any, PT domain.EntityPtr[T], D any](c *Client, gc *gin.Context, svc *service.Resource[T, PT], toDTOs func(context.Context, []PT) ([]D, error)) {
-	params, err := c.limitOffset(gc)
+	listFrom(c, gc, sourcedIDFields, svc.List, toDTOs)
+}
+
+// listFrom is listWith for any source of pages, e.g. a nested route's
+// ListByRef. fields are the names sort and filter accept; nil rejects both.
+func listFrom[PT domain.Entity, D any](c *Client, gc *gin.Context, fields helpers.ListFields, fetch func(context.Context, port.ListParams) (port.Page[PT], error), toDTOs func(context.Context, []PT) ([]D, error)) {
+	params, err := c.listParams(gc, fields)
 	if err != nil {
 		writeError(gc, err)
 		return
 	}
 	ctx := gc.Request.Context()
-	page, err := svc.List(ctx, params)
+	page, err := fetch(ctx, params)
 	if err != nil {
 		writeError(gc, err)
 		return
@@ -264,14 +459,15 @@ func pageLink(gc *gin.Context, rel string, limit, offset int) string {
 	return fmt.Sprintf("<%s?%s>; rel=%q", gc.Request.URL.EscapedPath(), query.Encode(), rel)
 }
 
-// limitOffset parses the limit/offset query parameters. An omitted limit
-// takes sis.adapter.inbound.eduapi.default_limit; a given one must be
-// positive and is clamped to .max_limit, so a caller can never request an
-// unbounded page. sort and filter are optional in the spec and answered
-// with 400.
-func (c *Client) limitOffset(gc *gin.Context) (port.ListParams, error) {
+// listParams parses the limit, offset, sort, orderBy and filter query
+// parameters. An omitted limit takes sis.adapter.inbound.eduapi.default_limit;
+// a given one must be positive and is clamped to .max_limit, so a caller can
+// never request an unbounded page. sort and filter are optional in the spec:
+// a list that supports them passes its fields, one that does not passes nil
+// and answers either with 400.
+func (c *Client) listParams(gc *gin.Context, fields helpers.ListFields) (port.ListParams, error) {
 	eduapiCfg := c.cfg.SIS.Adapter.Inbound.EduAPI
-	return helpers.ParseLimitOffset(gc, eduapiCfg.DefaultLimit, eduapiCfg.MaxLimit)
+	return helpers.ParseListQuery(gc, eduapiCfg.DefaultLimit, eduapiCfg.MaxLimit, fields)
 }
 
 // AuthError renders a rejected token or scope as the spec's error body, for
@@ -297,5 +493,9 @@ func writeError(gc *gin.Context, err error) {
 		description = fmt.Sprintf("%s: %v", apiErr.Title, apiErr.Err)
 	}
 	status := apiErr.Status()
-	gc.JSON(status, dto.NewStatusInfo(status, description))
+	info := dto.NewStatusInfo(status, description)
+	if apiErr.Title == helpers.ErrInvalidFilterField {
+		info = info.WithMinor(dto.MinorInvalidFilterField)
+	}
+	gc.JSON(status, info)
 }

@@ -23,6 +23,33 @@ func TestPersonUpdateRejectsForeignSourcedID(t *testing.T) {
 	assert.NoError(t, repo.Update(ctx, domain.Person{ID: "2", SourcedID: "b", GivenName: "x"}, nil), "self update")
 }
 
+// TestPersonListByRoles checks the role filter, its total and its paging.
+func TestPersonListByRoles(t *testing.T) {
+	ctx := t.Context()
+	repo := NewPersonRepository()
+	for _, p := range []domain.Person{
+		{ID: "1", SourcedID: "a", FamilyName: "A", Roles: []domain.Role{domain.RoleStudent}},
+		{ID: "2", SourcedID: "b", FamilyName: "B", Roles: []domain.Role{domain.RoleStaff, domain.RoleStudent}},
+		{ID: "3", SourcedID: "c", FamilyName: "C", Roles: []domain.Role{domain.RoleFaculty}},
+		{ID: "4", SourcedID: "d", FamilyName: "D"},
+	} {
+		require.NoError(t, repo.Create(ctx, p))
+	}
+	page, err := repo.ListByRoles(ctx, []domain.Role{domain.RoleStudent}, port.ListParams{Limit: 1})
+	require.NoError(t, err)
+	assert.Equal(t, 2, page.Total)
+	require.Len(t, page.Items, 1)
+	assert.Equal(t, "1", page.Items[0].ID, "ordered by name")
+
+	page, err = repo.ListByRoles(ctx, []domain.Role{domain.RoleStaff, domain.RoleFaculty}, port.ListParams{})
+	require.NoError(t, err)
+	assert.Equal(t, 2, page.Total, "any of the roles matches")
+
+	page, err = repo.ListByRoles(ctx, nil, port.ListParams{})
+	require.NoError(t, err)
+	assert.Zero(t, page.Total, "no roles match nobody")
+}
+
 // TestDocRepoListByRef checks the filter and its total, as Postgres' ->>.
 func TestDocRepoListByRef(t *testing.T) {
 	ctx := t.Context()

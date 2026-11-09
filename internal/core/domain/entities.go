@@ -1,6 +1,17 @@
 package domain
 
-import "math"
+import (
+	"math"
+	"slices"
+)
+
+// validateIDs rejects an empty entry in a list of references.
+func validateIDs(field string, ids []string) error {
+	if slices.Contains(ids, "") {
+		return &ValidationError{Field: field, Msg: "must not hold an empty id"}
+	}
+	return nil
+}
 
 // Organization is an institution or an organizational unit within one.
 type Organization struct {
@@ -53,6 +64,8 @@ type Course struct {
 	Code  string `json:"code,omitempty"`
 	Title string `json:"title"`
 	OrgID string `json:"orgId,omitempty"`
+	// ProgramIDs are the programs the course is part of.
+	ProgramIDs []string `json:"programIds,omitempty"`
 }
 
 // EntityType returns the stable type tag.
@@ -66,7 +79,7 @@ func (c *Course) Validate() error {
 	if c.Title == "" {
 		return Required("title")
 	}
-	return nil
+	return validateIDs("programIds", c.ProgramIDs)
 }
 
 // Offering is a course scheduled in an academic session (a class).
@@ -76,6 +89,9 @@ type Offering struct {
 	CourseID          string `json:"courseId"`
 	AcademicSessionID string `json:"academicSessionId,omitempty"`
 	OrgID             string `json:"orgId,omitempty"`
+	// CollectionOfferingIDs are the collection offerings (programs delivered
+	// in a session) the offering is part of.
+	CollectionOfferingIDs []string `json:"collectionOfferingIds,omitempty"`
 }
 
 // EntityType returns the stable type tag.
@@ -89,7 +105,7 @@ func (o *Offering) Validate() error {
 	if o.CourseID == "" {
 		return Required("courseId")
 	}
-	return nil
+	return validateIDs("collectionOfferingIds", o.CollectionOfferingIDs)
 }
 
 // Enrollment associates a person with an offering, in a role.
@@ -198,6 +214,112 @@ func (e *Entitlement) Validate() error {
 
 // EntityType returns the stable type tag.
 func (r *Result) EntityType() string { return "result" }
+
+// Affiliation relates a person to an organization in a role, for a period
+// (Edu-API affiliation).
+type Affiliation struct {
+	Base
+	PersonID string `json:"personId"`
+	OrgID    string `json:"orgId"`
+	Role     Role   `json:"role,omitempty"`
+	// StartDate and EndDate are ISO 8601 dates or date-times.
+	StartDate string `json:"startDate,omitempty"`
+	EndDate   string `json:"endDate,omitempty"`
+}
+
+// EntityType returns the stable type tag.
+func (a *Affiliation) EntityType() string { return "affiliation" }
+
+// Validate checks required invariants.
+func (a *Affiliation) Validate() error {
+	if err := a.validateStatus(); err != nil {
+		return err
+	}
+	if a.PersonID == "" {
+		return Required("personId")
+	}
+	if a.OrgID == "" {
+		return Required("orgId")
+	}
+	return nil
+}
+
+// CollectionOffering is a program delivered in an academic session.
+type CollectionOffering struct {
+	Base
+	Title             string `json:"title,omitempty"`
+	ProgramID         string `json:"programId"`
+	AcademicSessionID string `json:"academicSessionId,omitempty"`
+	OrgID             string `json:"orgId,omitempty"`
+}
+
+// EntityType returns the stable type tag.
+func (c *CollectionOffering) EntityType() string { return "collectionOffering" }
+
+// Validate checks required invariants.
+func (c *CollectionOffering) Validate() error {
+	if err := c.validateStatus(); err != nil {
+		return err
+	}
+	if c.ProgramID == "" {
+		return Required("programId")
+	}
+	return nil
+}
+
+// ComponentTemplate is a part of a course, such as a lecture or a laboratory,
+// as the catalog describes it.
+type ComponentTemplate struct {
+	Base
+	Code  string `json:"code,omitempty"`
+	Title string `json:"title"`
+	// Type is the kind of component, e.g. lecture, laboratory, seminar.
+	Type  string `json:"type,omitempty"`
+	OrgID string `json:"orgId,omitempty"`
+	// CourseIDs are the courses the component belongs to.
+	CourseIDs []string `json:"courseIds,omitempty"`
+}
+
+// EntityType returns the stable type tag.
+func (c *ComponentTemplate) EntityType() string { return "componentTemplate" }
+
+// Validate checks required invariants.
+func (c *ComponentTemplate) Validate() error {
+	if err := c.validateStatus(); err != nil {
+		return err
+	}
+	if c.Title == "" {
+		return Required("title")
+	}
+	return validateIDs("courseIds", c.CourseIDs)
+}
+
+// ComponentOffering is a component delivered in an academic session, e.g.
+// the lecture of one course offering.
+type ComponentOffering struct {
+	Base
+	Title             string `json:"title,omitempty"`
+	ComponentID       string `json:"componentId"`
+	AcademicSessionID string `json:"academicSessionId,omitempty"`
+	OrgID             string `json:"orgId,omitempty"`
+	// CourseOfferingIDs are the course offerings the component is delivered
+	// with.
+	CourseOfferingIDs []string `json:"courseOfferingIds,omitempty"`
+}
+
+// EntityType returns the stable type tag.
+func (c *ComponentOffering) EntityType() string { return "componentOffering" }
+
+// Validate checks required invariants.
+func (c *ComponentOffering) Validate() error {
+	if err := c.validateStatus(); err != nil {
+		return err
+	}
+	if c.ComponentID == "" {
+		return Required("componentId")
+	}
+	return validateIDs("courseOfferingIds", c.CourseOfferingIDs)
+}
 
 // Validate checks required invariants.
 func (r *Result) Validate() error {

@@ -34,6 +34,9 @@ const (
 	ErrTooLarge     = "request_too_large"
 	ErrUnavailable  = "unavailable"
 	ErrInternal     = "internal_server_error"
+	// ErrInvalidFilterField is a filter on a field the resource lacks or does not
+	// allow filtering on (a 400).
+	ErrInvalidFilterField = "invalid_filter_field"
 )
 
 // Error is a structured, renderable API error. Title is the stable code; Err is
@@ -97,7 +100,7 @@ func (e *Error) Status() int {
 		return e.HTTPStatus
 	}
 	switch e.Title {
-	case ErrValidation, ErrBadRequest:
+	case ErrValidation, ErrBadRequest, ErrInvalidFilterField:
 		return http.StatusBadRequest
 	case ErrUnauthorized:
 		return http.StatusUnauthorized

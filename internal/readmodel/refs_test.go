@@ -89,6 +89,11 @@ func newFixture(t *testing.T) fixture {
 			Programs:         service.NewResource(memory.NewDocRepo[domain.Program](), nil, nil, log),
 			Results:          service.NewResource(memory.NewDocRepo[domain.Result](), nil, nil, log),
 			Entitlements:     service.NewResource(memory.NewDocRepo[domain.Entitlement](), nil, nil, log),
+
+			Affiliations:        service.NewResource(memory.NewDocRepo[domain.Affiliation](), nil, nil, log),
+			CollectionOfferings: service.NewResource(memory.NewDocRepo[domain.CollectionOffering](), nil, nil, log),
+			ComponentTemplates:  service.NewResource(memory.NewDocRepo[domain.ComponentTemplate](), nil, nil, log),
+			ComponentOfferings:  service.NewResource(memory.NewDocRepo[domain.ComponentOffering](), nil, nil, log),
 		},
 		persons:  persons,
 		offering: offerings,
@@ -275,6 +280,72 @@ func TestPublishRefsProgramsAndResults(t *testing.T) {
 	assert.Equal(t, "stu", forCourse.PersonID, "result.person")
 	assert.Empty(t, forCourse.OfferingID, "dangling optional offering must be cleared")
 	assert.Error(t, catalog.CheckRefs(ctx, &domain.Result{PersonID: "p", ProgramID: "BSc"}), "CheckRefs must refuse a program sourcedId")
+}
+
+// TestPublishRefsNewEntities checks the new entities publish sourcedIds, that
+// a list reference is rewritten entry by entry, and that an entry whose
+// target is gone is dropped instead of published empty.
+func TestPublishRefsNewEntities(t *testing.T) {
+	ctx := t.Context()
+	catalog := newFixture(t).catalog
+	create := func(_ any, err error) { t.Helper(); require.NoError(t, err) }
+	create(catalog.Persons.CreatePerson(ctx, domain.Person{ID: "p", SourcedID: "stu", GivenName: "A", FamilyName: "B", Status: domain.StatusActive}))
+	create(catalog.Organizations.Create(ctx, &domain.Organization{ID: "o", SourcedID: "uni", Name: "U"}))
+	create(catalog.AcademicSessions.Create(ctx, &domain.AcademicSession{ID: "s", SourcedID: "ht26", Title: "S"}))
+	create(catalog.Programs.Create(ctx, &domain.Program{ID: "g1", SourcedID: "BSc", Title: "BSc"}))
+	create(catalog.Programs.Create(ctx, &domain.Program{ID: "g2", SourcedID: "MSc", Title: "MSc"}))
+	create(catalog.Courses.Create(ctx, &domain.Course{ID: "c", SourcedID: "DA101", Title: "C"}))
+	create(catalog.CollectionOfferings.Create(ctx, &domain.CollectionOffering{ID: "k", SourcedID: "BSc-ht26", ProgramID: "g1"}))
+	create(catalog.Offerings.Create(ctx, &domain.Offering{ID: "f", SourcedID: "DA101-ht26", CourseID: "c"}))
+	create(catalog.ComponentTemplates.Create(ctx, &domain.ComponentTemplate{ID: "t", SourcedID: "DA101-lab", Title: "Lab"}))
+	require.NoError(t, catalog.Programs.Delete(ctx, "g2"))
+
+	course := &domain.Course{ProgramIDs: []string{"g1", "g2", "g-never"}}
+	offering := &domain.Offering{CourseID: "c", CollectionOfferingIDs: []string{"k", "k-never"}}
+	affiliation := &domain.Affiliation{PersonID: "p", OrgID: "o"}
+	collection := &domain.CollectionOffering{ProgramID: "g1", AcademicSessionID: "s", OrgID: "o"}
+	componentTemplate := &domain.ComponentTemplate{OrgID: "o", CourseIDs: []string{"c"}}
+	componentOffering := &domain.ComponentOffering{ComponentID: "t", AcademicSessionID: "s", CourseOfferingIDs: []string{"f"}}
+	orphanAffiliation := &domain.Affiliation{PersonID: "p", OrgID: "o-gone"}
+	orphanCollection := &domain.CollectionOffering{ProgramID: "g2"}
+	orphanComponent := &domain.ComponentOffering{ComponentID: "t-gone"}
+
+	publishable, err := catalog.PublishRefs(ctx, course, offering, affiliation, collection, componentTemplate,
+		componentOffering, orphanAffiliation, orphanCollection, orphanComponent)
+	require.NoError(t, err)
+	assert.Equal(t, []bool{true, true, true, true, true, true, false, false, false}, publishable)
+
+	assert.Equal(t, []string{"BSc"}, course.ProgramIDs, "dangling list entries are dropped")
+	assert.Equal(t, []string{"BSc-ht26"}, offering.CollectionOfferingIDs)
+	assert.Equal(t, "stu", affiliation.PersonID)
+	assert.Equal(t, "uni", affiliation.OrgID)
+	assert.Equal(t, "BSc", collection.ProgramID)
+	assert.Equal(t, "ht26", collection.AcademicSessionID)
+	assert.Equal(t, []string{"DA101"}, componentTemplate.CourseIDs)
+	assert.Equal(t, "DA101-lab", componentOffering.ComponentID)
+	assert.Equal(t, []string{"DA101-ht26"}, componentOffering.CourseOfferingIDs)
+}
+
+// TestCheckRefsListEntries checks ingress validates every entry of a list
+// reference and names the offending index.
+func TestCheckRefsListEntries(t *testing.T) {
+	ctx := t.Context()
+	catalog := newFixture(t).catalog
+	_, err := catalog.Programs.Create(ctx, &domain.Program{ID: "g", SourcedID: "BSc", Title: "BSc"})
+	require.NoError(t, err)
+
+	require.NoError(t, catalog.CheckRefs(ctx, &domain.Course{Title: "T", ProgramIDs: []string{"g"}}))
+	for name, ids := range map[string][]string{"sourcedId": {"g", "BSc"}, "unknown": {"nope"}} {
+		err := catalog.CheckRefs(ctx, &domain.Course{Title: "T", ProgramIDs: ids})
+		var verr *domain.ValidationError
+		require.ErrorAs(t, err, &verr, name)
+		assert.Contains(t, verr.Field, "programIds[", name)
+	}
+	var verr *domain.ValidationError
+	require.ErrorAs(t, catalog.CheckRefs(ctx, &domain.Course{Title: "T", ProgramIDs: []string{"g", "BSc"}}), &verr)
+	assert.Equal(t, "programIds[1]", verr.Field, "the second entry is the bad one")
+	require.ErrorAs(t, catalog.CheckRefs(ctx, &domain.Affiliation{PersonID: "p-none", OrgID: "o-none"}), &verr)
+	assert.Equal(t, "personId", verr.Field)
 }
 
 // TestUnknownRefTypeIsAnError checks a reference type missing from the

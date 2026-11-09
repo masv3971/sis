@@ -12,7 +12,11 @@
 //	  "persons":          [{"sourcedId": "anna", "givenName": "Anna", "familyName": "Andersson", "status": "active"}],
 //	  "enrollments":      [{"sourcedId": "anna-TDDE01", "personId": "anna", "offeringId": "TDDE01-ht2026"}],
 //	  "results":          [...],
-//	  "entitlements":     [...]
+//	  "entitlements":     [...],
+//	  "affiliations":     [{"sourcedId": "anna-liu", "personId": "anna", "orgId": "liu", "role": "student"}],
+//	  "collectionOfferings": [{"sourcedId": "BSc-ht2026", "programId": "BSc", "academicSessionId": "ht2026"}],
+//	  "componentTemplates":  [{"sourcedId": "TDDE01-lab", "title": "Laboratory", "type": "laboratory", "courseIds": ["TDDE01"]}],
+//	  "componentOfferings":  [{"sourcedId": "TDDE01-lab-ht2026", "componentId": "TDDE01-lab", "courseOfferingIds": ["TDDE01-ht2026"]}]
 //	}
 //
 // Records use the /api/v1 field names, with two differences: every record
@@ -51,6 +55,11 @@ type File struct {
 	Enrollments      []*domain.Enrollment      `json:"enrollments"`
 	Results          []*domain.Result          `json:"results"`
 	Entitlements     []*domain.Entitlement     `json:"entitlements"`
+
+	Affiliations        []*domain.Affiliation        `json:"affiliations"`
+	CollectionOfferings []*domain.CollectionOffering `json:"collectionOfferings"`
+	ComponentTemplates  []*domain.ComponentTemplate  `json:"componentTemplates"`
+	ComponentOfferings  []*domain.ComponentOffering  `json:"componentOfferings"`
 }
 
 // Run imports every file in cfg.SIS.FileImport.Files, in order. The first
@@ -110,6 +119,10 @@ func Decode(data []byte) (*domain.Bundle, error) {
 		noNulls("enrollments", f.Enrollments),
 		noNulls("results", f.Results),
 		noNulls("entitlements", f.Entitlements),
+		noNulls("affiliations", f.Affiliations),
+		noNulls("collectionOfferings", f.CollectionOfferings),
+		noNulls("componentTemplates", f.ComponentTemplates),
+		noNulls("componentOfferings", f.ComponentOfferings),
 	); err != nil {
 		return nil, err
 	}
@@ -128,6 +141,11 @@ func Decode(data []byte) (*domain.Bundle, error) {
 		Enrollments:      f.Enrollments,
 		Results:          f.Results,
 		Entitlements:     f.Entitlements,
+
+		Affiliations:        f.Affiliations,
+		CollectionOfferings: f.CollectionOfferings,
+		ComponentTemplates:  f.ComponentTemplates,
+		ComponentOfferings:  f.ComponentOfferings,
 	}, nil
 }
 

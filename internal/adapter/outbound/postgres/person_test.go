@@ -93,6 +93,36 @@ func TestPersonRepository_CRUD(t *testing.T) {
 	assert.ErrorIs(t, err, domain.ErrNotFound, "get after delete")
 }
 
+func TestPersonRepository_ListByRoles(t *testing.T) {
+	ctx := t.Context()
+	repo := newStore(t).Persons()
+	suffix := time.Now().Format("150405.000000")
+	now := time.Now().UTC()
+
+	student := domain.Person{ID: "rs-" + suffix, SourcedID: "rs-" + suffix, Status: domain.StatusActive, GivenName: "S", FamilyName: "S", Roles: []domain.Role{domain.RoleStudent}, CreatedAt: now, UpdatedAt: now}
+	staff := domain.Person{ID: "rt-" + suffix, SourcedID: "rt-" + suffix, Status: domain.StatusActive, GivenName: "T", FamilyName: "T", Roles: []domain.Role{domain.RoleStaff}, CreatedAt: now, UpdatedAt: now}
+	t.Cleanup(func() {
+		_ = repo.Delete(context.Background(), student.ID)
+		_ = repo.Delete(context.Background(), staff.ID)
+	})
+	require.NoError(t, repo.Create(ctx, student))
+	require.NoError(t, repo.Create(ctx, staff))
+
+	page, err := repo.ListByRoles(ctx, []domain.Role{domain.RoleStudent}, port.ListParams{Limit: 1000})
+	require.NoError(t, err)
+	ids := make([]string, 0, len(page.Items))
+	for _, p := range page.Items {
+		ids = append(ids, p.ID)
+	}
+	assert.Contains(t, ids, student.ID)
+	assert.NotContains(t, ids, staff.ID)
+
+	past, err := repo.ListByRoles(ctx, []domain.Role{domain.RoleStudent}, port.ListParams{Offset: page.Total, Limit: 10})
+	require.NoError(t, err, "past the end")
+	assert.Empty(t, past.Items)
+	assert.Equal(t, page.Total, past.Total, "total survives an empty page")
+}
+
 func TestUpdateSourcedIDCollisionIsConflict(t *testing.T) {
 	ctx := t.Context()
 	svc := newStore(t)
