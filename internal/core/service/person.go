@@ -165,6 +165,12 @@ func (s *Service) ListPersons(ctx context.Context, params port.ListParams) (port
 	return s.persons.List(ctx, params)
 }
 
+// ListPersonsByRoles returns a page of the persons holding at least one of
+// roles.
+func (s *Service) ListPersonsByRoles(ctx context.Context, roles []domain.Role, params port.ListParams) (port.Page[domain.Person], error) {
+	return s.persons.ListByRoles(ctx, roles, params)
+}
+
 // DeletePerson removes a person and emits an event.
 func (s *Service) DeletePerson(ctx context.Context, id string) error {
 	if err := s.persons.Delete(ctx, id); err != nil {

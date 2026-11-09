@@ -78,6 +78,10 @@ func newCommandTable(commands *command.Client, catalog *readmodel.Client) map[st
 	register(table, commands, catalog.Programs)
 	register(table, commands, catalog.Results)
 	register(table, commands, catalog.Entitlements)
+	register(table, commands, catalog.Affiliations)
+	register(table, commands, catalog.CollectionOfferings)
+	register(table, commands, catalog.ComponentTemplates)
+	register(table, commands, catalog.ComponentOfferings)
 	return table
 }
 

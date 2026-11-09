@@ -6,6 +6,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"testing"
@@ -135,29 +136,101 @@ func linkRel(header, rel string) string {
 	return ""
 }
 
-// TestEduAPIRejectsSortAndFilter checks the unsupported optional query
-// parameters answer 400 with the spec's error body, not unfiltered rows.
-func TestEduAPIRejectsSortAndFilter(t *testing.T) {
+// TestEduAPISortAndFilter checks sort, orderBy and filter on a list, and that
+// a request the provider cannot honour is a 400 with the spec's error body,
+// never unfiltered rows.
+func TestEduAPISortAndFilter(t *testing.T) {
+	ctx := t.Context()
 	log := logger.NewWithWriter("test", false, "error", io.Discard)
 	catalog := &readmodel.Client{
 		Persons: service.New(memory.NewPersonRepository(), nil, nil, log),
+	}
+	for _, p := range []domain.Person{
+		{ID: "p1", SourcedID: "p1", GivenName: "Zed", FamilyName: "Berg", Status: domain.StatusActive},
+		{ID: "p2", SourcedID: "p2", GivenName: "Amy", FamilyName: "Ahl", Status: domain.StatusActive},
+		{ID: "p3", SourcedID: "p3", GivenName: "Bo", FamilyName: "Cole", Status: domain.StatusActive},
+	} {
+		_, err := catalog.Persons.CreatePerson(ctx, p)
+		require.NoError(t, err)
 	}
 	cfg := testCfg("127.0.0.1:0")
 	cfg.SIS.Adapter.Inbound.EduAPI.DefaultLimit, cfg.SIS.Adapter.Inbound.EduAPI.MaxLimit = 10, 10
 	srv, iss := startWithIssuer(t, cfg, catalog)
 	token := iss.Token(t, "reader", "sis.read")
 
-	req, _ := http.NewRequestWithContext(t.Context(), http.MethodGet, fmt.Sprintf("http://%s%s/persons?filter=givenName%%3D%%27A%%27", srv.Addr(), eduBase), nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	resp, err := http.DefaultClient.Do(req)
-	require.NoError(t, err)
-	defer resp.Body.Close()
-	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
-	var body struct {
-		CodeMajor string `json:"imsx_codeMajor"`
-		Severity  string `json:"imsx_severity"`
+	do := func(path string) (*http.Response, []string) {
+		t.Helper()
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+srv.Addr().String()+eduBase+path, nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err, path)
+		t.Cleanup(func() { _ = resp.Body.Close() })
+		if resp.StatusCode != http.StatusOK {
+			return resp, nil
+		}
+		var body []struct{ SourcedID string }
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&body), path)
+		ids := make([]string, 0, len(body))
+		for _, item := range body {
+			ids = append(ids, item.SourcedID)
+		}
+		return resp, ids
 	}
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
-	assert.Equal(t, "failure", body.CodeMajor)
-	assert.Equal(t, "error", body.Severity)
+	q := url.QueryEscape
+
+	t.Run("sort and orderBy", func(t *testing.T) {
+		_, ids := do("/persons?sort=legalName.familyName")
+		assert.Equal(t, []string{"p2", "p1", "p3"}, ids)
+		_, ids = do("/persons?sort=legalName.givenName&orderBy=desc")
+		assert.Equal(t, []string{"p1", "p3", "p2"}, ids)
+	})
+	t.Run("filter", func(t *testing.T) {
+		resp, ids := do("/persons?filter=" + q("legalName.givenName='amy'"))
+		assert.Equal(t, []string{"p2"}, ids, "equals ignores case")
+		assert.Equal(t, "1", resp.Header.Get("X-Total-Count"))
+		_, ids = do("/persons?sort=legalName.givenName&filter=" + q("legalName.familyName~'e' AND legalName.givenName!='Bo'"))
+		assert.Equal(t, []string{"p1"}, ids)
+		_, ids = do("/persons?sort=legalName.givenName&filter=" + q("legalName.givenName='Bo' OR legalName.givenName='Zed'"))
+		assert.Equal(t, []string{"p3", "p1"}, ids)
+	})
+	t.Run("paging links keep the query", func(t *testing.T) {
+		resp, ids := do("/persons?limit=1&sort=legalName.givenName&filter=" + q("legalName.familyName~'o'"))
+		assert.Equal(t, []string{"p3"}, ids, "Bo Cole sorts first among Cole, and Berg has no o")
+		assert.Equal(t, "1", resp.Header.Get("X-Total-Count"))
+		resp, _ = do("/persons?limit=1&sort=legalName.givenName&filter=" + q("legalName.familyName~'e'"))
+		next := linkRel(resp.Header.Get("Link"), "next")
+		assert.Contains(t, next, "sort=legalName.givenName")
+		assert.Contains(t, next, "filter=")
+	})
+
+	rejected := []struct {
+		name, path, minor string
+	}{
+		{"unknown filter field", "/persons?filter=" + q("nope='a'"), "invalid_filter_field"},
+		{"stored key is not a published name", "/persons?filter=" + q("givenName='a'"), "invalid_filter_field"},
+		{"unknown sort field", "/persons?sort=nope", "invalid_query_parameter"},
+		{"operator not supported", "/persons?filter=" + q("legalName.givenName>'a'"), "invalid_query_parameter"},
+		{"unquoted value", "/persons?filter=" + q("legalName.givenName=a"), "invalid_query_parameter"},
+		{"orderBy without sort", "/persons?orderBy=desc", "invalid_query_parameter"},
+	}
+	for _, tt := range rejected {
+		t.Run(tt.name, func(t *testing.T) {
+			resp, _ := do(tt.path)
+			require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+			var body struct {
+				CodeMajor string `json:"imsx_codeMajor"`
+				Severity  string `json:"imsx_severity"`
+				Minor     struct {
+					Fields []struct {
+						Value string `json:"imsx_codeMinorFieldValue"`
+					} `json:"imsx_codeMinorField"`
+				} `json:"imsx_codeMinor"`
+			}
+			require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+			assert.Equal(t, "failure", body.CodeMajor)
+			assert.Equal(t, "error", body.Severity)
+			require.NotEmpty(t, body.Minor.Fields)
+			assert.Equal(t, tt.minor, body.Minor.Fields[0].Value)
+		})
+	}
 }

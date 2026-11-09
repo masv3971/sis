@@ -43,6 +43,14 @@ package restadmin
 //	@tag.description			A person's grade and credits for a course or program
 //	@tag.name					entitlements
 //	@tag.description			Rights a person holds, e.g. access to further studies (not published via OEAPI/Edu-API)
+//	@tag.name					affiliations
+//	@tag.description			A person's relationship to an organization, in a role
+//	@tag.name					collection-offerings
+//	@tag.description			Programs delivered in an academic session
+//	@tag.name					component-templates
+//	@tag.description			Parts of a course, such as a lecture or a laboratory
+//	@tag.name					component-offerings
+//	@tag.description			Components delivered in an academic session
 //	@tag.name					convert
 //	@tag.description			Convert external formats (ELM) to Edu-API/OEAPI, and load them
 
@@ -693,3 +701,327 @@ package restadmin
 //	@Failure		404	{object}	helpers.ErrorResponse	"Not Found"
 //	@Failure		500	{object}	helpers.ErrorResponse	"Internal Server Error"
 //	@Router			/entitlements/{id} [delete]
+
+// -- affiliations ------------------------------------------------------------
+
+//	@Summary		List affiliations
+//	@ID				list-affiliations
+//	@Description	Lists affiliations with limit/offset paging.
+//	@Tags			affiliations
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			limit	query		int										false	"Page size; defaults to default_limit and is clamped to max_limit"	minimum(1)
+//	@Param			offset	query		int										false	"Number of items to skip"											minimum(0)
+//	@Success		200		{object}	restadmin.ListReply[domain.Affiliation]	"Success"
+//	@Failure		400		{object}	helpers.ErrorResponse					"Invalid paging parameters"
+//	@Failure		401		{object}	auth.ErrorResponse						"Missing, invalid or untrusted token"
+//	@Failure		403		{object}	auth.ErrorResponse						"Token lacks the required scope"
+//	@Failure		500		{object}	helpers.ErrorResponse					"Internal Server Error"
+//	@Router			/affiliations [get]
+
+//	@Summary		Create affiliation
+//	@ID				create-affiliations
+//	@Description	Creates a affiliation. personId and orgId are required; role is one of student, staff, faculty, guest. personId and orgId must be the ids (not sourcedIds) of an existing person and organization. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.
+//	@Tags			affiliations
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			affiliation	body		domain.Affiliation		true	"Affiliation to create"
+//	@Success		201			{object}	domain.Affiliation		"Created"
+//	@Failure		400			{object}	helpers.ErrorResponse	"Malformed body or validation error"
+//	@Failure		401			{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403			{object}	auth.ErrorResponse		"Token lacks the required scope"
+//	@Failure		409			{object}	helpers.ErrorResponse	"id or sourcedId already in use"
+//	@Failure		413			{object}	helpers.ErrorResponse	"Request body too large"
+//	@Failure		500			{object}	helpers.ErrorResponse	"Internal Server Error"
+//	@Router			/affiliations [post]
+
+//	@Summary		Get affiliation
+//	@ID				get-affiliations
+//	@Description	Returns one affiliation by id.
+//	@Tags			affiliations
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			id	path		string					true	"Affiliation id"
+//	@Success		200	{object}	domain.Affiliation		"Success"
+//	@Failure		401	{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403	{object}	auth.ErrorResponse		"Token lacks the required scope"
+//	@Failure		404	{object}	helpers.ErrorResponse	"Not Found"
+//	@Failure		500	{object}	helpers.ErrorResponse	"Internal Server Error"
+//	@Router			/affiliations/{id} [get]
+
+//	@Summary		Replace affiliation
+//	@ID				update-affiliations
+//	@Description	Replaces a affiliation. References must be the ids of existing records. The path id wins over any id in the body; createdAt is preserved and an empty sourcedId keeps the stored one.
+//	@Tags			affiliations
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			id			path		string					true	"Affiliation id"
+//	@Param			affiliation	body		domain.Affiliation		true	"Replacement affiliation"
+//	@Success		200			{object}	domain.Affiliation		"Success"
+//	@Failure		400			{object}	helpers.ErrorResponse	"Malformed body or validation error"
+//	@Failure		401			{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403			{object}	auth.ErrorResponse		"Token lacks the required scope"
+//	@Failure		404			{object}	helpers.ErrorResponse	"Not Found"
+//	@Failure		409			{object}	helpers.ErrorResponse	"sourcedId already in use"
+//	@Failure		413			{object}	helpers.ErrorResponse	"Request body too large"
+//	@Failure		500			{object}	helpers.ErrorResponse	"Internal Server Error"
+//	@Router			/affiliations/{id} [put]
+
+//	@Summary		Delete affiliation
+//	@ID				delete-affiliations
+//	@Description	Deletes one affiliation by id.
+//	@Tags			affiliations
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			id	path	string	true	"Affiliation id"
+//	@Success		204	"No Content"
+//	@Failure		401	{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403	{object}	auth.ErrorResponse		"Token lacks the required scope"
+//	@Failure		404	{object}	helpers.ErrorResponse	"Not Found"
+//	@Failure		500	{object}	helpers.ErrorResponse	"Internal Server Error"
+//	@Router			/affiliations/{id} [delete]
+
+// -- collection-offerings ------------------------------------------------------------
+
+//	@Summary		List collection offerings
+//	@ID				list-collection-offerings
+//	@Description	Lists collection offerings with limit/offset paging.
+//	@Tags			collection-offerings
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			limit	query		int												false	"Page size; defaults to default_limit and is clamped to max_limit"	minimum(1)
+//	@Param			offset	query		int												false	"Number of items to skip"											minimum(0)
+//	@Success		200		{object}	restadmin.ListReply[domain.CollectionOffering]	"Success"
+//	@Failure		400		{object}	helpers.ErrorResponse							"Invalid paging parameters"
+//	@Failure		401		{object}	auth.ErrorResponse								"Missing, invalid or untrusted token"
+//	@Failure		403		{object}	auth.ErrorResponse								"Token lacks the required scope"
+//	@Failure		500		{object}	helpers.ErrorResponse							"Internal Server Error"
+//	@Router			/collection-offerings [get]
+
+//	@Summary		Create collection offering
+//	@ID				create-collection-offerings
+//	@Description	Creates a collection offering. programId is required; academicSessionId and orgId are optional. All must be the ids (not sourcedIds) of existing records. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.
+//	@Tags			collection-offerings
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			collectionOffering	body		domain.CollectionOffering	true	"Collection offering to create"
+//	@Success		201					{object}	domain.CollectionOffering	"Created"
+//	@Failure		400					{object}	helpers.ErrorResponse		"Malformed body or validation error"
+//	@Failure		401					{object}	auth.ErrorResponse			"Missing, invalid or untrusted token"
+//	@Failure		403					{object}	auth.ErrorResponse			"Token lacks the required scope"
+//	@Failure		409					{object}	helpers.ErrorResponse		"id or sourcedId already in use"
+//	@Failure		413					{object}	helpers.ErrorResponse		"Request body too large"
+//	@Failure		500					{object}	helpers.ErrorResponse		"Internal Server Error"
+//	@Router			/collection-offerings [post]
+
+//	@Summary		Get collection offering
+//	@ID				get-collection-offerings
+//	@Description	Returns one collection offering by id.
+//	@Tags			collection-offerings
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			id	path		string						true	"Collection offering id"
+//	@Success		200	{object}	domain.CollectionOffering	"Success"
+//	@Failure		401	{object}	auth.ErrorResponse			"Missing, invalid or untrusted token"
+//	@Failure		403	{object}	auth.ErrorResponse			"Token lacks the required scope"
+//	@Failure		404	{object}	helpers.ErrorResponse		"Not Found"
+//	@Failure		500	{object}	helpers.ErrorResponse		"Internal Server Error"
+//	@Router			/collection-offerings/{id} [get]
+
+//	@Summary		Replace collection offering
+//	@ID				update-collection-offerings
+//	@Description	Replaces a collection offering. References must be the ids of existing records. The path id wins over any id in the body; createdAt is preserved and an empty sourcedId keeps the stored one.
+//	@Tags			collection-offerings
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			id					path		string						true	"Collection offering id"
+//	@Param			collectionOffering	body		domain.CollectionOffering	true	"Replacement collection offering"
+//	@Success		200					{object}	domain.CollectionOffering	"Success"
+//	@Failure		400					{object}	helpers.ErrorResponse		"Malformed body or validation error"
+//	@Failure		401					{object}	auth.ErrorResponse			"Missing, invalid or untrusted token"
+//	@Failure		403					{object}	auth.ErrorResponse			"Token lacks the required scope"
+//	@Failure		404					{object}	helpers.ErrorResponse		"Not Found"
+//	@Failure		409					{object}	helpers.ErrorResponse		"sourcedId already in use"
+//	@Failure		413					{object}	helpers.ErrorResponse		"Request body too large"
+//	@Failure		500					{object}	helpers.ErrorResponse		"Internal Server Error"
+//	@Router			/collection-offerings/{id} [put]
+
+//	@Summary		Delete collection offering
+//	@ID				delete-collection-offerings
+//	@Description	Deletes one collection offering by id.
+//	@Tags			collection-offerings
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			id	path	string	true	"Collection offering id"
+//	@Success		204	"No Content"
+//	@Failure		401	{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403	{object}	auth.ErrorResponse		"Token lacks the required scope"
+//	@Failure		404	{object}	helpers.ErrorResponse	"Not Found"
+//	@Failure		500	{object}	helpers.ErrorResponse	"Internal Server Error"
+//	@Router			/collection-offerings/{id} [delete]
+
+// -- component-templates ------------------------------------------------------------
+
+//	@Summary		List component templates
+//	@ID				list-component-templates
+//	@Description	Lists component templates with limit/offset paging.
+//	@Tags			component-templates
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			limit	query		int												false	"Page size; defaults to default_limit and is clamped to max_limit"	minimum(1)
+//	@Param			offset	query		int												false	"Number of items to skip"											minimum(0)
+//	@Success		200		{object}	restadmin.ListReply[domain.ComponentTemplate]	"Success"
+//	@Failure		400		{object}	helpers.ErrorResponse							"Invalid paging parameters"
+//	@Failure		401		{object}	auth.ErrorResponse								"Missing, invalid or untrusted token"
+//	@Failure		403		{object}	auth.ErrorResponse								"Token lacks the required scope"
+//	@Failure		500		{object}	helpers.ErrorResponse							"Internal Server Error"
+//	@Router			/component-templates [get]
+
+//	@Summary		Create component template
+//	@ID				create-component-templates
+//	@Description	Creates a component template. title is required; orgId and each of courseIds, when set, must be the ids (not sourcedIds) of existing records. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.
+//	@Tags			component-templates
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			componentTemplate	body		domain.ComponentTemplate	true	"Component template to create"
+//	@Success		201					{object}	domain.ComponentTemplate	"Created"
+//	@Failure		400					{object}	helpers.ErrorResponse		"Malformed body or validation error"
+//	@Failure		401					{object}	auth.ErrorResponse			"Missing, invalid or untrusted token"
+//	@Failure		403					{object}	auth.ErrorResponse			"Token lacks the required scope"
+//	@Failure		409					{object}	helpers.ErrorResponse		"id or sourcedId already in use"
+//	@Failure		413					{object}	helpers.ErrorResponse		"Request body too large"
+//	@Failure		500					{object}	helpers.ErrorResponse		"Internal Server Error"
+//	@Router			/component-templates [post]
+
+//	@Summary		Get component template
+//	@ID				get-component-templates
+//	@Description	Returns one component template by id.
+//	@Tags			component-templates
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			id	path		string						true	"Component template id"
+//	@Success		200	{object}	domain.ComponentTemplate	"Success"
+//	@Failure		401	{object}	auth.ErrorResponse			"Missing, invalid or untrusted token"
+//	@Failure		403	{object}	auth.ErrorResponse			"Token lacks the required scope"
+//	@Failure		404	{object}	helpers.ErrorResponse		"Not Found"
+//	@Failure		500	{object}	helpers.ErrorResponse		"Internal Server Error"
+//	@Router			/component-templates/{id} [get]
+
+//	@Summary		Replace component template
+//	@ID				update-component-templates
+//	@Description	Replaces a component template. References must be the ids of existing records. The path id wins over any id in the body; createdAt is preserved and an empty sourcedId keeps the stored one.
+//	@Tags			component-templates
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			id					path		string						true	"Component template id"
+//	@Param			componentTemplate	body		domain.ComponentTemplate	true	"Replacement component template"
+//	@Success		200					{object}	domain.ComponentTemplate	"Success"
+//	@Failure		400					{object}	helpers.ErrorResponse		"Malformed body or validation error"
+//	@Failure		401					{object}	auth.ErrorResponse			"Missing, invalid or untrusted token"
+//	@Failure		403					{object}	auth.ErrorResponse			"Token lacks the required scope"
+//	@Failure		404					{object}	helpers.ErrorResponse		"Not Found"
+//	@Failure		409					{object}	helpers.ErrorResponse		"sourcedId already in use"
+//	@Failure		413					{object}	helpers.ErrorResponse		"Request body too large"
+//	@Failure		500					{object}	helpers.ErrorResponse		"Internal Server Error"
+//	@Router			/component-templates/{id} [put]
+
+//	@Summary		Delete component template
+//	@ID				delete-component-templates
+//	@Description	Deletes one component template by id.
+//	@Tags			component-templates
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			id	path	string	true	"Component template id"
+//	@Success		204	"No Content"
+//	@Failure		401	{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403	{object}	auth.ErrorResponse		"Token lacks the required scope"
+//	@Failure		404	{object}	helpers.ErrorResponse	"Not Found"
+//	@Failure		500	{object}	helpers.ErrorResponse	"Internal Server Error"
+//	@Router			/component-templates/{id} [delete]
+
+// -- component-offerings ------------------------------------------------------------
+
+//	@Summary		List component offerings
+//	@ID				list-component-offerings
+//	@Description	Lists component offerings with limit/offset paging.
+//	@Tags			component-offerings
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			limit	query		int												false	"Page size; defaults to default_limit and is clamped to max_limit"	minimum(1)
+//	@Param			offset	query		int												false	"Number of items to skip"											minimum(0)
+//	@Success		200		{object}	restadmin.ListReply[domain.ComponentOffering]	"Success"
+//	@Failure		400		{object}	helpers.ErrorResponse							"Invalid paging parameters"
+//	@Failure		401		{object}	auth.ErrorResponse								"Missing, invalid or untrusted token"
+//	@Failure		403		{object}	auth.ErrorResponse								"Token lacks the required scope"
+//	@Failure		500		{object}	helpers.ErrorResponse							"Internal Server Error"
+//	@Router			/component-offerings [get]
+
+//	@Summary		Create component offering
+//	@ID				create-component-offerings
+//	@Description	Creates a component offering. componentId is required and must be the id (not sourcedId) of an existing component template; academicSessionId, orgId and each of courseOfferingIds are optional and must be ids of existing records. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.
+//	@Tags			component-offerings
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			componentOffering	body		domain.ComponentOffering	true	"Component offering to create"
+//	@Success		201					{object}	domain.ComponentOffering	"Created"
+//	@Failure		400					{object}	helpers.ErrorResponse		"Malformed body or validation error"
+//	@Failure		401					{object}	auth.ErrorResponse			"Missing, invalid or untrusted token"
+//	@Failure		403					{object}	auth.ErrorResponse			"Token lacks the required scope"
+//	@Failure		409					{object}	helpers.ErrorResponse		"id or sourcedId already in use"
+//	@Failure		413					{object}	helpers.ErrorResponse		"Request body too large"
+//	@Failure		500					{object}	helpers.ErrorResponse		"Internal Server Error"
+//	@Router			/component-offerings [post]
+
+//	@Summary		Get component offering
+//	@ID				get-component-offerings
+//	@Description	Returns one component offering by id.
+//	@Tags			component-offerings
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			id	path		string						true	"Component offering id"
+//	@Success		200	{object}	domain.ComponentOffering	"Success"
+//	@Failure		401	{object}	auth.ErrorResponse			"Missing, invalid or untrusted token"
+//	@Failure		403	{object}	auth.ErrorResponse			"Token lacks the required scope"
+//	@Failure		404	{object}	helpers.ErrorResponse		"Not Found"
+//	@Failure		500	{object}	helpers.ErrorResponse		"Internal Server Error"
+//	@Router			/component-offerings/{id} [get]
+
+//	@Summary		Replace component offering
+//	@ID				update-component-offerings
+//	@Description	Replaces a component offering. References must be the ids of existing records. The path id wins over any id in the body; createdAt is preserved and an empty sourcedId keeps the stored one.
+//	@Tags			component-offerings
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			id					path		string						true	"Component offering id"
+//	@Param			componentOffering	body		domain.ComponentOffering	true	"Replacement component offering"
+//	@Success		200					{object}	domain.ComponentOffering	"Success"
+//	@Failure		400					{object}	helpers.ErrorResponse		"Malformed body or validation error"
+//	@Failure		401					{object}	auth.ErrorResponse			"Missing, invalid or untrusted token"
+//	@Failure		403					{object}	auth.ErrorResponse			"Token lacks the required scope"
+//	@Failure		404					{object}	helpers.ErrorResponse		"Not Found"
+//	@Failure		409					{object}	helpers.ErrorResponse		"sourcedId already in use"
+//	@Failure		413					{object}	helpers.ErrorResponse		"Request body too large"
+//	@Failure		500					{object}	helpers.ErrorResponse		"Internal Server Error"
+//	@Router			/component-offerings/{id} [put]
+
+//	@Summary		Delete component offering
+//	@ID				delete-component-offerings
+//	@Description	Deletes one component offering by id.
+//	@Tags			component-offerings
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			id	path	string	true	"Component offering id"
+//	@Success		204	"No Content"
+//	@Failure		401	{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
+//	@Failure		403	{object}	auth.ErrorResponse		"Token lacks the required scope"
+//	@Failure		404	{object}	helpers.ErrorResponse	"Not Found"
+//	@Failure		500	{object}	helpers.ErrorResponse	"Internal Server Error"
+//	@Router			/component-offerings/{id} [delete]

@@ -4,6 +4,7 @@ package memory
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"sort"
 	"sync"
@@ -201,17 +202,76 @@ func (r *PersonRepository) GetBySourcedIDs(_ context.Context, sourcedIDs []strin
 // The unique id tie-breaker keeps the order total, so pages are stable across
 // calls even though map iteration is randomised.
 func (r *PersonRepository) List(_ context.Context, params port.ListParams) (port.Page[domain.Person], error) {
+	return r.list(nil, params)
+}
+
+// ListByRoles is List restricted to the persons holding one of roles.
+func (r *PersonRepository) ListByRoles(_ context.Context, roles []domain.Role, params port.ListParams) (port.Page[domain.Person], error) {
+	return r.list(func(p domain.Person) bool {
+		return slices.ContainsFunc(p.Roles, func(role domain.Role) bool { return slices.Contains(roles, role) })
+	}, params)
+}
+
+// personKey returns the scalar person property stored under key, the keys
+// the Postgres person repository maps to columns (see personSortColumns).
+func personKey(p domain.Person, key string) (string, bool) {
+	switch key {
+	case "sourcedId":
+		return p.SourcedID, true
+	case "status":
+		return string(p.Status), true
+	case "givenName":
+		return p.GivenName, true
+	case "familyName":
+		return p.FamilyName, true
+	case "middleName":
+		return p.MiddleName, true
+	case "dateOfBirth":
+		return p.DateOfBirth, true
+	}
+	return "", false
+}
+
+// list pages the live persons keep accepts (all when keep is nil) and
+// params.Filter matches, ordered by params.Sort, then by name.
+func (r *PersonRepository) list(keep func(domain.Person) bool, params port.ListParams) (port.Page[domain.Person], error) {
+	if params.Sort != "" {
+		if _, ok := personKey(domain.Person{}, params.Sort); !ok {
+			return port.Page[domain.Person]{}, fmt.Errorf("memory: unknown person sort key %q", params.Sort)
+		}
+	}
+	if params.Filter != nil {
+		for _, term := range params.Filter.Terms {
+			if _, ok := personKey(domain.Person{}, term.Field); !ok {
+				return port.Page[domain.Person]{}, fmt.Errorf("memory: unknown person filter key %q", term.Field)
+			}
+		}
+	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	now := r.now()
 	items := make([]domain.Person, 0, len(r.byID))
 	for _, p := range r.byID {
-		if !domain.Expired(p.ExpiresAt, now) {
-			items = append(items, clonePerson(p))
+		if domain.Expired(p.ExpiresAt, now) || (keep != nil && !keep(p)) {
+			continue
 		}
+		if !params.Filter.Match(func(field string) (string, bool) { return personKey(p, field) }) {
+			continue
+		}
+		items = append(items, clonePerson(p))
 	}
 	sort.Slice(items, func(i, j int) bool {
 		a, b := items[i], items[j]
+		if params.Sort != "" {
+			av, _ := personKey(a, params.Sort)
+			bv, _ := personKey(b, params.Sort)
+			if av != bv {
+				if params.Desc {
+					return av > bv
+				}
+				return av < bv
+			}
+		}
 		if a.FamilyName != b.FamilyName {
 			return a.FamilyName < b.FamilyName
 		}

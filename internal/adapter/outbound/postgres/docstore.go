@@ -206,17 +206,37 @@ func (r *DocRepo[T, PT]) ListByRefs(ctx context.Context, field string, ids []str
 }
 
 // list returns the page of entities matching where (a constant condition,
-// never input, with its values in args as $1..$n).
+// never input, with its values in args as $1..$n) and params.Filter, ordered
+// by params.Sort, then by sourcedId.
 func (r *DocRepo[T, PT]) list(ctx context.Context, where string, args []any, params port.ListParams) (port.Page[PT], error) {
 	var limit any // nil: LIMIT NULL, no limit
 	if params.Limit > 0 {
 		limit = params.Limit
 	}
+	cond, args, err := filterSQL(params.Filter, docKey, args)
+	if err != nil {
+		return port.Page[PT]{}, err
+	}
+	if cond != "" {
+		where += " AND " + cond
+	}
+	// The page exposes the sort key as sort_val so the outer query can order
+	// by it too.
+	sortExpr, outerSort := "", ""
+	sortVal := "NULL::text"
+	if params.Sort != "" {
+		if sortExpr, err = docKey(params.Sort); err != nil {
+			return port.Page[PT]{}, err
+		}
+		sortVal, outerSort = sortExpr, "p.sort_val"
+	}
 	query := fmt.Sprintf(`SELECT p.data, t.n
 		FROM (SELECT count(*) AS n FROM entities WHERE %[1]s) t
-		LEFT JOIN LATERAL (SELECT data, sourced_id FROM entities WHERE %[1]s
-			ORDER BY sourced_id OFFSET $%[2]d LIMIT $%[3]d) p ON true
-		ORDER BY p.sourced_id`, where, len(args)+1, len(args)+2)
+		LEFT JOIN LATERAL (SELECT data, sourced_id, %[4]s AS sort_val FROM entities WHERE %[1]s
+			ORDER BY %[5]s OFFSET $%[2]d LIMIT $%[3]d) p ON true
+		ORDER BY %[6]s`, where, len(args)+1, len(args)+2, sortVal,
+		orderSQL(sortExpr, params.Desc, "sourced_id"),
+		orderSQL(outerSort, params.Desc, "p.sourced_id"))
 	rows, err := r.pool.Query(ctx, query, append(args, params.Offset, limit)...)
 	if err != nil {
 		return port.Page[PT]{}, err

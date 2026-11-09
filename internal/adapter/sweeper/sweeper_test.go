@@ -29,6 +29,11 @@ func newCatalog(clock func() time.Time, log *logger.Log) *readmodel.Client {
 		Programs:         service.NewResource(memory.NewDocRepo[domain.Program]().WithClock(clock), nil, clock, log),
 		Results:          service.NewResource(memory.NewDocRepo[domain.Result]().WithClock(clock), nil, clock, log),
 		Entitlements:     service.NewResource(memory.NewDocRepo[domain.Entitlement]().WithClock(clock), nil, clock, log),
+
+		Affiliations:        service.NewResource(memory.NewDocRepo[domain.Affiliation]().WithClock(clock), nil, clock, log),
+		CollectionOfferings: service.NewResource(memory.NewDocRepo[domain.CollectionOffering]().WithClock(clock), nil, clock, log),
+		ComponentTemplates:  service.NewResource(memory.NewDocRepo[domain.ComponentTemplate]().WithClock(clock), nil, clock, log),
+		ComponentOfferings:  service.NewResource(memory.NewDocRepo[domain.ComponentOffering]().WithClock(clock), nil, clock, log),
 	}
 }
 
@@ -57,6 +62,38 @@ func TestSweepDeletesExpired(t *testing.T) {
 	now = expiry
 	assert.Equal(t, 3, s.Sweep(ctx))
 	assert.Zero(t, s.Sweep(ctx), "second sweep")
+}
+
+// TestSweepDeletesNewEntities: every new type is swept too, so a populated
+// bundle with a ttl leaves nothing behind.
+func TestSweepDeletesNewEntities(t *testing.T) {
+	ctx := t.Context()
+	log := logger.NewWithWriter("test", false, "error", io.Discard)
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	catalog := newCatalog(func() time.Time { return now }, log)
+	expiry := now.Add(time.Minute)
+	_, err := catalog.Populate(ctx, &domain.Bundle{
+		Persons:             []domain.Person{{SourcedID: "p", Status: domain.StatusActive, GivenName: "A", FamilyName: "B"}},
+		Organizations:       []*domain.Organization{{SourcedID: "o", Name: "O"}},
+		Programs:            []*domain.Program{{SourcedID: "g", Title: "G"}},
+		Courses:             []*domain.Course{{SourcedID: "c", Title: "C", ProgramIDs: []string{"g"}}},
+		Offerings:           []*domain.Offering{{SourcedID: "f", CourseID: "c", CollectionOfferingIDs: []string{"k"}}},
+		CollectionOfferings: []*domain.CollectionOffering{{SourcedID: "k", ProgramID: "g"}},
+		ComponentTemplates:  []*domain.ComponentTemplate{{SourcedID: "t", Title: "T", CourseIDs: []string{"c"}}},
+		ComponentOfferings:  []*domain.ComponentOffering{{SourcedID: "to", ComponentID: "t", CourseOfferingIDs: []string{"f"}}},
+		Affiliations:        []*domain.Affiliation{{SourcedID: "a", PersonID: "p", OrgID: "o"}},
+	}, &expiry)
+	require.NoError(t, err)
+
+	cfg := &model.Cfg{}
+	cfg.SIS.Adapter.Sweeper.Interval = time.Hour
+	s, err := New(ctx, cfg, catalog, log)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close(t.Context()) })
+
+	now = expiry
+	assert.Equal(t, 9, s.Sweep(ctx), "every record of every type")
+	assert.Zero(t, s.Sweep(ctx))
 }
 
 // TestSweepBoundedStopsAtTimeout: a pass that runs out of time stops before

@@ -155,6 +155,10 @@ func New(ctx context.Context, cfg *model.Cfg, verifier *auth.Verifier, catalog *
 	registerResource(api, guards, "programs", restAdmin, catalog.Programs)
 	registerResource(api, guards, "results", restAdmin, catalog.Results)
 	registerResource(api, guards, "entitlements", restAdmin, catalog.Entitlements)
+	registerResource(api, guards, "affiliations", restAdmin, catalog.Affiliations)
+	registerResource(api, guards, "collection-offerings", restAdmin, catalog.CollectionOfferings)
+	registerResource(api, guards, "component-templates", restAdmin, catalog.ComponentTemplates)
+	registerResource(api, guards, "component-offerings", restAdmin, catalog.ComponentOfferings)
 
 	// Document conversion: parse is pure (read guard), populate stores.
 	api.POST("/parse", guards.Read, convertAPI.Parse)
@@ -198,6 +202,13 @@ func New(ctx context.Context, cfg *model.Cfg, verifier *auth.Verifier, catalog *
 	edu.GET("/courseOfferings/:id", eduAPI.GetCourseOffering)
 	edu.GET("/enrollments", eduapi.List(eduAPI, catalog.Enrollments, mapper.Enrollment))
 	edu.GET("/enrollments/:id", eduapi.Get(eduAPI, catalog.Enrollments, mapper.Enrollment))
+	edu.GET("/students", eduAPI.ListStudents)
+	edu.GET("/staff", eduAPI.ListStaff)
+	edu.GET("/courseOfferings/:id/enrollments", eduAPI.ListOfferingEnrollments)
+	edu.GET("/courseOfferings/:id/students", eduAPI.ListOfferingStudents)
+	edu.GET("/courseOfferings/:id/staff", eduAPI.ListOfferingStaff)
+	edu.GET("/academicSessions/:id/courseOfferings", eduAPI.ListSessionOfferings)
+	edu.GET("/academicSessions/:id/enrollments", eduAPI.ListSessionEnrollments)
 
 	httpCfg := cfg.SIS.HTTPServer
 

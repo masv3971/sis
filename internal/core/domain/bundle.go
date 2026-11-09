@@ -15,10 +15,16 @@ type Bundle struct {
 	Enrollments      []*Enrollment
 	Results          []*Result
 	Entitlements     []*Entitlement
+
+	Affiliations        []*Affiliation
+	CollectionOfferings []*CollectionOffering
+	ComponentTemplates  []*ComponentTemplate
+	ComponentOfferings  []*ComponentOffering
 }
 
 // Len returns the number of records in the bundle.
 func (b *Bundle) Len() int {
 	return len(b.Persons) + len(b.Organizations) + len(b.AcademicSessions) + len(b.Courses) +
-		len(b.Programs) + len(b.Offerings) + len(b.Enrollments) + len(b.Results) + len(b.Entitlements)
+		len(b.Programs) + len(b.Offerings) + len(b.Enrollments) + len(b.Results) + len(b.Entitlements) +
+		len(b.Affiliations) + len(b.CollectionOfferings) + len(b.ComponentTemplates) + len(b.ComponentOfferings)
 }

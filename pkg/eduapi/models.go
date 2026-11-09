@@ -188,6 +188,17 @@ type CodeMinorField struct {
 	Value string `json:"imsx_codeMinorFieldValue"`
 }
 
+// MinorInvalidFilterField is the spec's code minor for a filter on a field
+// the resource lacks.
+const MinorInvalidFilterField = "invalid_filter_field"
+
+// WithMinor returns s with its code minor replaced, for the cases where the
+// spec names a more specific code than the HTTP status implies.
+func (s StatusInfo) WithMinor(minor string) StatusInfo {
+	s.CodeMinor = &CodeMinor{Fields: []CodeMinorField{{Name: "sis", Value: minor}}}
+	return s
+}
+
 // NewStatusInfo builds the error body for an HTTP status.
 func NewStatusInfo(status int, description string) StatusInfo {
 	minor, severity := "unknown", "error"

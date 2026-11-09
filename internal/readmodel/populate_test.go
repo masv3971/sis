@@ -77,6 +77,100 @@ func TestPopulateStoresWithCanonicalRefs(t *testing.T) {
 	assert.Equal(t, 2, page.Total, "results")
 }
 
+// TestPopulateNewEntities checks the new entities store with canonical
+// references whatever order the bundle lists them in, including list
+// references, and publish back as sourcedIds.
+func TestPopulateNewEntities(t *testing.T) {
+	ctx := t.Context()
+	catalog := newFixture(t).catalog
+	base := func(sid string) domain.Base { return domain.Base{SourcedID: sid, Status: domain.StatusActive} }
+	bundle := &domain.Bundle{
+		Persons:          []domain.Person{{SourcedID: "stu", Status: domain.StatusActive, GivenName: "A", FamilyName: "B"}},
+		Organizations:    []*domain.Organization{{Base: base("uni"), Name: "U"}},
+		AcademicSessions: []*domain.AcademicSession{{Base: base("ht26"), Title: "HT26"}},
+		Programs:         []*domain.Program{{Base: base("BSc"), Title: "BSc"}},
+		Courses:          []*domain.Course{{Base: base("DA101"), Title: "C", ProgramIDs: []string{"BSc"}}},
+		// Dependants listed before what they reference: Populate must order the writes.
+		ComponentOfferings:  []*domain.ComponentOffering{{Base: base("lab-ht26"), ComponentID: "lab", AcademicSessionID: "ht26", CourseOfferingIDs: []string{"DA101-ht26"}}},
+		CollectionOfferings: []*domain.CollectionOffering{{Base: base("BSc-ht26"), ProgramID: "BSc", AcademicSessionID: "ht26", OrgID: "uni"}},
+		ComponentTemplates:  []*domain.ComponentTemplate{{Base: base("lab"), Title: "Lab", Type: "laboratory", CourseIDs: []string{"DA101"}}},
+		Offerings:           []*domain.Offering{{Base: base("DA101-ht26"), CourseID: "DA101", AcademicSessionID: "ht26", CollectionOfferingIDs: []string{"BSc-ht26"}}},
+		Affiliations:        []*domain.Affiliation{{Base: base("stu-uni"), PersonID: "stu", OrgID: "uni", Role: domain.RoleStudent}},
+	}
+	items, err := catalog.Populate(ctx, bundle, nil)
+	require.NoError(t, err)
+	require.Len(t, items, bundle.Len())
+
+	course, err := catalog.Courses.GetBySourcedID(ctx, "DA101")
+	require.NoError(t, err)
+	program, err := catalog.Programs.GetBySourcedID(ctx, "BSc")
+	require.NoError(t, err)
+	assert.Equal(t, []string{program.ID}, course.ProgramIDs, "stored as the program's canonical id")
+	require.NoError(t, catalog.CheckRefs(ctx, course))
+
+	offering, err := catalog.Offerings.GetBySourcedID(ctx, "DA101-ht26")
+	require.NoError(t, err)
+	collection, err := catalog.CollectionOfferings.GetBySourcedID(ctx, "BSc-ht26")
+	require.NoError(t, err)
+	assert.Equal(t, []string{collection.ID}, offering.CollectionOfferingIDs)
+	assert.Equal(t, program.ID, collection.ProgramID)
+
+	component, err := catalog.ComponentOfferings.GetBySourcedID(ctx, "lab-ht26")
+	require.NoError(t, err)
+	require.NoError(t, catalog.CheckRefs(ctx, component))
+	published, err := catalog.PublishRefs(ctx, component)
+	require.NoError(t, err)
+	require.Equal(t, []bool{true}, published)
+	assert.Equal(t, "lab", component.ComponentID)
+	assert.Equal(t, []string{"DA101-ht26"}, component.CourseOfferingIDs)
+	affiliation, err := catalog.Affiliations.GetBySourcedID(ctx, "stu-uni")
+	require.NoError(t, err)
+	require.NoError(t, catalog.CheckRefs(ctx, affiliation))
+
+	again, err := catalog.Populate(ctx, sampleNewEntitiesBundle(bundle), nil)
+	require.NoError(t, err)
+	for i, item := range again {
+		assert.Equal(t, ActionUpdated, item.Action, "re-populate item %d (%s %s)", i, item.Type, item.SourcedID)
+	}
+}
+
+// sampleNewEntitiesBundle returns a fresh copy of the bundle's records:
+// Populate consumes its argument by rewriting references in place.
+func sampleNewEntitiesBundle(b *domain.Bundle) *domain.Bundle {
+	base := func(sid string) domain.Base { return domain.Base{SourcedID: sid, Status: domain.StatusActive} }
+	return &domain.Bundle{
+		Persons:             []domain.Person{{SourcedID: "stu", Status: domain.StatusActive, GivenName: "A", FamilyName: "B"}},
+		Organizations:       []*domain.Organization{{Base: base("uni"), Name: "U"}},
+		AcademicSessions:    []*domain.AcademicSession{{Base: base("ht26"), Title: "HT26"}},
+		Programs:            []*domain.Program{{Base: base("BSc"), Title: "BSc"}},
+		Courses:             []*domain.Course{{Base: base("DA101"), Title: "C", ProgramIDs: []string{"BSc"}}},
+		ComponentOfferings:  []*domain.ComponentOffering{{Base: base("lab-ht26"), ComponentID: "lab", AcademicSessionID: "ht26", CourseOfferingIDs: []string{"DA101-ht26"}}},
+		CollectionOfferings: []*domain.CollectionOffering{{Base: base("BSc-ht26"), ProgramID: "BSc", AcademicSessionID: "ht26", OrgID: "uni"}},
+		ComponentTemplates:  []*domain.ComponentTemplate{{Base: base("lab"), Title: "Lab", Type: "laboratory", CourseIDs: []string{"DA101"}}},
+		Offerings:           []*domain.Offering{{Base: base("DA101-ht26"), CourseID: "DA101", AcademicSessionID: "ht26", CollectionOfferingIDs: []string{"BSc-ht26"}}},
+		Affiliations:        []*domain.Affiliation{{Base: base("stu-uni"), PersonID: "stu", OrgID: "uni", Role: domain.RoleStudent}},
+	}
+}
+
+// TestPopulateRejectsBadListRefs checks an unknown entry in a list reference
+// fails the whole bundle before anything is stored.
+func TestPopulateRejectsBadListRefs(t *testing.T) {
+	ctx := t.Context()
+	catalog := newFixture(t).catalog
+	base := func(sid string) domain.Base { return domain.Base{SourcedID: sid, Status: domain.StatusActive} }
+	_, err := catalog.Populate(ctx, &domain.Bundle{
+		Programs: []*domain.Program{{Base: base("BSc"), Title: "BSc"}},
+		Courses:  []*domain.Course{{Base: base("DA101"), Title: "C", ProgramIDs: []string{"BSc", "nowhere"}}},
+	}, nil)
+	var verr *domain.ValidationError
+	require.ErrorAs(t, err, &verr)
+	assert.Equal(t, "course[DA101].programIds[1]", verr.Field)
+	assert.Contains(t, verr.Msg, "nowhere")
+	page, err := catalog.Programs.List(ctx, port.ListParams{})
+	require.NoError(t, err)
+	assert.Zero(t, page.Total, "nothing is stored when the bundle is rejected")
+}
+
 // TestPopulateResolvesStoredRefs checks a reference may name an already
 // stored record by sourcedId.
 func TestPopulateResolvesStoredRefs(t *testing.T) {

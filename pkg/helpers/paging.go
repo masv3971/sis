@@ -18,39 +18,35 @@ import (
 // non-negative integer. Malformed values are a 400 rather than silently
 // ignored.
 //
-// OneRoster's sort and filter are not implemented by any repository yet, so a
-// non-empty value is a 400 too: answering with unfiltered rows in the default
-// order would look like success while ignoring what the client asked for.
+// A non-empty sort or filter is a 400 too: answering with unfiltered rows in
+// the default order would look like success while ignoring what the client
+// asked for. APIs that implement them use ParseListQuery.
 func ParseLimitOffset(gc *gin.Context, defaultLimit, maxLimit int) (port.ListParams, error) {
-	defaultLimit, maxLimit, err := checkBounds(defaultLimit, maxLimit)
-	if err != nil {
-		return port.ListParams{}, err
-	}
-	for _, name := range unsupportedListParams {
-		if gc.Query(name) != "" {
-			return port.ListParams{}, pagingError(name, "not supported")
-		}
-	}
-	params := port.ListParams{Limit: defaultLimit}
+	return ParseListQuery(gc, defaultLimit, maxLimit, nil)
+}
+
+// parseLimitOffset applies the limit and offset query parameters to params,
+// clamping limit to maxLimit.
+func parseLimitOffset(gc *gin.Context, maxLimit int, params *port.ListParams) error {
 	if raw, ok := gc.GetQuery("limit"); ok {
 		limit, err := strconv.Atoi(raw)
 		if err != nil || limit < 1 {
-			return port.ListParams{}, pagingError("limit", "must be a positive integer")
+			return pagingError("limit", "must be a positive integer")
 		}
 		params.Limit = min(limit, maxLimit)
 	}
 	if raw, ok := gc.GetQuery("offset"); ok {
 		offset, err := strconv.Atoi(raw)
 		if err != nil || offset < 0 {
-			return port.ListParams{}, pagingError("offset", "must be a non-negative integer")
+			return pagingError("offset", "must be a non-negative integer")
 		}
 		params.Offset = offset
 	}
-	return params, nil
+	return nil
 }
 
-// unsupportedListParams are OneRoster list query parameters that are rejected
-// until both backends implement them consistently.
+// unsupportedListParams are list query parameters rejected by an API that
+// does not implement them.
 var unsupportedListParams = []string{"sort", "filter"}
 
 // ParsePageNumberSize parses OEAPI-style 1-based pageNumber/pageSize query

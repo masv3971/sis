@@ -117,6 +117,11 @@ func New(ctx context.Context, cfg *model.Cfg, log *logger.Log) (*Service, error)
 		Programs:         service.NewResource(docRepo[domain.Program](pg), events, nil, log),
 		Results:          service.NewResource(docRepo[domain.Result](pg), events, nil, log),
 		Entitlements:     service.NewResource(docRepo[domain.Entitlement](pg), events, nil, log),
+
+		Affiliations:        service.NewResource(docRepo[domain.Affiliation](pg), events, nil, log),
+		CollectionOfferings: service.NewResource(docRepo[domain.CollectionOffering](pg), events, nil, log),
+		ComponentTemplates:  service.NewResource(docRepo[domain.ComponentTemplate](pg), events, nil, log),
+		ComponentOfferings:  service.NewResource(docRepo[domain.ComponentOffering](pg), events, nil, log),
 	}
 	s.log.Info("read-model catalog built")
 

@@ -37,6 +37,11 @@ func memCatalog(clock func() time.Time, log *logger.Log) *readmodel.Client {
 		Programs:         service.NewResource(memory.NewDocRepo[domain.Program]().WithClock(clock), nil, clock, log),
 		Results:          service.NewResource(memory.NewDocRepo[domain.Result]().WithClock(clock), nil, clock, log),
 		Entitlements:     service.NewResource(memory.NewDocRepo[domain.Entitlement]().WithClock(clock), nil, clock, log),
+
+		Affiliations:        service.NewResource(memory.NewDocRepo[domain.Affiliation]().WithClock(clock), nil, clock, log),
+		CollectionOfferings: service.NewResource(memory.NewDocRepo[domain.CollectionOffering]().WithClock(clock), nil, clock, log),
+		ComponentTemplates:  service.NewResource(memory.NewDocRepo[domain.ComponentTemplate]().WithClock(clock), nil, clock, log),
+		ComponentOfferings:  service.NewResource(memory.NewDocRepo[domain.ComponentOffering]().WithClock(clock), nil, clock, log),
 	}
 }
 

@@ -127,6 +127,130 @@ definitions:
       updatedAt:
         type: string
     type: object
+  domain.Affiliation:
+    properties:
+      createdAt:
+        type: string
+      endDate:
+        type: string
+      expiresAt:
+        description: |-
+          ExpiresAt is when the record stops being served and becomes eligible
+          for deletion; nil means it never expires. Server-managed: only
+          POST /api/v1/populate with a ttl sets it, and /api/v1 writes ignore it.
+        type: string
+      id:
+        type: string
+      orgId:
+        type: string
+      personId:
+        type: string
+      role:
+        $ref: '#/definitions/domain.Role'
+      sourcedId:
+        type: string
+      startDate:
+        description: StartDate and EndDate are ISO 8601 dates or date-times.
+        type: string
+      status:
+        $ref: '#/definitions/domain.Status'
+      updatedAt:
+        type: string
+    type: object
+  domain.CollectionOffering:
+    properties:
+      academicSessionId:
+        type: string
+      createdAt:
+        type: string
+      expiresAt:
+        description: |-
+          ExpiresAt is when the record stops being served and becomes eligible
+          for deletion; nil means it never expires. Server-managed: only
+          POST /api/v1/populate with a ttl sets it, and /api/v1 writes ignore it.
+        type: string
+      id:
+        type: string
+      orgId:
+        type: string
+      programId:
+        type: string
+      sourcedId:
+        type: string
+      status:
+        $ref: '#/definitions/domain.Status'
+      title:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  domain.ComponentOffering:
+    properties:
+      academicSessionId:
+        type: string
+      componentId:
+        type: string
+      courseOfferingIds:
+        description: |-
+          CourseOfferingIDs are the course offerings the component is delivered
+          with.
+        items:
+          type: string
+        type: array
+      createdAt:
+        type: string
+      expiresAt:
+        description: |-
+          ExpiresAt is when the record stops being served and becomes eligible
+          for deletion; nil means it never expires. Server-managed: only
+          POST /api/v1/populate with a ttl sets it, and /api/v1 writes ignore it.
+        type: string
+      id:
+        type: string
+      orgId:
+        type: string
+      sourcedId:
+        type: string
+      status:
+        $ref: '#/definitions/domain.Status'
+      title:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  domain.ComponentTemplate:
+    properties:
+      code:
+        type: string
+      courseIds:
+        description: CourseIDs are the courses the component belongs to.
+        items:
+          type: string
+        type: array
+      createdAt:
+        type: string
+      expiresAt:
+        description: |-
+          ExpiresAt is when the record stops being served and becomes eligible
+          for deletion; nil means it never expires. Server-managed: only
+          POST /api/v1/populate with a ttl sets it, and /api/v1 writes ignore it.
+        type: string
+      id:
+        type: string
+      orgId:
+        type: string
+      sourcedId:
+        type: string
+      status:
+        $ref: '#/definitions/domain.Status'
+      title:
+        type: string
+      type:
+        description: Type is the kind of component, e.g. lecture, laboratory, seminar.
+        type: string
+      updatedAt:
+        type: string
+    type: object
   domain.Contact:
     properties:
       type:
@@ -150,6 +274,11 @@ definitions:
         type: string
       orgId:
         type: string
+      programIds:
+        description: ProgramIDs are the programs the course is part of.
+        items:
+          type: string
+        type: array
       sourcedId:
         type: string
       status:
@@ -230,6 +359,13 @@ definitions:
     properties:
       academicSessionId:
         type: string
+      collectionOfferingIds:
+        description: |-
+          CollectionOfferingIDs are the collection offerings (programs delivered
+          in a session) the offering is part of.
+        items:
+          type: string
+        type: array
       courseId:
         type: string
       createdAt:
@@ -441,6 +577,66 @@ definitions:
       items:
         items:
           $ref: '#/definitions/domain.AcademicSession'
+        type: array
+      limit:
+        description: Limit is the effective page size after defaulting and clamping.
+        type: integer
+      offset:
+        type: integer
+      total:
+        description: Total is the number of entities across all pages.
+        type: integer
+    type: object
+  restadmin.ListReply-domain_Affiliation:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/domain.Affiliation'
+        type: array
+      limit:
+        description: Limit is the effective page size after defaulting and clamping.
+        type: integer
+      offset:
+        type: integer
+      total:
+        description: Total is the number of entities across all pages.
+        type: integer
+    type: object
+  restadmin.ListReply-domain_CollectionOffering:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/domain.CollectionOffering'
+        type: array
+      limit:
+        description: Limit is the effective page size after defaulting and clamping.
+        type: integer
+      offset:
+        type: integer
+      total:
+        description: Total is the number of entities across all pages.
+        type: integer
+    type: object
+  restadmin.ListReply-domain_ComponentOffering:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/domain.ComponentOffering'
+        type: array
+      limit:
+        description: Limit is the effective page size after defaulting and clamping.
+        type: integer
+      offset:
+        type: integer
+      total:
+        description: Total is the number of entities across all pages.
+        type: integer
+    type: object
+  restadmin.ListReply-domain_ComponentTemplate:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/domain.ComponentTemplate'
         type: array
       limit:
         description: Limit is the effective page size after defaulting and clamping.
@@ -811,6 +1007,911 @@ paths:
       summary: Replace academic session
       tags:
       - academic-sessions
+  /affiliations:
+    get:
+      description: Lists affiliations with limit/offset paging.
+      operationId: list-affiliations
+      parameters:
+      - description: Page size; defaults to default_limit and is clamped to max_limit
+        in: query
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Number of items to skip
+        in: query
+        minimum: 0
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/restadmin.ListReply-domain_Affiliation'
+        "400":
+          description: Invalid paging parameters
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List affiliations
+      tags:
+      - affiliations
+    post:
+      consumes:
+      - application/json
+      description: Creates a affiliation. personId and orgId are required; role is
+        one of student, staff, faculty, guest. personId and orgId must be the ids
+        (not sourcedIds) of an existing person and organization. id is generated when
+        empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.
+      operationId: create-affiliations
+      parameters:
+      - description: Affiliation to create
+        in: body
+        name: affiliation
+        required: true
+        schema:
+          $ref: '#/definitions/domain.Affiliation'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/domain.Affiliation'
+        "400":
+          description: Malformed body or validation error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "409":
+          description: id or sourcedId already in use
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "413":
+          description: Request body too large
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create affiliation
+      tags:
+      - affiliations
+  /affiliations/{id}:
+    delete:
+      description: Deletes one affiliation by id.
+      operationId: delete-affiliations
+      parameters:
+      - description: Affiliation id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete affiliation
+      tags:
+      - affiliations
+    get:
+      description: Returns one affiliation by id.
+      operationId: get-affiliations
+      parameters:
+      - description: Affiliation id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/domain.Affiliation'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get affiliation
+      tags:
+      - affiliations
+    put:
+      consumes:
+      - application/json
+      description: Replaces a affiliation. References must be the ids of existing
+        records. The path id wins over any id in the body; createdAt is preserved
+        and an empty sourcedId keeps the stored one.
+      operationId: update-affiliations
+      parameters:
+      - description: Affiliation id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Replacement affiliation
+        in: body
+        name: affiliation
+        required: true
+        schema:
+          $ref: '#/definitions/domain.Affiliation'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/domain.Affiliation'
+        "400":
+          description: Malformed body or validation error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "409":
+          description: sourcedId already in use
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "413":
+          description: Request body too large
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Replace affiliation
+      tags:
+      - affiliations
+  /collection-offerings:
+    get:
+      description: Lists collection offerings with limit/offset paging.
+      operationId: list-collection-offerings
+      parameters:
+      - description: Page size; defaults to default_limit and is clamped to max_limit
+        in: query
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Number of items to skip
+        in: query
+        minimum: 0
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/restadmin.ListReply-domain_CollectionOffering'
+        "400":
+          description: Invalid paging parameters
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List collection offerings
+      tags:
+      - collection-offerings
+    post:
+      consumes:
+      - application/json
+      description: Creates a collection offering. programId is required; academicSessionId
+        and orgId are optional. All must be the ids (not sourcedIds) of existing records.
+        id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt
+        are set by the server.
+      operationId: create-collection-offerings
+      parameters:
+      - description: Collection offering to create
+        in: body
+        name: collectionOffering
+        required: true
+        schema:
+          $ref: '#/definitions/domain.CollectionOffering'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/domain.CollectionOffering'
+        "400":
+          description: Malformed body or validation error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "409":
+          description: id or sourcedId already in use
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "413":
+          description: Request body too large
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create collection offering
+      tags:
+      - collection-offerings
+  /collection-offerings/{id}:
+    delete:
+      description: Deletes one collection offering by id.
+      operationId: delete-collection-offerings
+      parameters:
+      - description: Collection offering id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete collection offering
+      tags:
+      - collection-offerings
+    get:
+      description: Returns one collection offering by id.
+      operationId: get-collection-offerings
+      parameters:
+      - description: Collection offering id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/domain.CollectionOffering'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get collection offering
+      tags:
+      - collection-offerings
+    put:
+      consumes:
+      - application/json
+      description: Replaces a collection offering. References must be the ids of existing
+        records. The path id wins over any id in the body; createdAt is preserved
+        and an empty sourcedId keeps the stored one.
+      operationId: update-collection-offerings
+      parameters:
+      - description: Collection offering id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Replacement collection offering
+        in: body
+        name: collectionOffering
+        required: true
+        schema:
+          $ref: '#/definitions/domain.CollectionOffering'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/domain.CollectionOffering'
+        "400":
+          description: Malformed body or validation error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "409":
+          description: sourcedId already in use
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "413":
+          description: Request body too large
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Replace collection offering
+      tags:
+      - collection-offerings
+  /component-offerings:
+    get:
+      description: Lists component offerings with limit/offset paging.
+      operationId: list-component-offerings
+      parameters:
+      - description: Page size; defaults to default_limit and is clamped to max_limit
+        in: query
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Number of items to skip
+        in: query
+        minimum: 0
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/restadmin.ListReply-domain_ComponentOffering'
+        "400":
+          description: Invalid paging parameters
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List component offerings
+      tags:
+      - component-offerings
+    post:
+      consumes:
+      - application/json
+      description: Creates a component offering. componentId is required and must
+        be the id (not sourcedId) of an existing component template; academicSessionId,
+        orgId and each of courseOfferingIds are optional and must be ids of existing
+        records. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt
+        are set by the server.
+      operationId: create-component-offerings
+      parameters:
+      - description: Component offering to create
+        in: body
+        name: componentOffering
+        required: true
+        schema:
+          $ref: '#/definitions/domain.ComponentOffering'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/domain.ComponentOffering'
+        "400":
+          description: Malformed body or validation error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "409":
+          description: id or sourcedId already in use
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "413":
+          description: Request body too large
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create component offering
+      tags:
+      - component-offerings
+  /component-offerings/{id}:
+    delete:
+      description: Deletes one component offering by id.
+      operationId: delete-component-offerings
+      parameters:
+      - description: Component offering id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete component offering
+      tags:
+      - component-offerings
+    get:
+      description: Returns one component offering by id.
+      operationId: get-component-offerings
+      parameters:
+      - description: Component offering id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/domain.ComponentOffering'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get component offering
+      tags:
+      - component-offerings
+    put:
+      consumes:
+      - application/json
+      description: Replaces a component offering. References must be the ids of existing
+        records. The path id wins over any id in the body; createdAt is preserved
+        and an empty sourcedId keeps the stored one.
+      operationId: update-component-offerings
+      parameters:
+      - description: Component offering id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Replacement component offering
+        in: body
+        name: componentOffering
+        required: true
+        schema:
+          $ref: '#/definitions/domain.ComponentOffering'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/domain.ComponentOffering'
+        "400":
+          description: Malformed body or validation error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "409":
+          description: sourcedId already in use
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "413":
+          description: Request body too large
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Replace component offering
+      tags:
+      - component-offerings
+  /component-templates:
+    get:
+      description: Lists component templates with limit/offset paging.
+      operationId: list-component-templates
+      parameters:
+      - description: Page size; defaults to default_limit and is clamped to max_limit
+        in: query
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Number of items to skip
+        in: query
+        minimum: 0
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/restadmin.ListReply-domain_ComponentTemplate'
+        "400":
+          description: Invalid paging parameters
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List component templates
+      tags:
+      - component-templates
+    post:
+      consumes:
+      - application/json
+      description: Creates a component template. title is required; orgId and each
+        of courseIds, when set, must be the ids (not sourcedIds) of existing records.
+        id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt
+        are set by the server.
+      operationId: create-component-templates
+      parameters:
+      - description: Component template to create
+        in: body
+        name: componentTemplate
+        required: true
+        schema:
+          $ref: '#/definitions/domain.ComponentTemplate'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/domain.ComponentTemplate'
+        "400":
+          description: Malformed body or validation error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "409":
+          description: id or sourcedId already in use
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "413":
+          description: Request body too large
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create component template
+      tags:
+      - component-templates
+  /component-templates/{id}:
+    delete:
+      description: Deletes one component template by id.
+      operationId: delete-component-templates
+      parameters:
+      - description: Component template id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete component template
+      tags:
+      - component-templates
+    get:
+      description: Returns one component template by id.
+      operationId: get-component-templates
+      parameters:
+      - description: Component template id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/domain.ComponentTemplate'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get component template
+      tags:
+      - component-templates
+    put:
+      consumes:
+      - application/json
+      description: Replaces a component template. References must be the ids of existing
+        records. The path id wins over any id in the body; createdAt is preserved
+        and an empty sourcedId keeps the stored one.
+      operationId: update-component-templates
+      parameters:
+      - description: Component template id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Replacement component template
+        in: body
+        name: componentTemplate
+        required: true
+        schema:
+          $ref: '#/definitions/domain.ComponentTemplate'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/domain.ComponentTemplate'
+        "400":
+          description: Malformed body or validation error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "409":
+          description: sourcedId already in use
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "413":
+          description: Request body too large
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Replace component template
+      tags:
+      - component-templates
   /courses:
     get:
       description: Lists courses with limit/offset paging.
