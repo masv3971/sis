@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -51,8 +52,10 @@ func TestHubInterop(t *testing.T) {
 	write("academic-sessions", `{"id":"s-int","sourcedId":"ht26","title":"HT26"}`)
 	write("courses", `{"id":"c-int","sourcedId":"DA101","code":"DA101","title":"Databases","orgId":"o-int"}`)
 	write("offerings", `{"id":"f-int","sourcedId":"DA101-ht26","courseId":"c-int","academicSessionId":"s-int","orgId":"o-int"}`)
-	write("persons", `{"id":"p-int","sourcedId":"ada","status":"active","givenName":"Ada","familyName":"Lovelace"}`)
+	write("persons", `{"id":"p-int","sourcedId":"ada","status":"active","givenName":"Ada","familyName":"Lovelace","roles":["student"]}`)
+	write("persons", `{"id":"p-grace","sourcedId":"grace","status":"active","givenName":"Grace","familyName":"Hopper","roles":["faculty"]}`)
 	write("enrollments", `{"id":"e-int","sourcedId":"enr-ada","personId":"p-int","offeringId":"f-int","role":"student"}`)
+	write("enrollments", `{"id":"e-grace","sourcedId":"enr-grace","personId":"p-grace","offeringId":"f-int","role":"faculty"}`)
 	write("results", `{"id":"r-int","sourcedId":"res-ada","personId":"p-int","courseId":"c-int","offeringId":"f-int","grade":"A","credits":7.5}`)
 
 	type text []struct {
@@ -167,8 +170,14 @@ func TestHubInterop(t *testing.T) {
 		assert.Equal(t, "ada", eduEnr.Person)
 		assert.Equal(t, "DA101-ht26", oeEnr.OfferingID)
 		assert.Equal(t, "DA101-ht26", eduEnr.EducationOffering)
-		assert.NotEmpty(t, oeEnr.Role)
-		assert.NotEmpty(t, eduEnr.Role)
+		assert.Equal(t, "student", oeEnr.Role)
+		assert.Equal(t, "student", eduEnr.Role)
+
+		// OEAPI publishes the stored role, Edu-API maps faculty to its term.
+		read("/oeapi/associations/enr-grace", http.StatusOK, &oeEnr)
+		read(eduBase+"/enrollments/enr-grace", http.StatusOK, &eduEnr)
+		assert.Equal(t, "faculty", oeEnr.Role)
+		assert.Equal(t, "teacher", eduEnr.Role)
 	})
 
 	t.Run("result is OEAPI only", func(t *testing.T) {
@@ -199,9 +208,9 @@ func TestHubInterop(t *testing.T) {
 		read("/oeapi/persons", http.StatusOK, &oe)
 		var edu []eduPerson
 		read(eduBase+"/persons", http.StatusOK, &edu)
-		require.Len(t, oe.Items, 1)
-		require.Len(t, edu, 1)
-		assert.Equal(t, oe.Items[0].PersonID, edu[0].SourcedID)
+		require.Len(t, oe.Items, 2)
+		require.Len(t, edu, 2)
+		assert.ElementsMatch(t, []string{oe.Items[0].PersonID, oe.Items[1].PersonID}, []string{edu[0].SourcedID, edu[1].SourcedID})
 
 		var oeEnr struct {
 			Items []struct{ AssociationID string }
@@ -211,14 +220,45 @@ func TestHubInterop(t *testing.T) {
 			SourcedID string `json:"sourcedId"`
 		}
 		read(eduBase+"/enrollments", http.StatusOK, &eduEnr)
-		require.Len(t, oeEnr.Items, 1)
-		require.Len(t, eduEnr, 1)
-		assert.Equal(t, oeEnr.Items[0].AssociationID, eduEnr[0].SourcedID)
+		require.Len(t, oeEnr.Items, 2)
+		require.Len(t, eduEnr, 2)
+		assert.ElementsMatch(t, []string{oeEnr.Items[0].AssociationID, oeEnr.Items[1].AssociationID}, []string{eduEnr[0].SourcedID, eduEnr[1].SourcedID})
+	})
+
+	eduIDs := func(path string) []string {
+		t.Helper()
+		var items []struct {
+			SourcedID string `json:"sourcedId"`
+		}
+		read(eduBase+path, http.StatusOK, &items)
+		ids := make([]string, 0, len(items))
+		for _, item := range items {
+			ids = append(ids, item.SourcedID)
+		}
+		return ids
+	}
+
+	t.Run("edu-api nested routes", func(t *testing.T) {
+		assert.Equal(t, []string{"ada"}, eduIDs("/students"))
+		assert.Equal(t, []string{"grace"}, eduIDs("/staff"))
+		offering := "/courseOfferings/DA101-ht26"
+		assert.ElementsMatch(t, []string{"enr-ada", "enr-grace"}, eduIDs(offering+"/enrollments"))
+		assert.Equal(t, []string{"ada"}, eduIDs(offering+"/students"))
+		assert.Equal(t, []string{"grace"}, eduIDs(offering+"/staff"))
+		assert.Equal(t, []string{"DA101-ht26"}, eduIDs("/academicSessions/ht26/courseOfferings"))
+		assert.ElementsMatch(t, []string{"enr-ada", "enr-grace"}, eduIDs("/academicSessions/ht26/enrollments"))
+		read(eduBase+"/courseOfferings/none/enrollments", http.StatusNotFound, nil)
+	})
+
+	t.Run("edu-api sort and filter", func(t *testing.T) {
+		assert.Equal(t, []string{"ada", "grace"}, eduIDs("/persons?sort=legalName.givenName"))
+		assert.Equal(t, []string{"grace", "ada"}, eduIDs("/persons?sort=legalName.givenName&orderBy=desc"))
+		assert.Equal(t, []string{"grace"}, eduIDs("/persons?filter="+url.QueryEscape("legalName.familyName='Hopper'")))
 	})
 
 	t.Run("update shows on both", func(t *testing.T) {
 		call(srv.writer, http.MethodPut, "/api/v1/persons/p-int",
-			`{"sourcedId":"ada","status":"active","givenName":"Augusta","familyName":"Lovelace"}`, http.StatusOK, nil)
+			`{"sourcedId":"ada","status":"active","givenName":"Augusta","familyName":"Lovelace","roles":["student"]}`, http.StatusOK, nil)
 		var oe oePerson
 		read("/oeapi/persons/ada", http.StatusOK, &oe)
 		var edu eduPerson
@@ -239,8 +279,11 @@ func TestHubInterop(t *testing.T) {
 		} {
 			read(path, http.StatusNotFound, nil)
 		}
-		// The catalog stays.
+		// The catalog and the other person stay.
 		read("/oeapi/offerings/DA101-ht26", http.StatusOK, nil)
 		read(eduBase+"/courseOfferings/DA101-ht26", http.StatusOK, nil)
+		assert.Empty(t, eduIDs("/students"))
+		assert.Equal(t, []string{"grace"}, eduIDs("/staff"))
+		assert.Equal(t, []string{"enr-grace"}, eduIDs("/courseOfferings/DA101-ht26/enrollments"))
 	})
 }
