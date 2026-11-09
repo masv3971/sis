@@ -353,7 +353,12 @@ The Final release (Oct 2026), under the base path the spec requires.
 `GET` list (`?limit=&offset=`) and `GET /:id` for:
 
 `persons`, `organizations`, `academicSessions`, `courseTemplates`,
-`courseOfferings`, `collectionTemplates` (programs), `enrollments`
+`courseOfferings`, `collectionTemplates` (programs), `enrollments`, `students`,
+`staff`
+
+Nested routes: `/courseOfferings/{id}/enrollments|students|staff` and
+`/academicSessions/{id}/courseOfferings|enrollments`. An unknown or orphaned
+parent answers 404.
 
 A list is a bare JSON array. It carries `X-Total-Count` (stored records) and
 a `Link` header with `first`, `prev`, `next` and `last`. `limit` is capped at
@@ -361,8 +366,14 @@ a `Link` header with `first`, `prev`, `next` and `last`. `limit` is capped at
 was applied. To read everything, follow `rel="next"` until it is gone. Do
 not advance `offset` by the `limit` you asked for: it skips records when SIS
 lowered it. Records whose required references are gone are left out, so a
-page can be short without being the last. `sort` and `filter` are optional
-in the spec and answer 400. Errors use the spec's `Imsx_StatusInfo` body.
+page can be short without being the last. Person lists support `sort`,
+`orderBy` and `filter` on published person fields. Other lists support them
+on `sourcedId` only. Filters use `=`, `!=` and `~` (case-insensitive) with at
+most one `AND` or `OR`. An unknown filter field answers 400
+`invalid_filter_field`; other bad input answers 400
+`invalid_query_parameter`. The in-memory nested lists (offering students and
+staff, session enrollments) and `/oeapi` still answer 400. Errors use the
+spec's `Imsx_StatusInfo` body.
 
 A token needs `sis.read` or the spec's scope
 `http://purl.1edtech.org/spec/eduapi/v1p0/scope/core.readonly`.
@@ -385,7 +396,8 @@ What SIS cannot fill from its own data:
 - A person has no `roles`: the spec puts role on the enrollment.
 - Not published: results (they belong to the separate Edu-API Gradebook
   spec), entitlements, `affiliation`, component templates and offerings,
-  collection offerings, and the nested routes such as `/students`.
+  and collection offerings. SIS stores the last four but does not publish
+  them.
 
 Both standards APIs address resources by `sourcedId`, not by canonical id:
 
