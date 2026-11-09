@@ -3,6 +3,7 @@
 package repotest
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -32,8 +33,11 @@ func ListQueryDocs(t *testing.T, repo port.Repository[domain.Course, *domain.Cou
 		course("c4", "Delta", "B2"),
 	}
 	t.Cleanup(func() {
+		// t.Context() is already canceled when cleanups run.
+		cleanup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
 		for _, r := range records {
-			_ = repo.Delete(t.Context(), r.ID)
+			assert.NoError(t, repo.Delete(cleanup, r.ID))
 		}
 	})
 	for _, r := range records {
@@ -147,8 +151,10 @@ func ListQueryPersons(t *testing.T, repo port.PersonRepository) {
 		person("p3", "Bo", "Cole", domain.RoleStaff),
 	}
 	t.Cleanup(func() {
+		cleanup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
 		for _, p := range records {
-			_ = repo.Delete(t.Context(), p.ID)
+			assert.NoError(t, repo.Delete(cleanup, p.ID))
 		}
 	})
 	for _, p := range records {
