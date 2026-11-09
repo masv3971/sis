@@ -66,22 +66,25 @@ func docKey(key string) (string, error) {
 	return fmt.Sprintf(`(CASE WHEN jsonb_typeof(data->'%[1]s') = 'string' THEN data->>'%[1]s' END)`, key), nil
 }
 
-// personColumn maps a stored person key to its column. Only scalar columns
-// can be sorted or filtered on.
-func personColumn(key string) (string, error) {
-	switch key {
-	case "sourcedId":
-		return "sourced_id", nil
-	case "status":
-		return "status", nil
-	case "givenName":
-		return "given_name", nil
-	case "familyName":
-		return "family_name", nil
-	case "middleName":
-		return "middle_name", nil
-	case "dateOfBirth":
-		return "date_of_birth", nil
+// personColumn maps a stored person key to the SQL expression for its column,
+// with prefix before the column name. Only scalar columns can be sorted or
+// filtered on. An empty optional column is NULL, as the key is absent.
+func personColumn(prefix string) func(key string) (string, error) {
+	return func(key string) (string, error) {
+		switch key {
+		case "sourcedId":
+			return prefix + "sourced_id", nil
+		case "status":
+			return prefix + "status", nil
+		case "givenName":
+			return prefix + "given_name", nil
+		case "familyName":
+			return prefix + "family_name", nil
+		case "middleName":
+			return "NULLIF(" + prefix + "middle_name, '')", nil
+		case "dateOfBirth":
+			return "NULLIF(" + prefix + "date_of_birth, '')", nil
+		}
+		return "", fmt.Errorf("postgres: unknown person key %q", key)
 	}
-	return "", fmt.Errorf("postgres: unknown person key %q", key)
 }

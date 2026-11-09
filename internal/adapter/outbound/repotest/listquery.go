@@ -150,6 +150,8 @@ func ListQueryPersons(t *testing.T, repo port.PersonRepository) {
 		person("p2", "amy", "Ahl", domain.RoleStudent),
 		person("p3", "Bo", "Cole", domain.RoleStaff),
 	}
+	records[0].DateOfBirth = "1990-01-01"
+	records[1].DateOfBirth = "2000-05-05" // p3 has no date of birth
 	t.Cleanup(func() {
 		cleanup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -199,6 +201,19 @@ func ListQueryPersons(t *testing.T, repo port.PersonRepository) {
 		require.NoError(t, err)
 		assert.Equal(t, []string{"Zed", "amy"}, given(page.Items))
 		assert.Equal(t, 2, page.Total)
+	})
+	t.Run("a person without a date of birth sorts last, either direction", func(t *testing.T) {
+		page, err := repo.List(ctx, port.ListParams{Sort: "dateOfBirth", Filter: &port.Filter{Terms: []port.FilterTerm{mine}}})
+		require.NoError(t, err)
+		assert.Equal(t, []string{"Zed", "amy", "Bo"}, given(page.Items))
+		page, err = repo.List(ctx, port.ListParams{Sort: "dateOfBirth", Desc: true, Filter: &port.Filter{Terms: []port.FilterTerm{mine}}})
+		require.NoError(t, err)
+		assert.Equal(t, []string{"amy", "Zed", "Bo"}, given(page.Items))
+	})
+	t.Run("a person without a date of birth matches no filter term", func(t *testing.T) {
+		page, err := repo.List(ctx, port.ListParams{Filter: &port.Filter{Terms: []port.FilterTerm{mine, {Field: "dateOfBirth", Op: port.FilterNotEquals, Value: "2000-01-01"}}}})
+		require.NoError(t, err)
+		assert.Equal(t, []string{"amy", "Zed"}, given(page.Items))
 	})
 	t.Run("a key that is not a person column is refused", func(t *testing.T) {
 		_, err := repo.List(ctx, port.ListParams{Sort: "roles"})

@@ -178,7 +178,7 @@ func (r *PersonRepository) list(ctx context.Context, where string, args []any, p
 	if params.Limit > 0 {
 		limit = params.Limit
 	}
-	cond, args, err := filterSQL(params.Filter, personColumn, args)
+	cond, args, err := filterSQL(params.Filter, personColumn(""), args)
 	if err != nil {
 		return port.Page[domain.Person]{}, err
 	}
@@ -189,10 +189,10 @@ func (r *PersonRepository) list(ctx context.Context, where string, args []any, p
 	// personColumns' output: the person columns hold every sortable key.
 	var innerSort, outerSort string
 	if params.Sort != "" {
-		if innerSort, err = personColumn(params.Sort); err != nil {
+		if innerSort, err = personColumn("")(params.Sort); err != nil {
 			return port.Page[domain.Person]{}, err
 		}
-		outerSort = "p." + innerSort
+		outerSort, _ = personColumn("p.")(params.Sort)
 	}
 	query := fmt.Sprintf(`SELECT p.*, t.n
 		FROM (SELECT count(*) AS n FROM persons WHERE %[1]s) t

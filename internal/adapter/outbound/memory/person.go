@@ -212,8 +212,12 @@ func (r *PersonRepository) ListByRoles(_ context.Context, roles []domain.Role, p
 	}, params)
 }
 
-// personKey returns the scalar person property stored under key, the keys
-// the Postgres person repository maps to columns (see personSortColumns).
+// personKeys are the keys personKey knows, those the Postgres person
+// repository maps to columns (see personColumn).
+var personKeys = []string{"sourcedId", "status", "givenName", "familyName", "middleName", "dateOfBirth"}
+
+// personKey returns the scalar person property stored under key, and false
+// when the person has no value for it: an empty optional property is absent.
 func personKey(p domain.Person, key string) (string, bool) {
 	switch key {
 	case "sourcedId":
@@ -225,9 +229,9 @@ func personKey(p domain.Person, key string) (string, bool) {
 	case "familyName":
 		return p.FamilyName, true
 	case "middleName":
-		return p.MiddleName, true
+		return p.MiddleName, p.MiddleName != ""
 	case "dateOfBirth":
-		return p.DateOfBirth, true
+		return p.DateOfBirth, p.DateOfBirth != ""
 	}
 	return "", false
 }
@@ -236,13 +240,13 @@ func personKey(p domain.Person, key string) (string, bool) {
 // params.Filter matches, ordered by params.Sort, then by name.
 func (r *PersonRepository) list(keep func(domain.Person) bool, params port.ListParams) (port.Page[domain.Person], error) {
 	if params.Sort != "" {
-		if _, ok := personKey(domain.Person{}, params.Sort); !ok {
+		if !slices.Contains(personKeys, params.Sort) {
 			return port.Page[domain.Person]{}, fmt.Errorf("memory: unknown person sort key %q", params.Sort)
 		}
 	}
 	if params.Filter != nil {
 		for _, term := range params.Filter.Terms {
-			if _, ok := personKey(domain.Person{}, term.Field); !ok {
+			if !slices.Contains(personKeys, term.Field) {
 				return port.Page[domain.Person]{}, fmt.Errorf("memory: unknown person filter key %q", term.Field)
 			}
 		}
@@ -263,8 +267,11 @@ func (r *PersonRepository) list(keep func(domain.Person) bool, params port.ListP
 	sort.Slice(items, func(i, j int) bool {
 		a, b := items[i], items[j]
 		if params.Sort != "" {
-			av, _ := personKey(a, params.Sort)
-			bv, _ := personKey(b, params.Sort)
+			av, aok := personKey(a, params.Sort)
+			bv, bok := personKey(b, params.Sort)
+			if aok != bok {
+				return aok // a person without the key goes last in both directions
+			}
 			if av != bv {
 				if params.Desc {
 					return av > bv
