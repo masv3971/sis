@@ -20,7 +20,7 @@ CURRENT_BRANCH          = $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
 	vscode gh-install gh-auth \
 	build test vet fmt fmt-check docker-build docker-push \
 	swagger swagger-restadmin swagger-fmt swagger-check \
-	web-install web-dev web-build web web-ci \
+	web-install web-dev web-build web web-ci web-e2e \
 	diagram \
 	release check_current_branch
 
@@ -227,6 +227,9 @@ web: web-install web-build ## Install SPA dependencies and build (one-shot)
 
 web-ci: ## Install SPA dependencies from the lockfile and build (CI, as in the Dockerfile)
 	cd web && npm ci && npm run build
+
+web-e2e: ## Build the SPA and run the browser tests against a local SIS (needs Go and Node)
+	cd web && npm ci && npm run build && npx playwright install --with-deps chromium && npx playwright test
 
 # ==============================================================================
 # Release Management
