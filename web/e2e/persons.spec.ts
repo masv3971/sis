@@ -96,6 +96,40 @@ test("a reference picker loads more records past the fetch cap", async ({ page, 
   await expect(page.getByRole("button", { name: "Load more" })).toHaveCount(0);
 });
 
+test("two reference pickers can load more at the same time", async ({ page, signIn }) => {
+  // One record per page, 25 records each. The last page of both lists is held
+  // until both requests are in, so both loads finish together.
+  const total = 25;
+  let waiting = 0;
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  const paged = (path: string, name: string) =>
+    page.route(`**/api/v1/${path}?*`, async (route) => {
+      const offset = Number(new URL(route.request().url()).searchParams.get("offset") ?? "0");
+      if (offset === total - 1) {
+        if (++waiting === 2) release();
+        await gate;
+      }
+      const items = offset < total ? [{ id: `${path}-${offset}`, sourcedId: `${path}-${offset}`, [name]: `${path} ${offset}`, status: "active" }] : [];
+      await route.fulfill({ json: { items, total, limit: 1, offset } });
+    });
+  await paged("courses", "title");
+  await paged("organizations", "name");
+  await signIn("writer");
+  await page.goto("/#/offerings");
+
+  // The label also wraps the options and the hint, so match by substring.
+  const course = page.getByLabel("Course");
+  const organization = page.getByLabel("Organization");
+  await expect(page.getByRole("button", { name: "Load more" })).toHaveCount(2);
+  await page.getByRole("button", { name: "Load more" }).first().click();
+  await page.getByRole("button", { name: "Load more" }).last().click();
+
+  await expect(course.locator("option", { hasText: `courses ${total - 1}` })).toHaveCount(1);
+  await expect(organization.locator("option", { hasText: `organizations ${total - 1}` })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Load more" })).toHaveCount(0);
+});
+
 test("Back from a person returns to the same search page", async ({ page, signIn, request, tokens }) => {
   // 30 people: with 25 to a page, the second page holds Fam25 to Fam29.
   for (let i = 0; i < 30; i++) {

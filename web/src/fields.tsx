@@ -53,14 +53,19 @@ export function useRefs(
     try {
       const more = await listAllEntities(t, current.offset);
       if (mine !== gen.current) return;
-      // Records added or removed since the first load shift the pages.
-      const have = new Set(current.items.map((e) => e.id));
-      const added = more.items.filter((e) => !have.has(e.id));
-      const labels = new Map(current.labels);
-      for (const e of added) labels.set(e.id ?? "", refLabel(t, e) || (e.sourcedId ?? e.id ?? ""));
-      setRefs({
-        ...refsRef.current,
-        [t]: { items: [...current.items, ...added], labels, truncated: more.truncated, offset: more.offset },
+      // Merge into the pending state, not a render-time snapshot: another
+      // picker's load may have finished since.
+      setRefs((prev) => {
+        const base = prev[t] ?? current;
+        // Records added or removed since the first load shift the pages.
+        const have = new Set(base.items.map((e) => e.id));
+        const added = more.items.filter((e) => !have.has(e.id));
+        const labels = new Map(base.labels);
+        for (const e of added) labels.set(e.id ?? "", refLabel(t, e) || (e.sourcedId ?? e.id ?? ""));
+        return {
+          ...prev,
+          [t]: { items: [...base.items, ...added], labels, truncated: more.truncated, offset: more.offset },
+        };
       });
     } catch (e) {
       if (mine === gen.current) onError(e);
