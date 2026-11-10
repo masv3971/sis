@@ -9,14 +9,22 @@ import { type Field, type RefTarget, refLabel } from "./entities";
 
 // RefOptions holds, per referenced collection, the records a picker offers
 // and an id -> label map for tables.
-export type RefOptions = Partial<Record<RefTarget, { items: Entity[]; labels: Map<string, string>; truncated: boolean }>>;
+export type RefOptions = Partial<
+  Record<RefTarget, { items: Entity[]; labels: Map<string, string>; truncated: boolean; offset: number }>
+>;
 
-// useRefs loads every collection in targets (for the pickers and to show
+// useRefs loads the collections in targets (for the pickers and to show
 // names instead of ids). reload fetches them again, e.g. after a write to a
-// collection that refers to itself (organization parent). Errors go to
-// onError; only the latest load commits.
-export function useRefs(targets: RefTarget[], onError: (e: unknown) => void): [RefOptions, () => Promise<void>] {
+// collection that refers to itself (organization parent). loadMore fetches
+// the next pages of one truncated collection. Errors go to onError; only the
+// latest load commits.
+export function useRefs(
+  targets: RefTarget[],
+  onError: (e: unknown) => void,
+): [RefOptions, () => Promise<void>, (t: RefTarget) => Promise<void>] {
   const [refs, setRefs] = useState<RefOptions>({});
+  const refsRef = useRef(refs);
+  refsRef.current = refs;
   const gen = useRef(0);
   const key = targets.join(",");
 
@@ -27,11 +35,33 @@ export function useRefs(targets: RefTarget[], onError: (e: unknown) => void): [R
       if (mine !== gen.current) return;
       const next: RefOptions = {};
       targets.forEach((t, i) => {
-        const { items, truncated } = loaded[i];
+        const { items, truncated, offset } = loaded[i];
         const labels = new Map(items.map((e) => [e.id ?? "", refLabel(t, e) || (e.sourcedId ?? e.id ?? "")]));
-        next[t] = { items, labels, truncated };
+        next[t] = { items, labels, truncated, offset };
       });
       setRefs(next);
+    } catch (e) {
+      if (mine === gen.current) onError(e);
+    }
+  }
+
+  async function loadMore(t: RefTarget): Promise<void> {
+    const current = refsRef.current[t];
+    if (!current?.truncated) return;
+    // A reload that starts meanwhile bumps gen and replaces this result.
+    const mine = gen.current;
+    try {
+      const more = await listAllEntities(t, current.offset);
+      if (mine !== gen.current) return;
+      // Records added or removed since the first load shift the pages.
+      const have = new Set(current.items.map((e) => e.id));
+      const added = more.items.filter((e) => !have.has(e.id));
+      const labels = new Map(current.labels);
+      for (const e of added) labels.set(e.id ?? "", refLabel(t, e) || (e.sourcedId ?? e.id ?? ""));
+      setRefs({
+        ...refsRef.current,
+        [t]: { items: [...current.items, ...added], labels, truncated: more.truncated, offset: more.offset },
+      });
     } catch (e) {
       if (mine === gen.current) onError(e);
     }
@@ -42,7 +72,7 @@ export function useRefs(targets: RefTarget[], onError: (e: unknown) => void): [R
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
-  return [refs, reload];
+  return [refs, reload, loadMore];
 }
 
 // Cell renders one table cell of e. A reference shows the referenced
@@ -63,12 +93,15 @@ export function FieldInput({
   value,
   refs,
   onChange,
+  onLoadMore,
 }: {
   field: Field;
   value: unknown;
   refs: RefOptions;
   onChange: (v: unknown) => void;
+  onLoadMore?: (t: RefTarget) => Promise<void>;
 }) {
+  const [loadingMore, setLoadingMore] = useState(false);
   const text = value === undefined || value === null ? "" : String(value);
   // Empty optional strings are sent as "" (the server treats them as unset);
   // an emptied number is dropped so the server sees no credits.
@@ -106,7 +139,28 @@ export function FieldInput({
               </option>
             ))}
           </select>
-          {target?.truncated && <span className="muted">Only the first records are listed.</span>}
+          {target?.truncated && (
+            <span className="row">
+              <span className="muted">Only the first records are listed.</span>
+              {onLoadMore && field.ref && (
+                <button
+                  type="button"
+                  className="ghost small"
+                  disabled={loadingMore}
+                  onClick={async () => {
+                    setLoadingMore(true);
+                    try {
+                      await onLoadMore(field.ref!);
+                    } finally {
+                      setLoadingMore(false);
+                    }
+                  }}
+                >
+                  {loadingMore ? "Loading…" : "Load more"}
+                </button>
+              )}
+            </span>
+          )}
         </label>
       );
     }

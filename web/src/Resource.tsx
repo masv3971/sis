@@ -63,7 +63,7 @@ export function Resource({
   }
 
   const refTargets = [...new Set(fields.flatMap((f) => (f.ref ? [f.ref] : [])))];
-  const [refs, reloadRefs] = useRefs(refTargets, fail);
+  const [refs, reloadRefs, loadMoreRefs] = useRefs(refTargets, fail);
 
   // chosen is the selected oneOf field: the one a record already has set,
   // else the first.
@@ -205,6 +205,7 @@ export function Resource({
                 value={form[f.key]}
                 refs={refs}
                 onChange={(v) => setField(f.key, v)}
+                onLoadMore={loadMoreRefs}
               />
             );
             if (f.key !== chosen || !oneOf?.keys.includes(f.key)) return input;

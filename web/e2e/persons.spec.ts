@@ -73,6 +73,29 @@ test("a search keeps + and & from the link", async ({ page, signIn }) => {
   await expect(page.getByRole("searchbox", { name: "Search people" })).toHaveValue("grace");
 });
 
+test("a reference picker loads more records past the fetch cap", async ({ page, signIn }) => {
+  // The server hands out one record per page, so 25 records exceed the 20
+  // pages a picker fetches at once.
+  const total = 25;
+  await page.route("**/api/v1/organizations?*", async (route) => {
+    const offset = Number(new URL(route.request().url()).searchParams.get("offset") ?? "0");
+    const items = offset < total ? [{ id: `org-${offset}`, sourcedId: `org-${offset}`, name: `Org ${offset}`, status: "active" }] : [];
+    await route.fulfill({ json: { items, total, limit: 1, offset } });
+  });
+  await signIn("writer");
+  await page.goto("/#/courses");
+
+  const picker = page.getByLabel("Organization");
+  await expect(page.getByText("Only the first records are listed.")).toBeVisible();
+  await expect(picker.locator("option", { hasText: "Org 19" })).toHaveCount(1);
+  await expect(picker.locator("option", { hasText: "Org 24" })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Load more" }).click();
+  await expect(picker.locator("option", { hasText: "Org 24" })).toHaveCount(1);
+  await expect(page.getByText("Only the first records are listed.")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Load more" })).toHaveCount(0);
+});
+
 test("log out drops the token and returns to sign-in", async ({ page, signIn }) => {
   await signIn("writer");
   await page.goto("/");

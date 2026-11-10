@@ -188,21 +188,24 @@ export async function listEntities(path: string, limit: number, offset: number):
 // collection of hundreds of thousands of records.
 const MAX_PAGES = 20;
 
-// listAllEntities fetches the whole collection at /api/v1/<path> (for
-// reference pickers), up to MAX_PAGES pages of the server's max_limit.
-// truncated reports that more records exist than were fetched.
-export async function listAllEntities(path: string): Promise<{ items: Entity[]; truncated: boolean }> {
+// listAllEntities fetches the collection at /api/v1/<path> (for reference
+// pickers) from offset, up to MAX_PAGES pages of the server's max_limit.
+// truncated reports that more records exist than were fetched; call again
+// with the returned offset to get the next pages.
+export async function listAllEntities(
+  path: string,
+  offset = 0,
+): Promise<{ items: Entity[]; truncated: boolean; offset: number }> {
   const items: Entity[] = [];
-  let offset = 0;
   for (let i = 0; i < MAX_PAGES; i++) {
     // The server clamps the limit to its max_limit and reports the
     // effective one, which is what the next offset must advance by.
     const page = await listEntities(path, 1000, offset);
     items.push(...page.items);
     offset += page.limit > 0 ? page.limit : page.items.length;
-    if (page.items.length === 0 || offset >= page.total) return { items, truncated: false };
+    if (page.items.length === 0 || offset >= page.total) return { items, truncated: false, offset };
   }
-  return { items, truncated: true };
+  return { items, truncated: true, offset };
 }
 
 function toWritableEntity(e: Entity): Entity {
