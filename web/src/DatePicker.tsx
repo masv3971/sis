@@ -165,11 +165,14 @@ export function DatePicker({
   }
 
   // showMonth switches the calendar to another month, keeping the cursor's
-  // day so the grid always holds a focusable day.
+  // day so the grid always holds a focusable day. The cursor is clamped to
+  // [min, max]; a clamped cursor can sit in another month, which then shows.
   function showMonth(y: number, m: number) {
     const d = Math.min(parseDate(cursor)?.d ?? 1, daysIn(y, m));
-    setView({ y, m });
-    setCursor(iso(y, m, d));
+    const next = clamp(iso(y, m, d), min, max);
+    const p = parseDate(next)!;
+    setView({ y: p.y, m: p.m });
+    setCursor(next);
   }
 
   function pick(day: string) {
