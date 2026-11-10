@@ -644,12 +644,18 @@ func TestParseELMTypedReference(t *testing.T) {
 
 // TestParseELMInvalidDateOfBirth checks a dateOfBirth that is no ISO 8601
 // date is dropped with a warning instead of failing the credential, and an
-// xsd:dateTime keeps its date part.
+// xsd:date or xsd:dateTime keeps its date part.
 func TestParseELMInvalidDateOfBirth(t *testing.T) {
 	cases := []struct{ dob, want string }{
 		{"1999-10-01T22:00:00Z", "1999-10-01"},
+		{"1999-10-01T22:00:00.5+01:00", "1999-10-01"},
+		{"1999-10-01T22:00:00", "1999-10-01"},
+		{"1999-10-01Z", "1999-10-01"},
+		{"1999-10-01", "1999-10-01"},
 		{"2001-02-30", ""},
 		{"01/10/1999", ""},
+		{"2001-03-14garbage", ""},
+		{"2001-03-14T99:99:99Z", ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.dob, func(t *testing.T) {
@@ -680,6 +686,28 @@ func TestParseELMInvalidResultDate(t *testing.T) {
 	assert.Empty(t, parsed.Bundle.Results[0].ResultDate)
 	require.Len(t, parsed.Warnings, 1)
 	assert.Contains(t, parsed.Warnings[0], "awardingDate")
+}
+
+// TestParseELMInvalidOtherDates checks entitlement and activity dates that
+// are no ISO 8601 date are dropped with a warning, like the other dates.
+func TestParseELMInvalidOtherDates(t *testing.T) {
+	doc := `{"credentialSubject": {"id": "urn:p", "givenName": "A", "familyName": "B",
+		"hasClaim": {"id": "urn:ach", "type": "LearningAchievement", "title": "Course X",
+			"influencedBy": {"id": "urn:act", "type": "LearningActivity", "title": "Course X, spring",
+				"temporal": {"startDate": "2026-01-10T99:00:00Z", "endDate": "2026-03-10T00:00:00Z"}},
+			"entitlesTo": {"id": "urn:ent", "type": "LearningEntitlement", "title": "Access to Y",
+				"expiryDate": "2030-01-01garbage"}}}}`
+	parsed, err := newClient(t).Parse(FormatELMv3, []byte(doc), "data")
+	require.NoError(t, err)
+	require.Len(t, parsed.Bundle.Entitlements, 1)
+	assert.Empty(t, parsed.Bundle.Entitlements[0].ExpiryDate)
+	require.Len(t, parsed.Bundle.AcademicSessions, 1)
+	assert.Empty(t, parsed.Bundle.AcademicSessions[0].StartDate)
+	assert.Equal(t, "2026-03-10", parsed.Bundle.AcademicSessions[0].EndDate)
+	warnings := strings.Join(parsed.Warnings, "\n")
+	assert.Len(t, parsed.Warnings, 2)
+	assert.Contains(t, warnings, "startDate")
+	assert.Contains(t, warnings, "expiryDate")
 }
 
 // TestParseELMOrganisationCycle checks a parent cycle terminates.

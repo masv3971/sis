@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 
@@ -209,14 +210,14 @@ func (c *Client) DeletePerson(gc *gin.Context) {
 // cannot ask for an arbitrary number of them.
 const (
 	maxSearchTerms = 5
-	maxSearchBytes = 200
+	maxSearchChars = 200
 )
 
 // searchTerms splits q into its whitespace-separated terms (none for an
 // empty q), rejecting a search beyond the bounds above.
 func searchTerms(q string) ([]string, error) {
-	if len(q) > maxSearchBytes {
-		return nil, &domain.ValidationError{Field: "q", Msg: fmt.Sprintf("must be at most %d characters", maxSearchBytes)}
+	if utf8.RuneCountInString(q) > maxSearchChars {
+		return nil, &domain.ValidationError{Field: "q", Msg: fmt.Sprintf("must be at most %d characters", maxSearchChars)}
 	}
 	terms := strings.Fields(q)
 	if len(terms) > maxSearchTerms {

@@ -3,7 +3,7 @@ import { type Person, deletePerson, getPerson, NotFoundError, UnauthorizedError 
 import { enrollmentDef, resultDef } from "./entities";
 import { PersonForm } from "./PersonForm";
 import { Resource } from "./Resource";
-import { go, href } from "./route";
+import { go, href, studentsParams } from "./route";
 
 // Student is one person's page: their profile and, below it, their
 // enrollments and results, each editable in place. Records added here are
@@ -11,12 +11,15 @@ import { go, href } from "./route";
 export function Student({
   id,
   backQuery,
+  backOffset,
   canWrite,
   onUnauthorized,
 }: {
   id: string;
-  // backQuery is the search the user came from, for the Back link.
+  // backQuery and backOffset are the search page the user came from, for the
+  // Back link.
   backQuery: string;
+  backOffset: number;
   canWrite: boolean;
   onUnauthorized: () => void;
 }) {
@@ -62,7 +65,7 @@ export function Student({
     setError("");
     try {
       await deletePerson(id);
-      go("students", backQuery ? { q: backQuery } : {});
+      go("students", studentsParams(backQuery, 0));
     } catch (e) {
       fail(e);
       setDeleting(false);
@@ -70,7 +73,7 @@ export function Student({
   }
 
   const back = (
-    <a className="back" href={href("students", backQuery ? { q: backQuery } : {})}>
+    <a className="back" href={href("students", studentsParams(backQuery, backOffset))}>
       ← {backQuery ? `Results for “${backQuery}”` : "All people"}
     </a>
   );

@@ -8,6 +8,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/SUNET/sis/internal/core/domain"
 	"github.com/SUNET/sis/pkg/elm"
@@ -355,7 +356,7 @@ func (b *elmBuilder) entitlement(node *elm.Node, person, org, result string) (st
 	}
 	entitlement := &domain.Entitlement{
 		Base: base(sid), PersonID: person, ResultID: result, Title: title, OrgID: org,
-		IssuedDate: isoDate(issued), ExpiryDate: isoDate(node.String("expiryDate")),
+		IssuedDate: b.date(node.Path+".issuedDate", issued), ExpiryDate: b.date(node.Path+".expiryDate", node.String("expiryDate")),
 	}
 	if err := check(node.Path, "entitlement", entitlement); err != nil {
 		return "", err
@@ -528,7 +529,8 @@ func (b *elmBuilder) session(activity *elm.Node) string {
 	if period == nil {
 		return ""
 	}
-	start, end := isoDate(period.String("startDate")), isoDate(period.String("endDate"))
+	start := b.date(period.Path+".startDate", period.String("startDate"))
+	end := b.date(period.Path+".endDate", period.String("endDate"))
 	if start == "" && end == "" {
 		return ""
 	}
@@ -636,21 +638,30 @@ func firstNonEmpty(candidates ...string) string {
 // that is not one is dropped with a warning rather than failing the whole
 // credential: the person and their results are still useful without it.
 func (b *elmBuilder) date(path, value string) string {
-	date := isoDate(value)
-	if date != "" && !domain.ValidDate(date) {
-		b.warn(path, "%q is not an ISO 8601 date; skipped", value)
+	if value == "" {
 		return ""
+	}
+	date := isoDate(value)
+	if date == "" {
+		b.warn(path, "%q is not an ISO 8601 date; skipped", value)
 	}
 	return date
 }
 
-// isoDate trims an xsd:dateTime to its date part (2026-01-15T00:00:00+01:00
-// -> 2026-01-15); anything else is returned as is.
+// xsdDateLayouts are the forms of an xsd:date and xsd:dateTime. Go reads
+// fractional seconds after the seconds field whatever the layout.
+var xsdDateLayouts = []string{time.DateOnly, "2006-01-02Z07:00", "2006-01-02T15:04:05", time.RFC3339}
+
+// isoDate returns the calendar date of a whole xsd:date or xsd:dateTime
+// value (2026-01-15T00:00:00+01:00 -> 2026-01-15), or "" when value is
+// neither, so trailing text or an impossible time is never half accepted.
 func isoDate(value string) string {
-	if len(value) >= 10 && value[4] == '-' && value[7] == '-' {
-		return value[:10]
+	for _, layout := range xsdDateLayouts {
+		if _, err := time.Parse(layout, value); err == nil {
+			return value[:10]
+		}
 	}
-	return value
+	return ""
 }
 
 func lastSegment(uri string) string {

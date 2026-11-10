@@ -1,21 +1,25 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { type Person, searchPersons, UnauthorizedError } from "./api";
 import { PersonForm, emptyPerson } from "./PersonForm";
-import { go, href } from "./route";
+import { go, href, studentsParams } from "./route";
 
 // PAGE_SIZE is the page size requested. The server may clamp it to its
 // configured max_limit, so navigation uses the size it reports back.
 const PAGE_SIZE = 25;
 
 // Students is the start page: find a person by name, student number, email
-// or id, then open them. The query lives in the URL (#/students?q=…), so
-// Back from a student returns to the same results.
+// or id, then open them. The query and page offset live in the URL
+// (#/students?q=…&offset=…), so Back from a student returns to the same page
+// of the same results.
 export function Students({
   query,
+  startOffset,
   canWrite,
   onUnauthorized,
 }: {
   query: string;
+  // startOffset is the offset in the route: the page to show.
+  startOffset: number;
   canWrite: boolean;
   onUnauthorized: () => void;
 }) {
@@ -51,24 +55,25 @@ export function Students({
     }
   }
 
-  // A new query (typed here, or Back/Forward) starts at the first page.
+  // A new query or page (typed or paged here, or Back/Forward) loads the
+  // page the route names.
   useEffect(() => {
     setDraft(query);
-    void load(0);
+    void load(startOffset);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query]);
+  }, [query, startOffset]);
 
   function submit(e: FormEvent) {
     e.preventDefault();
     const q = draft.trim();
-    if (q === query) void load(0);
-    else go("students", q ? { q } : {});
+    if (q === query && startOffset === 0) void load(0);
+    else go("students", studentsParams(q, 0));
   }
 
   const first = total === 0 ? 0 : offset + 1;
   const last = offset + persons.length;
-  // The query rides along, so the student page's Back link returns here.
-  const personParams = (id: string): Record<string, string> => (query ? { id, q: query } : { id });
+  // The query and page ride along, so the student page's Back link returns here.
+  const personParams = (id: string): Record<string, string> => ({ id, ...studentsParams(query, offset) });
 
   return (
     <div className="stack">
@@ -152,13 +157,17 @@ export function Students({
         </div>
         {total > pageSize && (
           <div className="row pager">
-            <button className="ghost" disabled={offset === 0} onClick={() => load(Math.max(0, offset - pageSize))}>
+            <button
+              className="ghost"
+              disabled={offset === 0}
+              onClick={() => go("students", studentsParams(query, Math.max(0, offset - pageSize)))}
+            >
               Previous
             </button>
             <span className="muted">
               {first}–{last} of {total}
             </span>
-            <button className="ghost" disabled={last >= total} onClick={() => load(offset + pageSize)}>
+            <button className="ghost" disabled={last >= total} onClick={() => go("students", studentsParams(query, offset + pageSize))}>
               Next
             </button>
           </div>

@@ -4,7 +4,7 @@ import { catalog } from "./entities";
 import { Login } from "./Login";
 import { scopesOf } from "./oidc";
 import { Resource } from "./Resource";
-import { href, useRoute } from "./route";
+import { href, offsetOf, useRoute } from "./route";
 import { Student } from "./Student";
 import { Students } from "./Students";
 
@@ -30,18 +30,19 @@ export function App({ signInError }: { signInError: string }) {
   const def = catalog.find((r) => r.path === route.page);
   const inCatalog = def !== undefined;
   const q = route.params.get("q") ?? "";
+  const offset = offsetOf(route.params);
 
   let page;
   if (!authed) {
     page = <Login error={signInError} />;
   } else if (route.page === "person" && route.params.get("id")) {
     const id = route.params.get("id")!;
-    page = <Student key={id} id={id} backQuery={q} canWrite={canWrite} onUnauthorized={onUnauthorized} />;
+    page = <Student key={id} id={id} backQuery={q} backOffset={offset} canWrite={canWrite} onUnauthorized={onUnauthorized} />;
   } else if (def) {
     // key: a new page starts with fresh state (form, paging, loads).
     page = <Resource key={def.path} def={def} canWrite={canWrite} onUnauthorized={onUnauthorized} />;
   } else {
-    page = <Students query={q} canWrite={canWrite} onUnauthorized={onUnauthorized} />;
+    page = <Students query={q} startOffset={offset} canWrite={canWrite} onUnauthorized={onUnauthorized} />;
   }
 
   return (

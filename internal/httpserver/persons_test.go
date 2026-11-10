@@ -89,6 +89,9 @@ func TestPersonCentricAPI(t *testing.T) {
 
 		assert.Equal(t, http.StatusBadRequest, call(t, http.MethodGet, "/persons?q=a+b+c+d+e+f", reader, nil), "too many terms")
 		assert.Equal(t, http.StatusBadRequest, call(t, http.MethodGet, "/persons?q="+strings.Repeat("a", 201), reader, nil), "too long")
+		// 200 characters of 2 bytes each are within the documented limit.
+		assert.Equal(t, http.StatusOK, call(t, http.MethodGet, "/persons?q="+url.QueryEscape(strings.Repeat("ö", 200)), reader, nil), "200 multi-byte characters")
+		assert.Equal(t, http.StatusBadRequest, call(t, http.MethodGet, "/persons?q="+url.QueryEscape(strings.Repeat("ö", 201)), reader, nil), "201 multi-byte characters")
 	})
 
 	t.Run("records of a person", func(t *testing.T) {
