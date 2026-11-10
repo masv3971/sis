@@ -182,8 +182,15 @@ test("a saved offset past the end shows the last page", async ({ page, signIn, r
   await expect(page.getByText("Nobody matches.")).toHaveCount(0);
   expect(page.url()).not.toContain("offset");
 
+  // The router follows the corrected hash: searching again reloads the list.
+  await addPeople(20, 21);
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(page.getByRole("heading", { name: /People \(21\)/ })).toBeVisible();
+  await addPeople(21, 30);
+  await page.reload();
+  await expect(page.getByRole("heading", { name: /People \(30\)/ })).toBeVisible();
+
   // With several pages left, the last one is shown and the pager works.
-  await addPeople(20, 30);
   await page.goto("/#/students?offset=100");
   await expect(page.getByText("26–30 of 30")).toBeVisible();
   expect(page.url()).toContain("offset=25");

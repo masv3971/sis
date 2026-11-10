@@ -53,6 +53,13 @@ export function go(page: string, params: Record<string, string> = {}): void {
   location.hash = href(page, params);
 }
 
+// replaceRoute swaps the current route without a history entry. The browser
+// sends no hashchange for that, so useRoute is told here.
+export function replaceRoute(page: string, params: Record<string, string> = {}): void {
+  history.replaceState(null, "", href(page, params));
+  window.dispatchEvent(new HashChangeEvent("hashchange"));
+}
+
 export function useRoute(): Route {
   const [route, setRoute] = useState(() => parseRoute(location.hash));
   useEffect(() => {

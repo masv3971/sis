@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { type Person, searchPersons, UnauthorizedError } from "./api";
 import { PersonForm, emptyPerson } from "./PersonForm";
-import { go, href, studentsParams } from "./route";
+import { go, href, replaceRoute, studentsParams } from "./route";
 
 // PAGE_SIZE is the page size requested. The server may clamp it to its
 // configured max_limit, so navigation uses the size it reports back.
@@ -42,13 +42,12 @@ export function Students({
     try {
       const page = await searchPersons(query, PAGE_SIZE, at);
       if (gen !== loadGen.current) return;
-      // A saved offset can outlive deletions. Show the last page instead of
-      // an empty one, and rewrite the hash (no history entry) to match.
+      // A saved offset can outlive deletions. Point the route at the last
+      // page (no history entry); the route effect then loads it.
       if (page.persons.length === 0 && at > 0 && page.total > 0) {
         const size = page.limit > 0 ? page.limit : PAGE_SIZE;
-        const last = Math.floor((page.total - 1) / size) * size;
-        history.replaceState(null, "", href("students", studentsParams(query, last)));
-        return load(last);
+        replaceRoute("students", studentsParams(query, Math.floor((page.total - 1) / size) * size));
+        return;
       }
       setPersons(page.persons);
       setTotal(page.total);
