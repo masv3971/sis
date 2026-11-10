@@ -77,7 +77,7 @@ pki: ## Create the development CA and TLS certificates in developer_tools/pki (k
 
 start: pki ## Start services with docker-compose (rebuilds sis so code+SPA changes are picked up)
 	$(info Starting services)
-	docker compose -f docker-compose.yaml up -d --build --remove-orphans
+	docker compose -f docker-compose.yaml up -d --remove-orphans
 
 stop: ## Stop services
 	$(info Stopping VC)
