@@ -27,6 +27,7 @@ export const test = base.extend<{
   tokens: Tokens;
   // signIn stores a token the way a finished sign-in does, before the app loads.
   signIn: (role: keyof Tokens) => Promise<void>;
+  cleanCatalog: void;
 }>({
   tokens: async ({}, use) => {
     await use(await readTokens());
@@ -36,6 +37,21 @@ export const test = base.extend<{
       await page.addInitScript((token) => localStorage.setItem("sis_token", token), tokens[role]);
     });
   },
+  // One server and catalog serve every attempt, so a failed attempt's records must not reach its retry.
+  cleanCatalog: [
+    async ({ request, tokens }, use) => {
+      const headers = { Authorization: `Bearer ${tokens.writer}` };
+      const list = await request.get("/api/v1/persons?limit=500", { headers });
+      expect(list.status()).toBe(200);
+      const { persons } = (await list.json()) as { persons: { id: string }[] | null };
+      for (const p of persons ?? []) {
+        const res = await request.delete(`/api/v1/persons/${encodeURIComponent(p.id)}`, { headers });
+        expect(res.ok()).toBe(true);
+      }
+      await use();
+    },
+    { auto: true },
+  ],
 });
 
 export { expect };
