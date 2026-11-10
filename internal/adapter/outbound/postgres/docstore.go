@@ -279,6 +279,22 @@ func (r *DocRepo[T, PT]) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// DeleteByRef is Delete restricted to an entity whose reference field equals
+// value, in the same statement.
+func (r *DocRepo[T, PT]) DeleteByRef(ctx context.Context, id, field, value string) error {
+	if !refField.MatchString(field) {
+		return fmt.Errorf("postgres: invalid reference field %q", field)
+	}
+	tag, err := r.pool.Exec(ctx, `DELETE FROM entities WHERE type=$1 AND id=$2 AND data->>'`+field+`' = $3 AND `+liveFilter, r.typeName, id, value)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
 // DeleteExpired removes every entity of this type expired at now and returns
 // their ids.
 func (r *DocRepo[T, PT]) DeleteExpired(ctx context.Context, now time.Time) ([]string, error) {

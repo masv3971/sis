@@ -78,9 +78,10 @@ const cascadeBatch = 500
 
 // deleteByPerson deletes every entity of svc whose personId is personID. It
 // rereads the first page until it comes back empty, so records added or
-// removed meanwhile cannot make it skip one. A record deleted concurrently
-// (ErrNotFound) is already gone. A nil svc (a partial catalog in tests) has
-// nothing to delete.
+// removed meanwhile cannot make it skip one. A record deleted concurrently,
+// or moved to another person since it was listed (ErrNotFound), is not this
+// person's to delete. A nil svc (a partial catalog in tests) has nothing to
+// delete.
 func deleteByPerson[T any, PT domain.EntityPtr[T]](ctx context.Context, svc *service.Resource[T, PT], personID string) error {
 	if svc == nil {
 		return nil
@@ -93,10 +94,10 @@ func deleteByPerson[T any, PT domain.EntityPtr[T]](ctx context.Context, svc *ser
 		if len(page.Items) == 0 {
 			return nil
 		}
-		// Every listed record is now deleted or was already gone, so the
-		// next read makes progress.
+		// Every listed record is now deleted, gone, or no longer this
+		// person's, so the next read makes progress.
 		for _, e := range page.Items {
-			if err := svc.Delete(ctx, e.GetID()); err != nil && !errors.Is(err, domain.ErrNotFound) {
+			if err := svc.DeleteByRef(ctx, e.GetID(), "personId", personID); err != nil && !errors.Is(err, domain.ErrNotFound) {
 				return err
 			}
 		}

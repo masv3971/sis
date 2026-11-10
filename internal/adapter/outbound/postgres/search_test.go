@@ -22,3 +22,7 @@ func TestPersonSearch(t *testing.T) {
 func TestListByRefContract(t *testing.T) {
 	repotest.ListByRef(t, postgres.NewDocRepo[domain.Enrollment](newStore(t)), runPrefix())
 }
+
+func TestDeleteByRefContract(t *testing.T) {
+	repotest.DeleteByRef(t, postgres.NewDocRepo[domain.Enrollment](newStore(t)), runPrefix())
+}

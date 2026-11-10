@@ -374,6 +374,26 @@ func (r *DocRepo[T, PT]) Delete(_ context.Context, id string) error {
 	return nil
 }
 
+// DeleteByRef is Delete restricted to an entity whose reference field (a
+// JSON string property, as Postgres' data->>field) equals value.
+func (r *DocRepo[T, PT]) DeleteByRef(_ context.Context, id, field, value string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	stored, ok := r.live(id, r.now())
+	if !ok {
+		return domain.ErrNotFound
+	}
+	current, ok, err := refValue(stored.data, field)
+	if err != nil {
+		return err
+	}
+	if !ok || current != value {
+		return domain.ErrNotFound
+	}
+	r.remove(id)
+	return nil
+}
+
 // DeleteExpired removes every entity expired at now and returns their ids.
 func (r *DocRepo[T, PT]) DeleteExpired(_ context.Context, now time.Time) ([]string, error) {
 	r.mu.Lock()

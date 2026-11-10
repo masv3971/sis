@@ -39,6 +39,11 @@ type Repository[T any, PT domain.EntityPtr[T]] interface {
 	// chosen by the caller, never request input.
 	ListByRefs(ctx context.Context, field string, ids []string) ([]PT, error)
 	Delete(ctx context.Context, id string) error
+	// DeleteByRef is Delete, but only while the live entity's reference field
+	// still equals value, checked atomically with the delete. Otherwise it
+	// answers ErrNotFound. field is a constant chosen by the caller, never
+	// request input.
+	DeleteByRef(ctx context.Context, id, field, value string) error
 	// DeleteExpired removes every record expired at now and returns their
 	// ids, in no particular order.
 	DeleteExpired(ctx context.Context, now time.Time) ([]string, error)

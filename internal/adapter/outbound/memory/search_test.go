@@ -15,3 +15,7 @@ func TestPersonSearch(t *testing.T) {
 func TestListByRef(t *testing.T) {
 	repotest.ListByRef(t, memory.NewDocRepo[domain.Enrollment](), "")
 }
+
+func TestDeleteByRef(t *testing.T) {
+	repotest.DeleteByRef(t, memory.NewDocRepo[domain.Enrollment](), "")
+}

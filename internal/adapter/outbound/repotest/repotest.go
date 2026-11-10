@@ -127,3 +127,36 @@ func ListByRef(t *testing.T, repo port.Repository[domain.Enrollment, *domain.Enr
 	require.NoError(t, err)
 	assert.Zero(t, page.Total, "another field does not match")
 }
+
+// DeleteByRef checks port.Repository.DeleteByRef on enrollments. prefix keeps
+// the ids of runs against a shared database apart.
+func DeleteByRef(t *testing.T, repo port.Repository[domain.Enrollment, *domain.Enrollment], prefix string) {
+	ctx := t.Context()
+	now := time.Now().UTC()
+	p := prefix + "del-"
+	enrollment := &domain.Enrollment{
+		Base:     domain.Base{ID: p + "1", SourcedID: p + "s-1", CreatedAt: now, UpdatedAt: now},
+		PersonID: p + "anna", OfferingID: "o",
+	}
+	t.Cleanup(func() { _ = repo.Delete(context.Background(), enrollment.ID) })
+	require.NoError(t, repo.Create(ctx, enrollment))
+
+	assert.ErrorIs(t, repo.DeleteByRef(ctx, enrollment.ID, "personId", p+"johan"), domain.ErrNotFound, "another person's value")
+	assert.ErrorIs(t, repo.DeleteByRef(ctx, enrollment.ID, "offeringId", p+"anna"), domain.ErrNotFound, "another field")
+	assert.ErrorIs(t, repo.DeleteByRef(ctx, p+"none", "personId", p+"anna"), domain.ErrNotFound, "unknown id")
+	_, err := repo.Get(ctx, enrollment.ID)
+	require.NoError(t, err, "a refused delete leaves the record")
+
+	// The record moves to another person after it was listed.
+	moved := *enrollment
+	moved.PersonID = p + "johan"
+	require.NoError(t, repo.Update(ctx, &moved, nil))
+	assert.ErrorIs(t, repo.DeleteByRef(ctx, enrollment.ID, "personId", p+"anna"), domain.ErrNotFound, "moved to another person")
+	_, err = repo.Get(ctx, enrollment.ID)
+	require.NoError(t, err, "the moved record is untouched")
+
+	require.NoError(t, repo.DeleteByRef(ctx, enrollment.ID, "personId", p+"johan"))
+	_, err = repo.Get(ctx, enrollment.ID)
+	assert.ErrorIs(t, err, domain.ErrNotFound, "deleted")
+	assert.ErrorIs(t, repo.DeleteByRef(ctx, enrollment.ID, "personId", p+"johan"), domain.ErrNotFound, "already gone")
+}
