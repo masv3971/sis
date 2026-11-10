@@ -163,11 +163,13 @@ func (r *DocRepo[T, PT]) List(ctx context.Context, params port.ListParams) (port
 }
 
 // refField is the shape of a reference field name. ListByRef splices the
-// name into the SQL, so it is checked even though callers pass constants.
+// name into the SQL (so the expression index of migration 0008 applies), so
+// it is checked even though callers pass constants.
 var refField = regexp.MustCompile(`^[A-Za-z]+$`)
 
 // ListByRef is List restricted to the entities whose reference field equals
-// id.
+// id. data->>'personId' is indexed (migration 0008); other fields scan the
+// type's rows.
 func (r *DocRepo[T, PT]) ListByRef(ctx context.Context, field, id string, params port.ListParams) (port.Page[PT], error) {
 	if !refField.MatchString(field) {
 		return port.Page[PT]{}, fmt.Errorf("postgres: invalid reference field %q", field)
@@ -268,6 +270,22 @@ func (r *DocRepo[T, PT]) list(ctx context.Context, where string, args []any, par
 // Delete removes a live entity by id.
 func (r *DocRepo[T, PT]) Delete(ctx context.Context, id string) error {
 	tag, err := r.pool.Exec(ctx, `DELETE FROM entities WHERE type=$1 AND id=$2 AND `+liveFilter, r.typeName, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
+// DeleteByRef is Delete restricted to an entity whose reference field equals
+// value, in the same statement.
+func (r *DocRepo[T, PT]) DeleteByRef(ctx context.Context, id, field, value string) error {
+	if !refField.MatchString(field) {
+		return fmt.Errorf("postgres: invalid reference field %q", field)
+	}
+	tag, err := r.pool.Exec(ctx, `DELETE FROM entities WHERE type=$1 AND id=$2 AND data->>'`+field+`' = $3 AND `+liveFilter, r.typeName, id, value)
 	if err != nil {
 		return err
 	}

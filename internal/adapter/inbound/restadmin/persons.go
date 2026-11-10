@@ -6,7 +6,10 @@ package restadmin
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 
@@ -48,18 +51,20 @@ type PersonListReply struct {
 	Offset int `json:"offset"`
 }
 
-// ListPersons lists persons with limit/offset paging.
+// ListPersons lists persons with limit/offset paging, optionally narrowed
+// by a search (q).
 //
-//	@Summary		List persons
+//	@Summary		List or search persons
 //	@ID				list-persons
-//	@Description	Lists persons with limit/offset paging. Requires scope sis.read.
+//	@Description	Lists persons ordered by family name, given name, with limit/offset paging. With q, only persons matching every whitespace-separated term are listed: a term matches when it occurs, case-insensitively, in a name, the id, the sourcedId, or an identifier or email value (e.g. a student number). Requires scope sis.read.
 //	@Tags			persons
 //	@Produce		json
 //	@Security		BearerAuth
+//	@Param			q		query		string					false	"Search terms (at most 5, 200 characters in all)"					maxLength(200)
 //	@Param			limit	query		int						false	"Page size; defaults to default_limit and is clamped to max_limit"	minimum(1)
 //	@Param			offset	query		int						false	"Number of items to skip"											minimum(0)
 //	@Success		200		{object}	PersonListReply			"Success"
-//	@Failure		400		{object}	helpers.ErrorResponse	"Invalid paging parameters"
+//	@Failure		400		{object}	helpers.ErrorResponse	"Invalid paging parameters or search"
 //	@Failure		401		{object}	auth.ErrorResponse		"Missing, invalid or untrusted token"
 //	@Failure		403		{object}	auth.ErrorResponse		"Token lacks the required scope"
 //	@Failure		500		{object}	helpers.ErrorResponse	"Internal Server Error"
@@ -70,7 +75,12 @@ func (c *Client) ListPersons(gc *gin.Context) {
 		helpers.WriteError(gc, err)
 		return
 	}
-	page, err := c.catalog.Persons.ListPersons(gc.Request.Context(), params)
+	terms, err := searchTerms(gc.Query("q"))
+	if err != nil {
+		helpers.WriteError(gc, err)
+		return
+	}
+	page, err := c.catalog.Persons.SearchPersons(gc.Request.Context(), terms, params)
 	if err != nil {
 		helpers.WriteError(gc, err)
 		return
@@ -177,7 +187,7 @@ func (c *Client) UpdatePerson(gc *gin.Context) {
 //
 //	@Summary		Delete person
 //	@ID				delete-person
-//	@Description	Deletes one person by id. Requires scope sis.write.
+//	@Description	Deletes one person by id, together with their enrollments and results. Requires scope sis.write.
 //	@Tags			persons
 //	@Produce		json
 //	@Security		BearerAuth
@@ -194,6 +204,26 @@ func (c *Client) DeletePerson(gc *gin.Context) {
 		return
 	}
 	gc.Status(http.StatusNoContent)
+}
+
+// Search bounds: each term is a sequential scan condition, so a request
+// cannot ask for an arbitrary number of them.
+const (
+	maxSearchTerms = 5
+	maxSearchChars = 200
+)
+
+// searchTerms splits q into its whitespace-separated terms (none for an
+// empty q), rejecting a search beyond the bounds above.
+func searchTerms(q string) ([]string, error) {
+	if utf8.RuneCountInString(q) > maxSearchChars {
+		return nil, &domain.ValidationError{Field: "q", Msg: fmt.Sprintf("must be at most %d characters", maxSearchChars)}
+	}
+	terms := strings.Fields(q)
+	if len(terms) > maxSearchTerms {
+		return nil, &domain.ValidationError{Field: "q", Msg: fmt.Sprintf("must have at most %d terms", maxSearchTerms)}
+	}
+	return terms, nil
 }
 
 // listParams parses limit/offset query parameters. An omitted limit takes

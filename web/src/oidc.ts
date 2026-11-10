@@ -28,6 +28,9 @@ interface Pending {
   tokenEndpoint: string;
   clientId: string;
   redirectUri: string;
+  // hash is the route the user asked for, put back after the sign-in. It is
+  // kept here, not in the redirect URI, which must stay the bare origin.
+  hash: string;
 }
 
 export async function authConfig(): Promise<AuthConfig> {
@@ -79,6 +82,7 @@ export async function signIn(cfg: AuthConfig): Promise<void> {
     tokenEndpoint: d.token_endpoint,
     clientId: cfg.client_id,
     redirectUri: redirectUri(),
+    hash: location.hash,
   };
   sessionStorage.setItem(PENDING_KEY, JSON.stringify(pending));
   // The endpoint may already carry a query (e.g. ?tenant=sis); merge into it.
@@ -117,6 +121,7 @@ export async function completeSignIn(): Promise<string | null> {
   // The state binds the response to the sign-in this tab started, so a
   // crafted link cannot sign the user in as someone else.
   if (!state || state !== pending.state) throw new Error("Sign-in failed: state mismatch. Try again.");
+  restoreHash(pending.hash);
 
   let data: { access_token?: unknown };
   try {
@@ -146,6 +151,15 @@ export async function completeSignIn(): Promise<string | null> {
     throw new Error("Sign-in failed: no access token in the response.");
   }
   return data.access_token;
+}
+
+// restoreHash puts the route the user asked for back in the address bar. It
+// only accepts an in-app route (#/..., or #%2F... as some link rewriters send
+// it, which parseRoute decodes), never anything else stored in sessionStorage.
+function restoreHash(hash: unknown): void {
+  if (typeof hash === "string" && /^#(?:\/|%2f)?[A-Za-z]/i.test(hash)) {
+    history.replaceState(null, "", location.pathname + hash);
+  }
 }
 
 // scopesOf reads the scope claim of a JWT access token, for showing what the

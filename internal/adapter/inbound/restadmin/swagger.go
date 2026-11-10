@@ -54,6 +54,42 @@ package restadmin
 //	@tag.name					convert
 //	@tag.description			Convert external formats (ELM) to Edu-API/OEAPI, and load them
 
+// -- a person's records -------------------------------------------------------
+
+//	@Summary		List a person's enrollments
+//	@ID				list-person-enrollments
+//	@Description	Lists the enrollments of one person (their personId is the path id), with limit/offset paging.
+//	@Tags			persons
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			id		path		string									true	"Person id"
+//	@Param			limit	query		int										false	"Page size; defaults to default_limit and is clamped to max_limit"	minimum(1)
+//	@Param			offset	query		int										false	"Number of items to skip"											minimum(0)
+//	@Success		200		{object}	restadmin.ListReply[domain.Enrollment]	"Success"
+//	@Failure		400		{object}	helpers.ErrorResponse					"Invalid paging parameters"
+//	@Failure		401		{object}	auth.ErrorResponse						"Missing, invalid or untrusted token"
+//	@Failure		403		{object}	auth.ErrorResponse						"Token lacks the required scope"
+//	@Failure		404		{object}	helpers.ErrorResponse					"No such person"
+//	@Failure		500		{object}	helpers.ErrorResponse					"Internal Server Error"
+//	@Router			/persons/{id}/enrollments [get]
+
+//	@Summary		List a person's results
+//	@ID				list-person-results
+//	@Description	Lists the results of one person (their personId is the path id), with limit/offset paging.
+//	@Tags			persons
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			id		path		string								true	"Person id"
+//	@Param			limit	query		int									false	"Page size; defaults to default_limit and is clamped to max_limit"	minimum(1)
+//	@Param			offset	query		int									false	"Number of items to skip"											minimum(0)
+//	@Success		200		{object}	restadmin.ListReply[domain.Result]	"Success"
+//	@Failure		400		{object}	helpers.ErrorResponse				"Invalid paging parameters"
+//	@Failure		401		{object}	auth.ErrorResponse					"Missing, invalid or untrusted token"
+//	@Failure		403		{object}	auth.ErrorResponse					"Token lacks the required scope"
+//	@Failure		404		{object}	helpers.ErrorResponse				"No such person"
+//	@Failure		500		{object}	helpers.ErrorResponse				"Internal Server Error"
+//	@Router			/persons/{id}/results [get]
+
 // -- organizations ------------------------------------------------------------
 
 //	@Summary		List organizations

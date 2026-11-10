@@ -3419,7 +3419,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Converts data from metadata.input_format (elm: an ELM v3 / European Digital Credential JSON-LD document, plain, in EDCI's {\"credential\": ...} upload wrapper, or sealed as {\"payload\": ..., \"signatures\": ...}; the seal is not verified) to metadata.output_format (eduapi or oeapi) and returns it. Nothing is stored. Records keep the document's ids as sourcedIds; references between them are sourcedIds. Requires scope sis.read.",
+                "description": "Converts data from metadata.input_format (elm_v3: an ELM v3 / European Digital Credential JSON-LD document, plain, in EDCI's {\"credential\": ...} upload wrapper, or sealed as {\"payload\": ..., \"signatures\": ...}; the seal is not verified) to metadata.output_format (eduapi or oeapi) and returns it. Nothing is stored. Records keep the document's ids as sourcedIds; references between them are sourcedIds. Requires scope sis.read.",
                 "consumes": [
                     "application/json"
                 ],
@@ -3489,16 +3489,23 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Lists persons with limit/offset paging. Requires scope sis.read.",
+                "description": "Lists persons ordered by family name, given name, with limit/offset paging. With q, only persons matching every whitespace-separated term are listed: a term matches when it occurs, case-insensitively, in a name, the id, the sourcedId, or an identifier or email value (e.g. a student number). Requires scope sis.read.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "persons"
                 ],
-                "summary": "List persons",
+                "summary": "List or search persons",
                 "operationId": "list-persons",
                 "parameters": [
+                    {
+                        "maxLength": 200,
+                        "type": "string",
+                        "description": "Search terms (at most 5, 200 characters in all)",
+                        "name": "q",
+                        "in": "query"
+                    },
                     {
                         "minimum": 1,
                         "type": "integer",
@@ -3522,7 +3529,7 @@
                         }
                     },
                     "400": {
-                        "description": "Invalid paging parameters",
+                        "description": "Invalid paging parameters or search",
                         "schema": {
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
@@ -3773,7 +3780,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Deletes one person by id. Requires scope sis.write.",
+                "description": "Deletes one person by id, together with their enrollments and results. Requires scope sis.write.",
                 "produces": [
                     "application/json"
                 ],
@@ -3822,6 +3829,164 @@
                 }
             }
         },
+        "/persons/{id}/enrollments": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Lists the enrollments of one person (their personId is the path id), with limit/offset paging.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "persons"
+                ],
+                "summary": "List a person's enrollments",
+                "operationId": "list-person-enrollments",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Person id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Page size; defaults to default_limit and is clamped to max_limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "description": "Number of items to skip",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "$ref": "#/definitions/restadmin.ListReply-domain_Enrollment"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid paging parameters",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No such person",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/persons/{id}/results": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Lists the results of one person (their personId is the path id), with limit/offset paging.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "persons"
+                ],
+                "summary": "List a person's results",
+                "operationId": "list-person-results",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Person id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Page size; defaults to default_limit and is clamped to max_limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "description": "Number of items to skip",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "$ref": "#/definitions/restadmin.ListReply-domain_Result"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid paging parameters",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No such person",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/populate": {
             "post": {
                 "security": [
@@ -3829,7 +3994,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Converts data from metadata.input_format (elm, plain or in an EDCI envelope as for parse) and upserts every record by sourcedId, so the Edu-API and /oeapi (and /api/v1) serve them. With ttl the records stop being served after that duration and are then deleted; re-populating refreshes the expiry, but a record that already existed without expiry keeps none. References in the document must resolve within it or to stored records. The document is checked completely before anything is stored; a storage failure part-way leaves earlier records stored, and retrying the same request converges. Requires scope sis.write.",
+                "description": "Converts data from metadata.input_format (elm_v3, plain or in an EDCI envelope as for parse) and upserts every record by sourcedId, so the Edu-API and /oeapi (and /api/v1) serve them. With ttl the records stop being served after that duration and are then deleted; re-populating refreshes the expiry, but a record that already existed without expiry keeps none. References in the document must resolve within it or to stored records. The document is checked completely before anything is stored; a storage failure part-way leaves earlier records stored, and retrying the same request converges. Requires scope sis.write.",
                 "consumes": [
                     "application/json"
                 ],
@@ -4601,9 +4766,9 @@
             ],
             "properties": {
                 "input_format": {
-                    "description": "InputFormat is the format of data. Supported: elm.",
+                    "description": "InputFormat is the format of data. Supported: elm_v3.",
                     "type": "string",
-                    "example": "elm"
+                    "example": "elm_v3"
                 },
                 "output_format": {
                     "description": "OutputFormat is the format to return (parse only). Supported: eduapi, oeapi.",
@@ -5119,7 +5284,10 @@
                     "type": "string"
                 },
                 "dateOfBirth": {
-                    "type": "string"
+                    "description": "DateOfBirth is an ISO 8601 calendar date (YYYY-MM-DD), or empty.",
+                    "type": "string",
+                    "format": "date",
+                    "example": "2001-03-14"
                 },
                 "emails": {
                     "type": "array",
@@ -5245,8 +5413,10 @@
                     "type": "string"
                 },
                 "resultDate": {
-                    "description": "ResultDate is the ISO 8601 date the result was awarded.",
-                    "type": "string"
+                    "description": "ResultDate is the ISO 8601 calendar date (YYYY-MM-DD) the result was\nawarded, or empty.",
+                    "type": "string",
+                    "format": "date",
+                    "example": "2026-06-05"
                 },
                 "sourcedId": {
                     "type": "string"

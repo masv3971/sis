@@ -165,6 +165,15 @@ func (s *Service) ListPersons(ctx context.Context, params port.ListParams) (port
 	return s.persons.List(ctx, params)
 }
 
+// SearchPersons returns a page of the persons matching every term (see
+// port.PersonRepository.Search); no terms is ListPersons.
+func (s *Service) SearchPersons(ctx context.Context, terms []string, params port.ListParams) (port.Page[domain.Person], error) {
+	if len(terms) == 0 {
+		return s.persons.List(ctx, params)
+	}
+	return s.persons.Search(ctx, terms, params)
+}
+
 // ListPersonsByRoles returns a page of the persons holding at least one of
 // roles.
 func (s *Service) ListPersonsByRoles(ctx context.Context, roles []domain.Role, params port.ListParams) (port.Page[domain.Person], error) {

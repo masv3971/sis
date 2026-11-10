@@ -30,6 +30,7 @@ func (e *ValidationError) Error() string {
 const (
 	MsgRequired          = "required"
 	MsgRequiredForUpsert = "required for upsert"
+	MsgISODate           = "must be an ISO 8601 date (YYYY-MM-DD)"
 )
 
 // Required reports a missing mandatory field.

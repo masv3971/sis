@@ -203,6 +203,16 @@ func (s *Resource[T, PT]) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// DeleteByRef is Delete, but only while the entity's reference field (a
+// constant such as "personId") still equals value; otherwise ErrNotFound.
+func (s *Resource[T, PT]) DeleteByRef(ctx context.Context, id, field, value string) error {
+	if err := s.repo.DeleteByRef(ctx, id, field, value); err != nil {
+		return err
+	}
+	s.emit(ctx, s.typeName+".deleted", id, nil)
+	return nil
+}
+
 // DeleteExpired removes every record expired now, emits <type>.expired for
 // each, and returns their ids.
 func (s *Resource[T, PT]) DeleteExpired(ctx context.Context) ([]string, error) {

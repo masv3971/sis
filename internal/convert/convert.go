@@ -21,7 +21,7 @@ import (
 
 // Format names, as used in the request metadata.
 const (
-	FormatELM    = "elm"
+	FormatELMv3  = "elm_v3"
 	FormatEduAPI = "eduapi"
 	FormatOEAPI  = "oeapi"
 )
@@ -52,7 +52,7 @@ type Client struct {
 func New(_ context.Context, cfg *model.Cfg, log *logger.Log) (*Client, error) {
 	edu := edudto.NewMapper(cfg.SIS.Adapter.Inbound.EduAPI.RecordLanguage)
 	return &Client{
-		parsers: map[string]parser{FormatELM: parseELM},
+		parsers: map[string]parser{FormatELMv3: parseELM},
 		renderers: map[string]renderer{
 			FormatEduAPI: func(b *domain.Bundle) any { return edu.Bundle(b) },
 			FormatOEAPI:  func(b *domain.Bundle) any { return oedto.FromBundle(b) },

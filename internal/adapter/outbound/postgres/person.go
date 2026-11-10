@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -160,6 +161,36 @@ func (r *PersonRepository) GetBySourcedID(ctx context.Context, sourcedID string)
 // NULL person columns that carries only the total.
 func (r *PersonRepository) List(ctx context.Context, params port.ListParams) (port.Page[domain.Person], error) {
 	return r.list(ctx, liveFilter, nil, params)
+}
+
+// Search is List restricted to the persons matching every term (see
+// port.PersonRepository.Search). Each term is one ILIKE pattern, so its
+// LIKE wildcards are escaped and match literally. It scans the live
+// persons; add a pg_trgm index if the table outgrows that.
+func (r *PersonRepository) Search(ctx context.Context, terms []string, params port.ListParams) (port.Page[domain.Person], error) {
+	where := liveFilter
+	args := make([]any, 0, len(terms))
+	for _, term := range terms {
+		args = append(args, "%"+escapeLike(term)+"%")
+		where += " AND " + fmt.Sprintf(personMatch, len(args))
+	}
+	return r.list(ctx, where, args, params)
+}
+
+// personMatch is the condition for one search term, the pattern in
+// parameter $%[1]d. roles/identifiers/emails may hold JSON null (a nil
+// slice), which jsonb_array_elements rejects, hence the CASE.
+const personMatch = `(given_name ILIKE $%[1]d OR middle_name ILIKE $%[1]d OR family_name ILIKE $%[1]d
+	OR id ILIKE $%[1]d OR sourced_id ILIKE $%[1]d
+	OR EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(identifiers) = 'array' THEN identifiers ELSE '[]' END) x
+		WHERE x->>'value' ILIKE $%[1]d)
+	OR EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(emails) = 'array' THEN emails ELSE '[]' END) x
+		WHERE x->>'value' ILIKE $%[1]d))`
+
+// escapeLike makes s match literally inside a LIKE pattern (backslash is
+// the default escape character).
+func escapeLike(s string) string {
+	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
 }
 
 // ListByRoles is List restricted to the persons holding one of roles.

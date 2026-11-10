@@ -76,6 +76,13 @@ The built SPA is served from the directory in `sis.httpserver.web.root`
 (`/web` inside the Docker image). It answers every GET that is not an
 API path, so deep links work. Leave `web.root` empty to serve the APIs only.
 
+It is person-centric: it opens on a student search (name, student number,
+email or id). A student's page shows the full profile, and their enrollments
+and results, which are added, edited and deleted there. The catalog the
+students refer to (organizations, academic sessions, courses, programs,
+offerings) has a page per type. A token without `sis.write` gets a read-only
+UI.
+
 For frontend development, run the Vite dev server instead. It serves on
 <http://localhost:5173> and proxies the API paths to `https://localhost:8080`,
 trusting the development CA (`NODE_EXTRA_CA_CERTS` in `web/package.json`):
@@ -253,6 +260,17 @@ curl -s --cacert developer_tools/pki/rootCA.crt -H "Authorization: Bearer $TOKEN
 Resources are addressed by canonical `id`. References between them
 (`orgId`, `courseId`, …) must be canonical ids too.
 
+Persons are the centre of the model; a few extra routes serve that:
+
+| Method | Path | Scope | Purpose |
+| ------ | ---- | ----- | ------- |
+| GET | `/api/v1/persons?q=anna+liu` | read | Search: every term must occur (case-insensitive) in a name, the id, the sourcedId, or an identifier or email value. At most 5 terms / 200 characters |
+| GET | `/api/v1/persons/:id/enrollments` | read | That person's enrollments (paged; 404 for an unknown person) |
+| GET | `/api/v1/persons/:id/results` | read | That person's results |
+| DELETE | `/api/v1/persons/:id` | write | Deletes the person **and their enrollments and results** |
+
+The AMQP `person.delete` command cascades the same way.
+
 ### ELM import
 
 | Method | Path | Scope | Purpose |
@@ -263,13 +281,13 @@ Resources are addressed by canonical `id`. References between them
 ```bash
 # Parse to Edu-API (output_format: eduapi | oeapi)
 jq -n --slurpfile d internal/convert/testdata/edc_bsc.json \
-  '{metadata: {input_format: "elm", output_format: "eduapi"}, data: $d[0]}' \
+  '{metadata: {input_format: "elm_v3", output_format: "eduapi"}, data: $d[0]}' \
 | curl -s --cacert developer_tools/pki/rootCA.crt -X POST https://localhost:8080/api/v1/parse \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" --data-binary @- | jq
 
 # Populate with a 1-hour TTL (omit ttl to keep the records permanently)
 jq -n --slurpfile d internal/convert/testdata/edc_bsc.json \
-  '{metadata: {input_format: "elm"}, ttl: "1h", data: $d[0]}' \
+  '{metadata: {input_format: "elm_v3"}, ttl: "1h", data: $d[0]}' \
 | curl -s --cacert developer_tools/pki/rootCA.crt -X POST https://localhost:8080/api/v1/populate \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" --data-binary @- | jq
 ```

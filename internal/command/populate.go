@@ -13,8 +13,8 @@ import (
 
 // Metadata describes a document's format.
 type Metadata struct {
-	// InputFormat is the format of data. Supported: elm.
-	InputFormat string `json:"input_format" binding:"required" example:"elm"`
+	// InputFormat is the format of data. Supported: elm_v3.
+	InputFormat string `json:"input_format" binding:"required" example:"elm_v3"`
 	// OutputFormat is the format to return (parse only). Supported: eduapi, oeapi.
 	OutputFormat string `json:"output_format,omitempty" example:"eduapi"`
 }

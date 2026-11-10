@@ -60,9 +60,10 @@ type Person struct {
 	Identifiers []Identifier `json:"identifiers,omitempty"`
 	Emails      []Contact    `json:"emails,omitempty"`
 	Phones      []Contact    `json:"phones,omitempty"`
-	DateOfBirth string       `json:"dateOfBirth,omitempty"`
-	CreatedAt   time.Time    `json:"createdAt"`
-	UpdatedAt   time.Time    `json:"updatedAt"`
+	// DateOfBirth is an ISO 8601 calendar date (YYYY-MM-DD), or empty.
+	DateOfBirth string    `json:"dateOfBirth,omitempty" format:"date" example:"2001-03-14"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
 	// ExpiresAt: see Base.ExpiresAt.
 	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
 }
@@ -81,5 +82,15 @@ func (p Person) Validate() error {
 	if !p.Status.Valid() {
 		return &ValidationError{Field: "status", Msg: statusMsg}
 	}
+	if p.DateOfBirth != "" && !ValidDate(p.DateOfBirth) {
+		return &ValidationError{Field: "dateOfBirth", Msg: MsgISODate}
+	}
 	return nil
+}
+
+// ValidDate reports whether s is an ISO 8601 calendar date in the extended
+// format, YYYY-MM-DD, that exists (2001-02-29 does not).
+func ValidDate(s string) bool {
+	_, err := time.Parse(time.DateOnly, s)
+	return err == nil
 }

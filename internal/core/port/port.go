@@ -128,6 +128,11 @@ type PersonRepository interface {
 	// GetBySourcedIDs is GetByIDs by sourcedId.
 	GetBySourcedIDs(ctx context.Context, sourcedIDs []string) ([]domain.Person, error)
 	List(ctx context.Context, params ListParams) (Page[domain.Person], error)
+	// Search is List restricted to the persons matching every term: a term
+	// matches when it occurs, case-insensitively, in the given, middle or
+	// family name, the id, the sourcedId, or the value of any identifier or
+	// email. terms must not be empty.
+	Search(ctx context.Context, terms []string, params ListParams) (Page[domain.Person], error)
 	// ListByRoles is List restricted to the persons holding at least one of
 	// roles. The order is List's.
 	ListByRoles(ctx context.Context, roles []domain.Role, params ListParams) (Page[domain.Person], error)
