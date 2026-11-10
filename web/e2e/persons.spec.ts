@@ -64,6 +64,15 @@ test("a reader sees the data but cannot write", async ({ page, signIn, request, 
   expect(rejected.status()).toBe(403);
 });
 
+test("a search keeps + and & from the link", async ({ page, signIn }) => {
+  await signIn("reader");
+  await page.goto("/#/students?q=anna%2Bstudent%40liu.se%20R%26D");
+  await expect(page.getByRole("searchbox", { name: "Search people" })).toHaveValue("anna+student@liu.se R&D");
+  // A link rewriter may encode the route delimiter itself.
+  await page.goto("/#%2Fstudents%3Fq%3Dgrace");
+  await expect(page.getByRole("searchbox", { name: "Search people" })).toHaveValue("grace");
+});
+
 test("log out drops the token and returns to sign-in", async ({ page, signIn }) => {
   await signIn("writer");
   await page.goto("/");

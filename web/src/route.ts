@@ -10,11 +10,15 @@ export interface Route {
 }
 
 export function parseRoute(hash: string): Route {
-  // Decode first: some link rewriters (port forwarders) send #%2Fcourses.
-  try {
-    hash = decodeURIComponent(hash);
-  } catch {
-    // malformed escape: parse it as is
+  // Some link rewriters (port forwarders) send #%2Fcourses. Decode the whole
+  // fragment only then: otherwise it would turn %2B and %26 in a value into
+  // + and &, which URLSearchParams reads as a space and a separator.
+  if (/^#%2f/i.test(hash)) {
+    try {
+      hash = decodeURIComponent(hash);
+    } catch {
+      // malformed escape: parse it as is
+    }
   }
   const raw = hash.replace(/^#\/?/, "");
   const i = raw.indexOf("?");
