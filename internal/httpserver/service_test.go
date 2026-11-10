@@ -32,9 +32,11 @@ import (
 )
 
 func testCfg(addr string) *model.Cfg {
-	return &model.Cfg{SIS: model.SIS{
+	cfg := &model.Cfg{SIS: model.SIS{
 		HTTPServer: model.HTTPServer{Addr: addr, ReadTimeout: time.Second, WriteTimeout: time.Second},
 	}}
+	cfg.SIS.Adapter.Inbound.EduAPI.RecordLanguage = "en"
+	return cfg
 }
 
 func newTestServer(t *testing.T, addr string) (*Service, error) {
@@ -185,6 +187,7 @@ func TestScopesGateAPIs(t *testing.T) {
 	base := "http://" + srv.Addr().String()
 
 	read, write, both := iss.Token(t, "sunet-vc", "sis.read"), iss.Token(t, "w", "sis.write"), iss.Token(t, "liu", "sis.read sis.write")
+	specRead := iss.Token(t, "client", "http://purl.1edtech.org/spec/eduapi/v1p0/scope/core.readonly")
 	status := func(token, method, path, body string) int {
 		req, _ := http.NewRequestWithContext(t.Context(), method, base+path, strings.NewReader(body))
 		req.Header.Set("Authorization", "Bearer "+token)
@@ -202,17 +205,67 @@ func TestScopesGateAPIs(t *testing.T) {
 		{"read cannot create", read, http.MethodPost, "/api/v1/persons", person, http.StatusForbidden},
 		{"write creates", write, http.MethodPost, "/api/v1/persons", person, http.StatusCreated},
 		{"write cannot list", write, http.MethodGet, "/api/v1/persons", "", http.StatusForbidden},
-		{"write cannot use eduapi", write, http.MethodGet, "/eduapi/persons", "", http.StatusForbidden},
+		{"write cannot use eduapi", write, http.MethodGet, eduBase + "/persons", "", http.StatusForbidden},
 		{"read lists", read, http.MethodGet, "/api/v1/persons", "", http.StatusOK},
-		{"read eduapi", read, http.MethodGet, "/eduapi/persons/p1", "", http.StatusOK},
+		{"read eduapi", read, http.MethodGet, eduBase + "/persons/p1", "", http.StatusOK},
+		{"spec scope reads eduapi", specRead, http.MethodGet, eduBase + "/persons/p1", "", http.StatusOK},
+		{"spec scope is only for eduapi", specRead, http.MethodGet, "/oeapi/persons/p1", "", http.StatusForbidden},
 		{"read oeapi", read, http.MethodGet, "/oeapi/persons/p1", "", http.StatusOK},
 		{"both lists", both, http.MethodGet, "/api/v1/persons", "", http.StatusOK},
-		{"no token", "", http.MethodGet, "/eduapi/persons", "", http.StatusUnauthorized},
+		{"no token", "", http.MethodGet, eduBase + "/persons", "", http.StatusUnauthorized},
 		{"untrusted issuer", authtest.NewIssuer(t).Token(t, "x", "sis.read sis.write"), http.MethodGet, "/api/v1/persons", "", http.StatusUnauthorized},
 	}
 	for _, tc := range cases {
 		assert.Equal(t, tc.want, status(tc.token, tc.method, tc.path, tc.body), "%s: %s %s", tc.name, tc.method, tc.path)
 	}
+}
+
+// TestEduAPIAuthErrorsUseImsxBody checks that a rejected token or scope on
+// the Edu-API answers with the spec's Imsx_StatusInfo and keeps the status and
+// WWW-Authenticate header, while the other APIs keep their own error body.
+func TestEduAPIAuthErrorsUseImsxBody(t *testing.T) {
+	log := logger.NewWithWriter("test", false, "error", io.Discard)
+	catalog := &readmodel.Client{Persons: service.New(memory.NewPersonRepository(), nil, nil, log)}
+	cfg := testCfg("127.0.0.1:0")
+	cfg.SIS.Adapter.Inbound.EduAPI.DefaultLimit, cfg.SIS.Adapter.Inbound.EduAPI.MaxLimit = 10, 10
+	cfg.SIS.Adapter.Inbound.OEAPI.DefaultPageSize, cfg.SIS.Adapter.Inbound.OEAPI.MaxPageSize = 10, 10
+	srv, iss := startWithIssuer(t, cfg, catalog)
+	base := "http://" + srv.Addr().String()
+
+	get := func(path, token string) (int, string, map[string]any) {
+		req, _ := http.NewRequestWithContext(t.Context(), http.MethodGet, base+path, nil)
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err, path)
+		defer resp.Body.Close()
+		var body map[string]any
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&body), path)
+		return resp.StatusCode, resp.Header.Get("WWW-Authenticate"), body
+	}
+
+	for name, tc := range map[string]struct {
+		token     string
+		status    int
+		challenge string
+	}{
+		"no token":      {"", http.StatusUnauthorized, "Bearer"},
+		"invalid token": {"x.y.z", http.StatusUnauthorized, `Bearer error="invalid_token"`},
+		"insufficient":  {iss.Token(t, "w", "sis.write"), http.StatusForbidden, `Bearer error="insufficient_scope", scope="sis.read"`},
+	} {
+		status, challenge, body := get(eduBase+"/persons", tc.token)
+		assert.Equal(t, tc.status, status, name)
+		assert.Equal(t, tc.challenge, challenge, "%s: WWW-Authenticate", name)
+		assert.Equal(t, "failure", body["imsx_codeMajor"], "%s: Imsx_StatusInfo body, got %v", name, body)
+		assert.Equal(t, "error", body["imsx_severity"], name)
+		assert.NotContains(t, body, "error", "%s: not the native error body", name)
+	}
+
+	// Other APIs are unchanged.
+	_, _, body := get("/oeapi/persons", "")
+	assert.Equal(t, "unauthorized", body["error"], "oeapi keeps its own error body")
+	assert.NotContains(t, body, "imsx_codeMajor")
 }
 
 // TestSwaggerServesSpecOnlyWhenEnabled checks the generated /api/v1 document
@@ -296,7 +349,7 @@ func TestIDsWithSlashesRoundTrip(t *testing.T) {
 		require.Equal(t, id, got["id"], "PUT = %v", got)
 		require.Equal(t, "C", got["givenName"], "PUT = %v", got)
 		do(t, http.MethodGet, "/oeapi/persons/"+esc(sid), "", http.StatusOK)
-		do(t, http.MethodGet, "/eduapi/persons/"+esc(sid), "", http.StatusOK)
+		do(t, http.MethodGet, eduBase+"/persons/"+esc(sid), "", http.StatusOK)
 		do(t, http.MethodDelete, "/api/v1/persons/"+esc(id), "", http.StatusNoContent)
 		do(t, http.MethodGet, "/api/v1/persons/"+esc(id), "", http.StatusNotFound)
 	})
@@ -310,7 +363,7 @@ func TestIDsWithSlashesRoundTrip(t *testing.T) {
 		require.Equal(t, id, got["id"], "PUT = %v", got)
 		require.Equal(t, "V", got["name"], "PUT = %v", got)
 		do(t, http.MethodGet, "/oeapi/organizations/"+esc(sid), "", http.StatusOK)
-		do(t, http.MethodGet, "/eduapi/orgs/"+esc(sid), "", http.StatusOK)
+		do(t, http.MethodGet, eduBase+"/organizations/"+esc(sid), "", http.StatusOK)
 		do(t, http.MethodDelete, "/api/v1/organizations/"+esc(id), "", http.StatusNoContent)
 		do(t, http.MethodGet, "/api/v1/organizations/"+esc(id), "", http.StatusNotFound)
 	})

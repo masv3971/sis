@@ -352,6 +352,1366 @@
                 }
             }
         },
+        "/affiliations": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Lists affiliations with limit/offset paging.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "affiliations"
+                ],
+                "summary": "List affiliations",
+                "operationId": "list-affiliations",
+                "parameters": [
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Page size; defaults to default_limit and is clamped to max_limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "description": "Number of items to skip",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "$ref": "#/definitions/restadmin.ListReply-domain_Affiliation"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid paging parameters",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates a affiliation. personId and orgId are required; role is one of student, staff, faculty, guest. personId and orgId must be the ids (not sourcedIds) of an existing person and organization. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "affiliations"
+                ],
+                "summary": "Create affiliation",
+                "operationId": "create-affiliations",
+                "parameters": [
+                    {
+                        "description": "Affiliation to create",
+                        "name": "affiliation",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/domain.Affiliation"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/domain.Affiliation"
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed body or validation error",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "id or sourcedId already in use",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "Request body too large",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/affiliations/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns one affiliation by id.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "affiliations"
+                ],
+                "summary": "Get affiliation",
+                "operationId": "get-affiliations",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Affiliation id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "$ref": "#/definitions/domain.Affiliation"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Replaces a affiliation. References must be the ids of existing records. The path id wins over any id in the body; createdAt is preserved and an empty sourcedId keeps the stored one.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "affiliations"
+                ],
+                "summary": "Replace affiliation",
+                "operationId": "update-affiliations",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Affiliation id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Replacement affiliation",
+                        "name": "affiliation",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/domain.Affiliation"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "$ref": "#/definitions/domain.Affiliation"
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed body or validation error",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "sourcedId already in use",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "Request body too large",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Deletes one affiliation by id.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "affiliations"
+                ],
+                "summary": "Delete affiliation",
+                "operationId": "delete-affiliations",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Affiliation id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/collection-offerings": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Lists collection offerings with limit/offset paging.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "collection-offerings"
+                ],
+                "summary": "List collection offerings",
+                "operationId": "list-collection-offerings",
+                "parameters": [
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Page size; defaults to default_limit and is clamped to max_limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "description": "Number of items to skip",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "$ref": "#/definitions/restadmin.ListReply-domain_CollectionOffering"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid paging parameters",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates a collection offering. programId is required; academicSessionId and orgId are optional. All must be the ids (not sourcedIds) of existing records. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "collection-offerings"
+                ],
+                "summary": "Create collection offering",
+                "operationId": "create-collection-offerings",
+                "parameters": [
+                    {
+                        "description": "Collection offering to create",
+                        "name": "collectionOffering",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/domain.CollectionOffering"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/domain.CollectionOffering"
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed body or validation error",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "id or sourcedId already in use",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "Request body too large",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/collection-offerings/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns one collection offering by id.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "collection-offerings"
+                ],
+                "summary": "Get collection offering",
+                "operationId": "get-collection-offerings",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Collection offering id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "$ref": "#/definitions/domain.CollectionOffering"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Replaces a collection offering. References must be the ids of existing records. The path id wins over any id in the body; createdAt is preserved and an empty sourcedId keeps the stored one.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "collection-offerings"
+                ],
+                "summary": "Replace collection offering",
+                "operationId": "update-collection-offerings",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Collection offering id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Replacement collection offering",
+                        "name": "collectionOffering",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/domain.CollectionOffering"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "$ref": "#/definitions/domain.CollectionOffering"
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed body or validation error",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "sourcedId already in use",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "Request body too large",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Deletes one collection offering by id.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "collection-offerings"
+                ],
+                "summary": "Delete collection offering",
+                "operationId": "delete-collection-offerings",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Collection offering id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/component-offerings": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Lists component offerings with limit/offset paging.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "component-offerings"
+                ],
+                "summary": "List component offerings",
+                "operationId": "list-component-offerings",
+                "parameters": [
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Page size; defaults to default_limit and is clamped to max_limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "description": "Number of items to skip",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "$ref": "#/definitions/restadmin.ListReply-domain_ComponentOffering"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid paging parameters",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates a component offering. componentId is required and must be the id (not sourcedId) of an existing component template; academicSessionId, orgId and each of courseOfferingIds are optional and must be ids of existing records. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "component-offerings"
+                ],
+                "summary": "Create component offering",
+                "operationId": "create-component-offerings",
+                "parameters": [
+                    {
+                        "description": "Component offering to create",
+                        "name": "componentOffering",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/domain.ComponentOffering"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/domain.ComponentOffering"
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed body or validation error",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "id or sourcedId already in use",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "Request body too large",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/component-offerings/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns one component offering by id.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "component-offerings"
+                ],
+                "summary": "Get component offering",
+                "operationId": "get-component-offerings",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Component offering id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "$ref": "#/definitions/domain.ComponentOffering"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Replaces a component offering. References must be the ids of existing records. The path id wins over any id in the body; createdAt is preserved and an empty sourcedId keeps the stored one.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "component-offerings"
+                ],
+                "summary": "Replace component offering",
+                "operationId": "update-component-offerings",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Component offering id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Replacement component offering",
+                        "name": "componentOffering",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/domain.ComponentOffering"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "$ref": "#/definitions/domain.ComponentOffering"
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed body or validation error",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "sourcedId already in use",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "Request body too large",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Deletes one component offering by id.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "component-offerings"
+                ],
+                "summary": "Delete component offering",
+                "operationId": "delete-component-offerings",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Component offering id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/component-templates": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Lists component templates with limit/offset paging.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "component-templates"
+                ],
+                "summary": "List component templates",
+                "operationId": "list-component-templates",
+                "parameters": [
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Page size; defaults to default_limit and is clamped to max_limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "description": "Number of items to skip",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "$ref": "#/definitions/restadmin.ListReply-domain_ComponentTemplate"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid paging parameters",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates a component template. title is required; orgId and each of courseIds, when set, must be the ids (not sourcedIds) of existing records. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "component-templates"
+                ],
+                "summary": "Create component template",
+                "operationId": "create-component-templates",
+                "parameters": [
+                    {
+                        "description": "Component template to create",
+                        "name": "componentTemplate",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/domain.ComponentTemplate"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/domain.ComponentTemplate"
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed body or validation error",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "id or sourcedId already in use",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "Request body too large",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/component-templates/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns one component template by id.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "component-templates"
+                ],
+                "summary": "Get component template",
+                "operationId": "get-component-templates",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Component template id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "$ref": "#/definitions/domain.ComponentTemplate"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Replaces a component template. References must be the ids of existing records. The path id wins over any id in the body; createdAt is preserved and an empty sourcedId keeps the stored one.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "component-templates"
+                ],
+                "summary": "Replace component template",
+                "operationId": "update-component-templates",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Component template id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Replacement component template",
+                        "name": "componentTemplate",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/domain.ComponentTemplate"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "$ref": "#/definitions/domain.ComponentTemplate"
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed body or validation error",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "sourcedId already in use",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "Request body too large",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Deletes one component template by id.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "component-templates"
+                ],
+                "summary": "Delete component template",
+                "operationId": "delete-component-templates",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Component template id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/courses": {
             "get": {
                 "security": [
@@ -996,6 +2356,346 @@
                     {
                         "type": "string",
                         "description": "Enrollment id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/entitlements": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Lists entitlements with limit/offset paging.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "entitlements"
+                ],
+                "summary": "List entitlements",
+                "operationId": "list-entitlements",
+                "parameters": [
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Page size; defaults to default_limit and is clamped to max_limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "description": "Number of items to skip",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "$ref": "#/definitions/restadmin.ListReply-domain_Entitlement"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid paging parameters",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates an entitlement. personId and title are required; orgId and resultId are optional. All references must be the ids (not sourcedIds) of existing records. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "entitlements"
+                ],
+                "summary": "Create entitlement",
+                "operationId": "create-entitlement",
+                "parameters": [
+                    {
+                        "description": "Entitlement to create",
+                        "name": "entitlement",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/domain.Entitlement"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/domain.Entitlement"
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed body or validation error",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "id or sourcedId already in use",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "Request body too large",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/entitlements/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns one entitlement by id.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "entitlements"
+                ],
+                "summary": "Get entitlement",
+                "operationId": "get-entitlement",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Entitlement id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "$ref": "#/definitions/domain.Entitlement"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Replaces an entitlement. References must be the ids of existing records. The path id wins over any id in the body; createdAt is preserved and an empty sourcedId keeps the stored one.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "entitlements"
+                ],
+                "summary": "Replace entitlement",
+                "operationId": "update-entitlement",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Entitlement id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Replacement entitlement",
+                        "name": "entitlement",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/domain.Entitlement"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "$ref": "#/definitions/domain.Entitlement"
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed body or validation error",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/auth.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "sourcedId already in use",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "Request body too large",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Deletes one entitlement by id.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "entitlements"
+                ],
+                "summary": "Delete entitlement",
+                "operationId": "delete-entitlement",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Entitlement id",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -2294,7 +3994,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Converts data from metadata.input_format (elm_v3, plain or in an EDCI envelope as for parse) and upserts every record by sourcedId, so /eduapi and /oeapi (and /api/v1) serve them. With ttl the records stop being served after that duration and are then deleted; re-populating refreshes the expiry, but a record that already existed without expiry keeps none. References in the document must resolve within it or to stored records. The document is checked completely before anything is stored; a storage failure part-way leaves earlier records stored, and retrying the same request converges. Requires scope sis.write.",
+                "description": "Converts data from metadata.input_format (elm_v3, plain or in an EDCI envelope as for parse) and upserts every record by sourcedId, so the Edu-API and /oeapi (and /api/v1) serve them. With ttl the records stop being served after that duration and are then deleted; re-populating refreshes the expiry, but a record that already existed without expiry keeps none. References in the document must resolve within it or to stored records. The document is checked completely before anything is stored; a storage failure part-way leaves earlier records stored, and retrying the same request converges. Requires scope sis.write.",
                 "consumes": [
                     "application/json"
                 ],
@@ -3126,7 +4826,7 @@
             "type": "object",
             "properties": {
                 "data": {
-                    "description": "Data holds the converted records, one array per resource collection of\nthe output format (Edu-API: persons, orgs, academicSessions, courses,\nprograms, classes, enrollments, results; OEAPI: persons, organizations,\nacademicSessions, courses, programs, offerings, associations, results).\nReferences between them are sourcedIds.",
+                    "description": "Data holds the converted records, one array per resource collection of\nthe output format (Edu-API: persons, organizations, academicSessions,\ncourseTemplates, collectionTemplates, courseOfferings, enrollments, with\nno results; OEAPI: persons, organizations, academicSessions, courses,\nprograms, offerings, associations, results). References between them\nare sourcedIds.",
                     "type": "object"
                 },
                 "metadata": {
@@ -3193,6 +4893,169 @@
                 }
             }
         },
+        "domain.Affiliation": {
+            "type": "object",
+            "properties": {
+                "createdAt": {
+                    "type": "string"
+                },
+                "endDate": {
+                    "type": "string"
+                },
+                "expiresAt": {
+                    "description": "ExpiresAt is when the record stops being served and becomes eligible\nfor deletion; nil means it never expires. Server-managed: only\nPOST /api/v1/populate with a ttl sets it, and /api/v1 writes ignore it.",
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "orgId": {
+                    "type": "string"
+                },
+                "personId": {
+                    "type": "string"
+                },
+                "role": {
+                    "$ref": "#/definitions/domain.Role"
+                },
+                "sourcedId": {
+                    "type": "string"
+                },
+                "startDate": {
+                    "description": "StartDate and EndDate are ISO 8601 dates or date-times.",
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/domain.Status"
+                },
+                "updatedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "domain.CollectionOffering": {
+            "type": "object",
+            "properties": {
+                "academicSessionId": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "expiresAt": {
+                    "description": "ExpiresAt is when the record stops being served and becomes eligible\nfor deletion; nil means it never expires. Server-managed: only\nPOST /api/v1/populate with a ttl sets it, and /api/v1 writes ignore it.",
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "orgId": {
+                    "type": "string"
+                },
+                "programId": {
+                    "type": "string"
+                },
+                "sourcedId": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/domain.Status"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "domain.ComponentOffering": {
+            "type": "object",
+            "properties": {
+                "academicSessionId": {
+                    "type": "string"
+                },
+                "componentId": {
+                    "type": "string"
+                },
+                "courseOfferingIds": {
+                    "description": "CourseOfferingIDs are the course offerings the component is delivered\nwith.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "expiresAt": {
+                    "description": "ExpiresAt is when the record stops being served and becomes eligible\nfor deletion; nil means it never expires. Server-managed: only\nPOST /api/v1/populate with a ttl sets it, and /api/v1 writes ignore it.",
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "orgId": {
+                    "type": "string"
+                },
+                "sourcedId": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/domain.Status"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "domain.ComponentTemplate": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "courseIds": {
+                    "description": "CourseIDs are the courses the component belongs to.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "expiresAt": {
+                    "description": "ExpiresAt is when the record stops being served and becomes eligible\nfor deletion; nil means it never expires. Server-managed: only\nPOST /api/v1/populate with a ttl sets it, and /api/v1 writes ignore it.",
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "orgId": {
+                    "type": "string"
+                },
+                "sourcedId": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/domain.Status"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "type": {
+                    "description": "Type is the kind of component, e.g. lecture, laboratory, seminar.",
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                }
+            }
+        },
         "domain.Contact": {
             "type": "object",
             "properties": {
@@ -3222,6 +5085,13 @@
                 },
                 "orgId": {
                     "type": "string"
+                },
+                "programIds": {
+                    "description": "ProgramIDs are the programs the course is part of.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "sourcedId": {
                     "type": "string"
@@ -3275,6 +5145,50 @@
                 }
             }
         },
+        "domain.Entitlement": {
+            "type": "object",
+            "properties": {
+                "createdAt": {
+                    "type": "string"
+                },
+                "expiresAt": {
+                    "description": "ExpiresAt is when the record stops being served and becomes eligible\nfor deletion; nil means it never expires. Server-managed: only\nPOST /api/v1/populate with a ttl sets it, and /api/v1 writes ignore it.",
+                    "type": "string"
+                },
+                "expiryDate": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "issuedDate": {
+                    "description": "IssuedDate and ExpiryDate are ISO 8601 dates.",
+                    "type": "string"
+                },
+                "orgId": {
+                    "type": "string"
+                },
+                "personId": {
+                    "type": "string"
+                },
+                "resultId": {
+                    "description": "ResultID optionally names the result that confers the entitlement.",
+                    "type": "string"
+                },
+                "sourcedId": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/domain.Status"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                }
+            }
+        },
         "domain.Identifier": {
             "type": "object",
             "properties": {
@@ -3291,6 +5205,13 @@
             "properties": {
                 "academicSessionId": {
                     "type": "string"
+                },
+                "collectionOfferingIds": {
+                    "description": "CollectionOfferingIDs are the collection offerings (programs delivered\nin a session) the offering is part of.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "courseId": {
                     "type": "string"
@@ -3592,6 +5513,94 @@
                 }
             }
         },
+        "restadmin.ListReply-domain_Affiliation": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/domain.Affiliation"
+                    }
+                },
+                "limit": {
+                    "description": "Limit is the effective page size after defaulting and clamping.",
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "description": "Total is the number of entities across all pages.",
+                    "type": "integer"
+                }
+            }
+        },
+        "restadmin.ListReply-domain_CollectionOffering": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/domain.CollectionOffering"
+                    }
+                },
+                "limit": {
+                    "description": "Limit is the effective page size after defaulting and clamping.",
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "description": "Total is the number of entities across all pages.",
+                    "type": "integer"
+                }
+            }
+        },
+        "restadmin.ListReply-domain_ComponentOffering": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/domain.ComponentOffering"
+                    }
+                },
+                "limit": {
+                    "description": "Limit is the effective page size after defaulting and clamping.",
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "description": "Total is the number of entities across all pages.",
+                    "type": "integer"
+                }
+            }
+        },
+        "restadmin.ListReply-domain_ComponentTemplate": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/domain.ComponentTemplate"
+                    }
+                },
+                "limit": {
+                    "description": "Limit is the effective page size after defaulting and clamping.",
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "description": "Total is the number of entities across all pages.",
+                    "type": "integer"
+                }
+            }
+        },
         "restadmin.ListReply-domain_Course": {
             "type": "object",
             "properties": {
@@ -3621,6 +5630,28 @@
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/domain.Enrollment"
+                    }
+                },
+                "limit": {
+                    "description": "Limit is the effective page size after defaulting and clamping.",
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "description": "Total is the number of entities across all pages.",
+                    "type": "integer"
+                }
+            }
+        },
+        "restadmin.ListReply-domain_Entitlement": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/domain.Entitlement"
                     }
                 },
                 "limit": {

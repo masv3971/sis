@@ -188,6 +188,12 @@ func (s *Resource[T, PT]) ListByRef(ctx context.Context, field, id string, param
 	return s.repo.ListByRef(ctx, field, id, params)
 }
 
+// ListByRefs returns the entities whose reference field (a constant such as
+// "offeringId") equals any of ids.
+func (s *Resource[T, PT]) ListByRefs(ctx context.Context, field string, ids []string) ([]PT, error) {
+	return s.repo.ListByRefs(ctx, field, ids)
+}
+
 // Delete removes an entity and emits an event.
 func (s *Resource[T, PT]) Delete(ctx context.Context, id string) error {
 	if err := s.repo.Delete(ctx, id); err != nil {

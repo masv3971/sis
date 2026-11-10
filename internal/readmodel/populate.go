@@ -35,7 +35,9 @@ type PopulateItem struct {
 // record, duplicate sourcedId, unknown reference, organization parent cycle)
 // fails with a *domain.ValidationError and stores nothing. The second
 // upserts in dependency order (organizations parents-first, academic
-// sessions, courses, programs, offerings, persons, enrollments, results),
+// sessions, programs, courses, component templates, collection offerings,
+// offerings, component offerings, persons, affiliations, enrollments,
+// results, entitlements),
 // rewriting each reference to the canonical id of its target. There is no
 // cross-record transaction: a storage failure in the second pass leaves the
 // records written so far, and since every write is an upsert by sourcedId,
@@ -65,9 +67,12 @@ func (c *Client) Populate(ctx context.Context, b *domain.Bundle, expiresAt *time
 	steps := []func() error{
 		func() error { return upsertAll(ctx, p, c.Organizations, orgs, add) },
 		func() error { return upsertAll(ctx, p, c.AcademicSessions, b.AcademicSessions, add) },
-		func() error { return upsertAll(ctx, p, c.Courses, b.Courses, add) },
 		func() error { return upsertAll(ctx, p, c.Programs, b.Programs, add) },
+		func() error { return upsertAll(ctx, p, c.Courses, b.Courses, add) },
+		func() error { return upsertAll(ctx, p, c.ComponentTemplates, b.ComponentTemplates, add) },
+		func() error { return upsertAll(ctx, p, c.CollectionOfferings, b.CollectionOfferings, add) },
 		func() error { return upsertAll(ctx, p, c.Offerings, b.Offerings, add) },
+		func() error { return upsertAll(ctx, p, c.ComponentOfferings, b.ComponentOfferings, add) },
 		func() error {
 			for _, person := range b.Persons {
 				if err := ctx.Err(); err != nil {
@@ -81,8 +86,10 @@ func (c *Client) Populate(ctx context.Context, b *domain.Bundle, expiresAt *time
 			}
 			return nil
 		},
+		func() error { return upsertAll(ctx, p, c.Affiliations, b.Affiliations, add) },
 		func() error { return upsertAll(ctx, p, c.Enrollments, b.Enrollments, add) },
 		func() error { return upsertAll(ctx, p, c.Results, b.Results, add) },
+		func() error { return upsertAll(ctx, p, c.Entitlements, b.Entitlements, add) },
 	}
 	for _, step := range steps {
 		if err := step(); err != nil {
@@ -124,7 +131,9 @@ func (p *populator) plan(ctx context.Context, b *domain.Bundle) ([]*domain.Organ
 		collect(entities(b.Organizations)...), collect(entities(b.AcademicSessions)...),
 		collect(entities(b.Courses)...), collect(entities(b.Programs)...),
 		collect(entities(b.Offerings)...), collect(entities(b.Enrollments)...),
-		collect(entities(b.Results)...),
+		collect(entities(b.Results)...), collect(entities(b.Entitlements)...),
+		collect(entities(b.Affiliations)...), collect(entities(b.CollectionOfferings)...),
+		collect(entities(b.ComponentTemplates)...), collect(entities(b.ComponentOfferings)...),
 	} {
 		if err != nil {
 			return nil, err
@@ -225,6 +234,12 @@ func (c *Client) storedIDs(ctx context.Context, typ string, sourcedIDs []string)
 		return entityIDs(ctx, c.Programs, sourcedIDs)
 	case "offering":
 		return entityIDs(ctx, c.Offerings, sourcedIDs)
+	case "result":
+		return entityIDs(ctx, c.Results, sourcedIDs)
+	case "collectionOffering":
+		return entityIDs(ctx, c.CollectionOfferings, sourcedIDs)
+	case "componentTemplate":
+		return entityIDs(ctx, c.ComponentTemplates, sourcedIDs)
 	}
 	return nil, errUnknownRefType(typ)
 }

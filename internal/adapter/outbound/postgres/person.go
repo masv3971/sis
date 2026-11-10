@@ -193,18 +193,45 @@ func escapeLike(s string) string {
 	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
 }
 
-// list returns the page of persons matching where (a constant condition
-// over persons, never input, with its values in args as $1..$n).
+// ListByRoles is List restricted to the persons holding one of roles.
+func (r *PersonRepository) ListByRoles(ctx context.Context, roles []domain.Role, params port.ListParams) (port.Page[domain.Person], error) {
+	names := make([]string, len(roles))
+	for i, role := range roles {
+		names[i] = string(role)
+	}
+	return r.list(ctx, `roles ?| $1::text[] AND `+liveFilter, []any{names}, params)
+}
+
+// list pages the persons matching where (a constant condition, never input,
+// with its values in args as $1..$n).
 func (r *PersonRepository) list(ctx context.Context, where string, args []any, params port.ListParams) (port.Page[domain.Person], error) {
 	var limit any // nil: LIMIT NULL, no limit
 	if params.Limit > 0 {
 		limit = params.Limit
 	}
+	cond, args, err := filterSQL(params.Filter, personColumn(""), args)
+	if err != nil {
+		return port.Page[domain.Person]{}, err
+	}
+	if cond != "" {
+		where += " AND " + cond
+	}
+	// The outer query reorders the page, so the sort column must be in
+	// personColumns' output: the person columns hold every sortable key.
+	var innerSort, outerSort string
+	if params.Sort != "" {
+		if innerSort, err = personColumn("")(params.Sort); err != nil {
+			return port.Page[domain.Person]{}, err
+		}
+		outerSort, _ = personColumn("p.")(params.Sort)
+	}
 	query := fmt.Sprintf(`SELECT p.*, t.n
 		FROM (SELECT count(*) AS n FROM persons WHERE %[1]s) t
-		LEFT JOIN LATERAL (SELECT `+personColumns+` FROM persons WHERE %[1]s
-			ORDER BY family_name, given_name, id OFFSET $%[2]d LIMIT $%[3]d) p ON true
-		ORDER BY p.family_name, p.given_name, p.id`, where, len(args)+1, len(args)+2)
+		LEFT JOIN LATERAL (SELECT %[4]s FROM persons WHERE %[1]s
+			ORDER BY %[5]s OFFSET $%[2]d LIMIT $%[3]d) p ON true
+		ORDER BY %[6]s`, where, len(args)+1, len(args)+2, personColumns,
+		orderSQL(innerSort, params.Desc, "family_name, given_name, id"),
+		orderSQL(outerSort, params.Desc, "p.family_name, p.given_name, p.id"))
 	rows, err := r.pool.Query(ctx, query, append(args, params.Offset, limit)...)
 	if err != nil {
 		return port.Page[domain.Person]{}, err

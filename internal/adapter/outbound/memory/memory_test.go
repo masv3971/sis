@@ -23,6 +23,73 @@ func TestPersonUpdateRejectsForeignSourcedID(t *testing.T) {
 	assert.NoError(t, repo.Update(ctx, domain.Person{ID: "2", SourcedID: "b", GivenName: "x"}, nil), "self update")
 }
 
+// TestPersonListByRoles checks the role filter, its total and its paging.
+func TestPersonListByRoles(t *testing.T) {
+	ctx := t.Context()
+	repo := NewPersonRepository()
+	for _, p := range []domain.Person{
+		{ID: "1", SourcedID: "a", FamilyName: "A", Roles: []domain.Role{domain.RoleStudent}},
+		{ID: "2", SourcedID: "b", FamilyName: "B", Roles: []domain.Role{domain.RoleStaff, domain.RoleStudent}},
+		{ID: "3", SourcedID: "c", FamilyName: "C", Roles: []domain.Role{domain.RoleFaculty}},
+		{ID: "4", SourcedID: "d", FamilyName: "D"},
+	} {
+		require.NoError(t, repo.Create(ctx, p))
+	}
+	page, err := repo.ListByRoles(ctx, []domain.Role{domain.RoleStudent}, port.ListParams{Limit: 1})
+	require.NoError(t, err)
+	assert.Equal(t, 2, page.Total)
+	require.Len(t, page.Items, 1)
+	assert.Equal(t, "1", page.Items[0].ID, "ordered by name")
+
+	page, err = repo.ListByRoles(ctx, []domain.Role{domain.RoleStaff, domain.RoleFaculty}, port.ListParams{})
+	require.NoError(t, err)
+	assert.Equal(t, 2, page.Total, "any of the roles matches")
+
+	page, err = repo.ListByRoles(ctx, nil, port.ListParams{})
+	require.NoError(t, err)
+	assert.Zero(t, page.Total, "no roles match nobody")
+}
+
+// TestDocRepoListByRef checks the filter and its total, as Postgres' ->>.
+func TestDocRepoListByRef(t *testing.T) {
+	ctx := t.Context()
+	repo := NewDocRepo[domain.Result]()
+	for _, r := range []*domain.Result{
+		{Base: domain.Base{ID: "1", SourcedID: "b"}, PersonID: "p", CourseID: "c", OfferingID: "o"},
+		{Base: domain.Base{ID: "2", SourcedID: "a"}, PersonID: "q", CourseID: "c", OfferingID: "o"},
+		{Base: domain.Base{ID: "3", SourcedID: "c"}, PersonID: "p", CourseID: "c", OfferingID: "x"},
+	} {
+		require.NoError(t, repo.Create(ctx, r))
+	}
+	page, err := repo.ListByRef(ctx, "offeringId", "o", port.ListParams{Limit: 1})
+	require.NoError(t, err)
+	assert.Equal(t, 2, page.Total)
+	require.Len(t, page.Items, 1)
+	assert.Equal(t, "a", page.Items[0].SourcedID, "ordered by sourcedId")
+	page, err = repo.ListByRef(ctx, "credits", "o", port.ListParams{})
+	require.NoError(t, err)
+	assert.Zero(t, page.Total, "a non-string field never matches")
+}
+
+// TestDocRepoListByRefs checks one call returns the matches of every id.
+func TestDocRepoListByRefs(t *testing.T) {
+	ctx := t.Context()
+	repo := NewDocRepo[domain.Result]()
+	for _, r := range []*domain.Result{
+		{Base: domain.Base{ID: "1", SourcedID: "a"}, PersonID: "p", CourseID: "c", OfferingID: "o1"},
+		{Base: domain.Base{ID: "2", SourcedID: "b"}, PersonID: "q", CourseID: "c", OfferingID: "o2"},
+		{Base: domain.Base{ID: "3", SourcedID: "c"}, PersonID: "p", CourseID: "c", OfferingID: "o3"},
+	} {
+		require.NoError(t, repo.Create(ctx, r))
+	}
+	items, err := repo.ListByRefs(ctx, "offeringId", []string{"o1", "o2", "o1", "none"})
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"a", "b"}, []string{items[0].SourcedID, items[1].SourcedID})
+	items, err = repo.ListByRefs(ctx, "offeringId", nil)
+	require.NoError(t, err)
+	assert.Empty(t, items)
+}
+
 // TestPersonSourcedIDIndex checks the sourcedId index follows renames,
 // deletes and sweeps, so a freed sourcedId resolves to nothing and can be
 // reused.

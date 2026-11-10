@@ -19,6 +19,6 @@ func TestPersonSearch(t *testing.T) {
 	repotest.PersonSearch(t, newStore(t).Persons(), runPrefix())
 }
 
-func TestListByRef(t *testing.T) {
+func TestListByRefContract(t *testing.T) {
 	repotest.ListByRef(t, postgres.NewDocRepo[domain.Enrollment](newStore(t)), runPrefix())
 }

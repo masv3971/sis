@@ -3,6 +3,7 @@ package memory
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -232,25 +233,79 @@ func (r *DocRepo[T, PT]) List(_ context.Context, params port.ListParams) (port.P
 // JSON string property, as Postgres' data->>field) equals id.
 func (r *DocRepo[T, PT]) ListByRef(_ context.Context, field, id string, params port.ListParams) (port.Page[PT], error) {
 	return r.list(func(data []byte) (bool, error) {
-		var fields map[string]json.RawMessage
-		if err := json.Unmarshal(data, &fields); err != nil {
-			return false, err
-		}
-		var value string
-		if raw, ok := fields[field]; !ok || json.Unmarshal(raw, &value) != nil {
-			return false, nil // absent or not a string: no match, as ->> on a non-string
-		}
-		return value == id, nil
+		value, ok, err := refValue(data, field)
+		return ok && value == id, err
 	}, params)
 }
 
+// refValue returns the string property field of the stored JSON; ok is false
+// when it is absent or not a string, as ->> on a non-string never matches.
+func refValue(data []byte, field string) (value string, ok bool, err error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return "", false, err
+	}
+	value, ok = stringProp(fields, field)
+	return value, ok, nil
+}
+
+// stringProp is refValue on already decoded JSON.
+func stringProp(fields map[string]json.RawMessage, field string) (value string, ok bool) {
+	raw, present := fields[field]
+	if !present || json.Unmarshal(raw, &value) != nil {
+		return "", false
+	}
+	return value, true
+}
+
+// checkListKeys rejects a sort or filter key that is not shaped like a stored
+// key, as the Postgres repositories do before splicing it into SQL.
+func checkListKeys(params port.ListParams) error {
+	if params.Sort != "" && !port.ValidKey(params.Sort) {
+		return fmt.Errorf("memory: invalid sort key %q", params.Sort)
+	}
+	if params.Filter != nil {
+		for _, term := range params.Filter.Terms {
+			if !port.ValidKey(term.Field) {
+				return fmt.Errorf("memory: invalid filter key %q", term.Field)
+			}
+		}
+	}
+	return nil
+}
+
+// ListByRefs returns the live entities whose reference field equals any of ids.
+func (r *DocRepo[T, PT]) ListByRefs(_ context.Context, field string, ids []string) ([]PT, error) {
+	wanted := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		wanted[id] = true
+	}
+	page, err := r.list(func(data []byte) (bool, error) {
+		value, ok, err := refValue(data, field)
+		return ok && wanted[value], err
+	}, port.ListParams{})
+	return page.Items, err
+}
+
+// listed is one live entity with the value it sorts by.
+type listed[PT any] struct {
+	e       PT
+	sortVal string
+	hasSort bool
+}
+
 // list returns the page of live entities whose stored JSON keep accepts
-// (all of them when keep is nil), ordered by sourcedId.
+// (all of them when keep is nil) and params.Filter matches, ordered by
+// params.Sort, then by sourcedId.
 func (r *DocRepo[T, PT]) list(keep func(data []byte) (bool, error), params port.ListParams) (port.Page[PT], error) {
+	if err := checkListKeys(params); err != nil {
+		return port.Page[PT]{}, err
+	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	now := r.now()
-	items := make([]PT, 0, len(r.byID))
+	needFields := params.Sort != "" || (params.Filter != nil && len(params.Filter.Terms) > 0)
+	items := make([]listed[PT], 0, len(r.byID))
 	for _, stored := range r.byID {
 		if domain.Expired(stored.expiresAt, now) {
 			continue
@@ -264,16 +319,48 @@ func (r *DocRepo[T, PT]) list(keep func(data []byte) (bool, error), params port.
 				continue
 			}
 		}
+		var entry listed[PT]
+		if needFields {
+			var fields map[string]json.RawMessage
+			if err := json.Unmarshal(stored.data, &fields); err != nil {
+				return port.Page[PT]{}, err
+			}
+			if !params.Filter.Match(func(field string) (string, bool) { return stringProp(fields, field) }) {
+				continue
+			}
+			if params.Sort != "" {
+				entry.sortVal, entry.hasSort = stringProp(fields, params.Sort)
+			}
+		}
 		e, err := unmarshalDoc[T, PT](stored.data)
 		if err != nil {
 			return port.Page[PT]{}, err
 		}
-		items = append(items, e)
+		entry.e = e
+		items = append(items, entry)
 	}
-	sort.Slice(items, func(i, j int) bool { return items[i].GetSourcedID() < items[j].GetSourcedID() })
+	sort.Slice(items, func(i, j int) bool {
+		a, b := items[i], items[j]
+		if params.Sort != "" {
+			if a.hasSort != b.hasSort {
+				return a.hasSort // records without the key sort last in both directions
+			}
+			if a.sortVal != b.sortVal {
+				if params.Desc {
+					return a.sortVal > b.sortVal
+				}
+				return a.sortVal < b.sortVal
+			}
+		}
+		return a.e.GetSourcedID() < b.e.GetSourcedID()
+	})
 
 	lo, hi := pageBounds(len(items), params.Offset, params.Limit)
-	return port.Page[PT]{Items: items[lo:hi], Total: len(items)}, nil
+	page := make([]PT, 0, hi-lo)
+	for _, entry := range items[lo:hi] {
+		page = append(page, entry.e)
+	}
+	return port.Page[PT]{Items: page, Total: len(items)}, nil
 }
 
 // Delete removes a live entity by id.

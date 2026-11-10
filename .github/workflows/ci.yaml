@@ -4,6 +4,7 @@
 #   test          make test          (-race, with the Postgres and AMQP integration tests)
 #   build         make build
 #   web           make web-ci
+#   e2e           make web-e2e       (Playwright against a local SIS)
 #   docker-build  make docker-build  (build only, never pushed)
 # Actions are pinned by commit SHA; `make update` refreshes them with pinact.
 name: CI
@@ -19,7 +20,8 @@ permissions:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Superseded PR pushes are cancelled; every main commit keeps its own result.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   lint:
@@ -39,7 +41,8 @@ jobs:
     timeout-minutes: 20
     services:
       postgres:
-        image: postgres:17-alpine
+        # Pinned by digest like the actions; pinact does not bump images.
+        image: postgres:17-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
         env:
           POSTGRES_USER: sis
           POSTGRES_PASSWORD: sis
@@ -66,7 +69,7 @@ jobs:
           docker run -d --name rabbitmq --user rabbitmq -p 5672:5672 \
             -v "$PWD/developer_tools/rabbitmq/rabbitmq.conf:/etc/rabbitmq/conf.d/20-sis.conf:ro" \
             -v "$PWD/developer_tools/rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro" \
-            rabbitmq:4-management
+            rabbitmq:4-management@sha256:af6f50d38098d8bd52fef7f3fa85015dd8b2bf6def58e995bf584ae9ba0f6407
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
@@ -113,6 +116,32 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: make web-ci
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: make web-e2e
+        env:
+          CI: "true"
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: playwright-report
+          path: web/playwright-report
+          retention-days: 7
 
   docker-build:
     runs-on: ubuntu-latest

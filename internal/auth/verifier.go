@@ -30,7 +30,8 @@ import (
 // Scopes the API routes require.
 const (
 	// ScopeRead allows every read: GET on /api/v1, POST /api/v1/parse, and
-	// all of /oeapi and /eduapi.
+	// all of /oeapi and the Edu-API (which the spec's own read scope opens
+	// too).
 	ScopeRead = "sis.read"
 	// ScopeWrite allows every write: POST, PUT and DELETE on /api/v1 and
 	// POST /api/v1/populate. It does not include ScopeRead.

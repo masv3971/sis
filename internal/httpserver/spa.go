@@ -21,7 +21,7 @@ var apiRoots = []string{
 	"/api",
 	"/auth",
 	"/oeapi",
-	"/eduapi",
+	"/1edtech",
 	"/healthz",
 	"/swagger",
 }

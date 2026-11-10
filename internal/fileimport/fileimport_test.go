@@ -31,6 +31,12 @@ func newCatalog() *readmodel.Client {
 		Enrollments:      service.NewResource(memory.NewDocRepo[domain.Enrollment](), nil, nil, log),
 		Programs:         service.NewResource(memory.NewDocRepo[domain.Program](), nil, nil, log),
 		Results:          service.NewResource(memory.NewDocRepo[domain.Result](), nil, nil, log),
+		Entitlements:     service.NewResource(memory.NewDocRepo[domain.Entitlement](), nil, nil, log),
+
+		Affiliations:        service.NewResource(memory.NewDocRepo[domain.Affiliation](), nil, nil, log),
+		CollectionOfferings: service.NewResource(memory.NewDocRepo[domain.CollectionOffering](), nil, nil, log),
+		ComponentTemplates:  service.NewResource(memory.NewDocRepo[domain.ComponentTemplate](), nil, nil, log),
+		ComponentOfferings:  service.NewResource(memory.NewDocRepo[domain.ComponentOffering](), nil, nil, log),
 	}
 }
 
@@ -78,6 +84,55 @@ func TestFakeStudentsImport(t *testing.T) {
 	assert.Equal(t, anna.ID, again.ID, "id changed on re-import")
 	persons, _ = catalog.Persons.ListPersons(ctx, port.ListParams{})
 	assert.Equal(t, 10, persons.Total, "persons after re-import")
+}
+
+// TestImportNewEntities loads the new record types from a file, with
+// references by sourcedId (list references included).
+func TestImportNewEntities(t *testing.T) {
+	ctx := t.Context()
+	path := filepath.Join(t.TempDir(), "new.json")
+	body := `{
+	  "organizations": [{"sourcedId": "uni", "name": "U"}],
+	  "persons": [{"sourcedId": "anna", "givenName": "Anna", "familyName": "A", "status": "active"}],
+	  "programs": [{"sourcedId": "BSc", "title": "BSc"}],
+	  "courses": [{"sourcedId": "DA101", "title": "C", "programIds": ["BSc"]}],
+	  "offerings": [{"sourcedId": "DA101-ht26", "courseId": "DA101", "collectionOfferingIds": ["BSc-ht26"]}],
+	  "affiliations": [{"sourcedId": "anna-uni", "personId": "anna", "orgId": "uni", "role": "student"}],
+	  "collectionOfferings": [{"sourcedId": "BSc-ht26", "programId": "BSc"}],
+	  "componentTemplates": [{"sourcedId": "lab", "title": "Lab", "type": "laboratory", "courseIds": ["DA101"]}],
+	  "componentOfferings": [{"sourcedId": "lab-ht26", "componentId": "lab", "courseOfferingIds": ["DA101-ht26"]}]
+	}`
+	require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
+	catalog := newCatalog()
+	count, err := Import(ctx, catalog, path)
+	require.NoError(t, err)
+	assert.Equal(t, 9, count)
+
+	course, err := catalog.Courses.GetBySourcedID(ctx, "DA101")
+	require.NoError(t, err)
+	program, err := catalog.Programs.GetBySourcedID(ctx, "BSc")
+	require.NoError(t, err)
+	assert.Equal(t, []string{program.ID}, course.ProgramIDs)
+	affiliation, err := catalog.Affiliations.GetBySourcedID(ctx, "anna-uni")
+	require.NoError(t, err)
+	assert.Equal(t, domain.RoleStudent, affiliation.Role)
+
+	for name, bad := range map[string]string{
+		"unknown list entry":  `{"courses": [{"sourcedId": "c", "title": "C", "programIds": ["nowhere"]}]}`,
+		"null affiliation":    `{"affiliations": [null]}`,
+		"null component":      `{"componentOfferings": [null]}`,
+		"unknown field":       `{"affiliations": [{"sourcedId": "a", "personId": "p", "orgId": "o", "shoe": 1}]}`,
+		"missing org":         `{"persons": [{"sourcedId": "p", "givenName": "A", "familyName": "B", "status": "active"}], "affiliations": [{"sourcedId": "a", "personId": "p"}]}`,
+		"collection no prog":  `{"collectionOfferings": [{"sourcedId": "k"}]}`,
+		"component no parent": `{"componentOfferings": [{"sourcedId": "x"}]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			p := filepath.Join(t.TempDir(), "bad.json")
+			require.NoError(t, os.WriteFile(p, []byte(bad), 0o600))
+			_, err := Import(ctx, newCatalog(), p)
+			assert.Error(t, err)
+		})
+	}
 }
 
 func TestDecodeRejects(t *testing.T) {

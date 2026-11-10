@@ -36,6 +36,12 @@ func memCatalog(clock func() time.Time, log *logger.Log) *readmodel.Client {
 		Enrollments:      service.NewResource(memory.NewDocRepo[domain.Enrollment]().WithClock(clock), nil, clock, log),
 		Programs:         service.NewResource(memory.NewDocRepo[domain.Program]().WithClock(clock), nil, clock, log),
 		Results:          service.NewResource(memory.NewDocRepo[domain.Result]().WithClock(clock), nil, clock, log),
+		Entitlements:     service.NewResource(memory.NewDocRepo[domain.Entitlement]().WithClock(clock), nil, clock, log),
+
+		Affiliations:        service.NewResource(memory.NewDocRepo[domain.Affiliation]().WithClock(clock), nil, clock, log),
+		CollectionOfferings: service.NewResource(memory.NewDocRepo[domain.CollectionOffering]().WithClock(clock), nil, clock, log),
+		ComponentTemplates:  service.NewResource(memory.NewDocRepo[domain.ComponentTemplate]().WithClock(clock), nil, clock, log),
+		ComponentOfferings:  service.NewResource(memory.NewDocRepo[domain.ComponentOffering]().WithClock(clock), nil, clock, log),
 	}
 }
 
@@ -81,15 +87,16 @@ func TestParseAndPopulate(t *testing.T) {
 	envelope := func(meta, extra string) string {
 		return `{"metadata":` + meta + extra + `,"data":` + string(elm) + `}`
 	}
-	const course = "/eduapi/courses/urn:epass:learningAchievementSpec:bi101"
+	const course = eduBase + "/courseTemplates/urn:epass:learningAchievementSpec:bi101"
 
 	t.Run("parse", func(t *testing.T) {
 		for _, format := range []string{"eduapi", "oeapi"} {
 			out := do(t, reader, http.MethodPost, "/api/v1/parse",
 				envelope(`{"input_format":"elm_v3","output_format":"`+format+`"}`, ""), http.StatusOK)
 			data, _ := out["data"].(map[string]any)
-			courses, _ := data["courses"].([]any)
-			require.Len(t, courses, 1, "%s: courses", format)
+			key := map[string]string{"eduapi": "courseTemplates", "oeapi": "courses"}[format]
+			courses, _ := data[key].([]any)
+			require.Len(t, courses, 1, "%s: %s", format, key)
 			meta, _ := out["metadata"].(map[string]any)
 			require.Equal(t, format, meta["output_format"], "metadata not echoed: %v", out["metadata"])
 		}
@@ -115,18 +122,18 @@ func TestParseAndPopulate(t *testing.T) {
 	t.Run("populate with ttl", func(t *testing.T) {
 		out := do(t, writer, http.MethodPost, "/api/v1/populate", envelope(`{"input_format":"elm_v3"}`, `,"ttl":"1h"`), http.StatusOK)
 		items, _ := out["items"].([]any)
-		require.Len(t, items, 10, "populate reply = %v", out)
+		require.Len(t, items, 11, "populate reply = %v", out)
 		require.NotNil(t, out["expiresAt"], "populate reply = %v", out)
 		got := do(t, reader, http.MethodGet, course, "", http.StatusOK)
-		gotCourse, _ := got["course"].(map[string]any)
-		require.Equal(t, "BI101", gotCourse["courseCode"], "course = %v", got)
+		primary, _ := got["primaryCode"].(map[string]any)
+		require.Equal(t, "BI101", primary["identifier"], "course = %v", got)
 		res := do(t, reader, http.MethodGet, "/oeapi/results/urn:epass:learningAchievement:bi101", "", http.StatusOK)
 		assert.Equal(t, "A", res["score"], "oeapi result = %v", res)
 		assert.Equal(t, "urn:epass:learningAchievementSpec:bi101", res["courseId"], "oeapi result = %v", res)
 
 		clock.skew.Store(int64(2 * time.Hour))
 		do(t, reader, http.MethodGet, course, "", http.StatusNotFound)
-		do(t, reader, http.MethodGet, "/eduapi/persons/urn:epass:person:liu-student-4711", "", http.StatusNotFound)
+		do(t, reader, http.MethodGet, eduBase+"/persons/urn:epass:person:liu-student-4711", "", http.StatusNotFound)
 		clock.skew.Store(0)
 	})
 }

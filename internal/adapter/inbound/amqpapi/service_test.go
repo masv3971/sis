@@ -120,6 +120,12 @@ func newFixture(t *testing.T, scopes ...string) *fixture {
 		Enrollments:      service.NewResource(memory.NewDocRepo[domain.Enrollment](), nil, nil, log),
 		Programs:         service.NewResource(memory.NewDocRepo[domain.Program](), nil, nil, log),
 		Results:          service.NewResource(memory.NewDocRepo[domain.Result](), nil, nil, log),
+		Entitlements:     service.NewResource(memory.NewDocRepo[domain.Entitlement](), nil, nil, log),
+
+		Affiliations:        service.NewResource(memory.NewDocRepo[domain.Affiliation](), nil, nil, log),
+		CollectionOfferings: service.NewResource(memory.NewDocRepo[domain.CollectionOffering](), nil, nil, log),
+		ComponentTemplates:  service.NewResource(memory.NewDocRepo[domain.ComponentTemplate](), nil, nil, log),
+		ComponentOfferings:  service.NewResource(memory.NewDocRepo[domain.ComponentOffering](), nil, nil, log),
 	}
 	iss := authtest.NewIssuer(t)
 	cfg := &model.Cfg{SIS: model.SIS{Auth: model.Auth{Issuers: []model.Issuer{iss.Config()}}}}
@@ -192,6 +198,27 @@ func TestCommandsRunLikeREST(t *testing.T) {
 	_, err = fx.catalog.Courses.Get(ctx, "c1")
 	require.ErrorIs(t, err, domain.ErrNotFound, "course after delete")
 	fx.expect(t, message("person.delete", token, `{"id":"p1"}`), "accepted")
+
+	// The new entity types take the same commands, and list references are
+	// checked entry by entry.
+	fx.expect(t, message("program.create", token, `{"id":"g1","title":"BSc"}`), "accepted")
+	fx.expect(t, message("course.create", token, `{"id":"c3","title":"T","programIds":["g1"]}`), "accepted")
+	fx.expect(t, message("course.create", token, `{"id":"c4","title":"T","programIds":["g1","BSc"]}`), "rejected")
+	fx.expect(t, message("collectionOffering.create", token, `{"id":"k1","programId":"g1"}`), "accepted")
+	fx.expect(t, message("collectionOffering.create", token, `{"id":"k2"}`), "rejected")
+	fx.expect(t, message("componentTemplate.create", token, `{"id":"t1","title":"Lab","courseIds":["c3"]}`), "accepted")
+	fx.expect(t, message("componentOffering.create", token, `{"id":"to1","componentId":"t1"}`), "accepted")
+	fx.expect(t, message("componentOffering.create", token, `{"id":"to2","componentId":"nope"}`), "rejected")
+	fx.expect(t, message("person.create", token, `{"id":"p9","sourcedId":"s9","givenName":"A","familyName":"B","status":"active"}`), "accepted")
+	fx.expect(t, message("affiliation.create", token, `{"id":"a1","personId":"p9","orgId":"o1","role":"staff"}`), "accepted")
+	fx.expect(t, message("affiliation.create", token, `{"id":"a2","personId":"p9"}`), "rejected")
+	fx.expect(t, message("affiliation.update", token, `{"id":"a1","personId":"p9","orgId":"o1","role":"student"}`), "accepted")
+	affiliation, err := fx.catalog.Affiliations.Get(ctx, "a1")
+	require.NoError(t, err)
+	assert.Equal(t, domain.RoleStudent, affiliation.Role)
+	fx.expect(t, message("affiliation.delete", token, `{"id":"a1"}`), "accepted")
+	_, err = fx.catalog.Affiliations.Get(ctx, "a1")
+	require.ErrorIs(t, err, domain.ErrNotFound)
 
 	elm, err := os.ReadFile("../../../convert/testdata/edc_bsc.json")
 	require.NoError(t, err)

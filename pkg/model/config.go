@@ -53,8 +53,8 @@ type HTTPServer struct {
 	ReadTimeout time.Duration `yaml:"read_timeout" default:"15s" validate:"gt=0"`
 	// WriteTimeout bounds the request's work, reading its body included:
 	// when it passes, the handler's context is cancelled, so database
-	// calls stop and the request ends with 503. Sending the response may take 5s more, so
-	// that 503 reaches the client.
+	// calls stop and the request ends with 503. Sending the response may
+	// take 5s more, so that 503 reaches the client.
 	WriteTimeout time.Duration `yaml:"write_timeout" default:"15s" validate:"gt=0"`
 	Web          Web           `yaml:"web"`
 	Swagger      Swagger       `yaml:"swagger"`
@@ -221,6 +221,9 @@ type OEAPI struct {
 type EduAPI struct {
 	DefaultLimit int `yaml:"default_limit" default:"100" validate:"gt=0"`
 	MaxLimit     int `yaml:"max_limit" default:"500" validate:"gtefield=DefaultLimit"`
+	// RecordLanguage is the BCP 47 tag the spec requires on every record and
+	// text. SIS stores no language, so all records get this one.
+	RecordLanguage string `yaml:"record_language" default:"en" validate:"bcp47_language_tag"`
 }
 
 type Outbound struct {

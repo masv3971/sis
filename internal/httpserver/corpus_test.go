@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/SUNET/sis/internal/readmodel"
+	"github.com/SUNET/sis/pkg/eduapi"
 	"github.com/SUNET/sis/pkg/logger"
 )
 
@@ -40,12 +41,26 @@ var corpora = []corpus{
 // file starts to pass fails the test, so the list stays accurate.
 var knownFailures = map[string]string{}
 
+// wantMapped lists, by file name prefix, the Edu-API collections a document
+// must yield, so a claim that is silently dropped fails the test.
+var wantMapped = map[string][]string{
+	"ec-certofpart": {"courseTemplates", "courseOfferings", "enrollments"},
+	"ec-mc-annex1":  {"collectionTemplates", "courseOfferings", "enrollments"},
+}
+
+// eduBase is where the Edu-API provider is mounted.
+const eduBase = eduapi.BasePath
+
+// wantResults lists the documents that must yield results, which only OEAPI
+// publishes.
+var wantResults = []string{"ec-mc-annex1"}
+
 // eduPaths and oePaths map a populate item type to the provider path that
-// serves it.
+// serves it. Edu-API has no result resource.
 var (
 	eduPaths = map[string]string{
-		"person": "persons", "organization": "orgs", "academicSession": "academicSessions", "course": "courses",
-		"offering": "classes", "enrollment": "enrollments", "program": "programs", "result": "results",
+		"person": "persons", "organization": "organizations", "academicSession": "academicSessions", "course": "courseTemplates",
+		"offering": "courseOfferings", "enrollment": "enrollments", "program": "collectionTemplates",
 	}
 	oePaths = map[string]string{
 		"person": "persons", "organization": "organizations", "academicSession": "academic-sessions", "course": "courses",
@@ -90,7 +105,7 @@ func runCorpus(t *testing.T, files []string) {
 				return
 			}
 
-			records := map[string]int{}
+			records, oeRecords := map[string]int{}, map[string]int{}
 			for _, format := range []string{"eduapi", "oeapi"} {
 				status, body := srv.post(t, srv.reader, "/api/v1/parse", envelopeFor(doc, format, ""))
 				require.Equal(t, http.StatusOK, status, "parse %s: %s", format, body)
@@ -102,14 +117,33 @@ func runCorpus(t *testing.T, files []string) {
 				var persons []json.RawMessage
 				require.NoError(t, json.Unmarshal(reply.Data["persons"], &persons))
 				require.NotEmpty(t, persons, "parse %s: no person", format)
-				if format == "eduapi" {
-					for key, raw := range reply.Data {
-						var list []json.RawMessage
-						require.NoError(t, json.Unmarshal(raw, &list), "eduapi %s", key)
-						records[key] = len(list)
+				counts := records
+				if format == "oeapi" {
+					counts = oeRecords
+				}
+				for key, raw := range reply.Data {
+					var list []json.RawMessage
+					require.NoError(t, json.Unmarshal(raw, &list), "%s %s", format, key)
+					counts[key] = len(list)
+				}
+				if format == "oeapi" {
+					for _, prefix := range wantResults {
+						if strings.HasPrefix(name, prefix) {
+							assert.NotZero(t, oeRecords["results"], "no results mapped")
+						}
 					}
+				}
+				if format == "eduapi" {
 					for _, warning := range reply.Warnings {
 						t.Log("warning:", warning)
+						assert.NotContains(t, warning, "is not mapped", "claim dropped")
+					}
+					for prefix, keys := range wantMapped {
+						if strings.HasPrefix(name, prefix) {
+							for _, key := range keys {
+								assert.NotZero(t, records[key], "no %s mapped", key)
+							}
+						}
 					}
 				}
 			}
@@ -121,18 +155,25 @@ func runCorpus(t *testing.T, files []string) {
 			}
 			require.NoError(t, json.Unmarshal(body, &reply))
 			total := 0
-			for _, count := range records {
+			for _, count := range oeRecords {
 				total += count
 			}
-			require.Len(t, reply.Items, total, "populate stored a different number of records than parse returned (%v)", records)
+			// Entitlements are stored but not published by either provider.
+			// OEAPI publishes every other record, results included.
+			published := slices.DeleteFunc(slices.Clone(reply.Items), func(item readmodel.PopulateItem) bool {
+				return item.Type == "entitlement"
+			})
+			require.Len(t, published, total, "populate stored a different number of records than parse returned (%v)", oeRecords)
 
-			for _, item := range reply.Items {
+			for _, item := range published {
 				id := url.PathEscape(item.SourcedID)
-				require.Contains(t, eduPaths, item.Type, "unknown item type")
-				srv.get(t, "/eduapi/"+eduPaths[item.Type]+"/"+id)
+				require.Contains(t, oePaths, item.Type, "unknown item type")
 				srv.get(t, "/oeapi/"+oePaths[item.Type]+"/"+id)
+				if path, ok := eduPaths[item.Type]; ok {
+					srv.get(t, eduBase+"/"+path+"/"+id)
+				}
 			}
-			t.Logf("%d records %v", total, records)
+			t.Logf("%d records %v", total, oeRecords)
 		})
 	}
 }

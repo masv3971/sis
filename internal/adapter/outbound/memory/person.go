@@ -4,6 +4,7 @@ package memory
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"sort"
 	"strings"
@@ -202,7 +203,7 @@ func (r *PersonRepository) GetBySourcedIDs(_ context.Context, sourcedIDs []strin
 // The unique id tie-breaker keeps the order total, so pages are stable across
 // calls even though map iteration is randomised.
 func (r *PersonRepository) List(_ context.Context, params port.ListParams) (port.Page[domain.Person], error) {
-	return r.list(nil, params), nil
+	return r.list(nil, params)
 }
 
 // Search is List restricted to the persons matching every term, with the
@@ -219,7 +220,7 @@ func (r *PersonRepository) Search(_ context.Context, terms []string, params port
 			}
 		}
 		return true
-	}, params), nil
+	}, params)
 }
 
 // personMatches reports whether the lower-case term occurs in one of the
@@ -240,20 +241,80 @@ func personMatches(p domain.Person, term string) bool {
 	return false
 }
 
-// list returns the page of live persons for which keep is true (all of
-// them when keep is nil).
-func (r *PersonRepository) list(keep func(domain.Person) bool, params port.ListParams) port.Page[domain.Person] {
+// ListByRoles is List restricted to the persons holding one of roles.
+func (r *PersonRepository) ListByRoles(_ context.Context, roles []domain.Role, params port.ListParams) (port.Page[domain.Person], error) {
+	return r.list(func(p domain.Person) bool {
+		return slices.ContainsFunc(p.Roles, func(role domain.Role) bool { return slices.Contains(roles, role) })
+	}, params)
+}
+
+// personKeys are the keys personKey knows, those the Postgres person
+// repository maps to columns (see personColumn).
+var personKeys = []string{"sourcedId", "status", "givenName", "familyName", "middleName", "dateOfBirth"}
+
+// personKey returns the scalar person property stored under key, and false
+// when the person has no value for it: an empty optional property is absent.
+func personKey(p domain.Person, key string) (string, bool) {
+	switch key {
+	case "sourcedId":
+		return p.SourcedID, true
+	case "status":
+		return string(p.Status), true
+	case "givenName":
+		return p.GivenName, true
+	case "familyName":
+		return p.FamilyName, true
+	case "middleName":
+		return p.MiddleName, p.MiddleName != ""
+	case "dateOfBirth":
+		return p.DateOfBirth, p.DateOfBirth != ""
+	}
+	return "", false
+}
+
+// list pages the live persons keep accepts (all when keep is nil) and
+// params.Filter matches, ordered by params.Sort, then by name.
+func (r *PersonRepository) list(keep func(domain.Person) bool, params port.ListParams) (port.Page[domain.Person], error) {
+	if params.Sort != "" {
+		if !slices.Contains(personKeys, params.Sort) {
+			return port.Page[domain.Person]{}, fmt.Errorf("memory: unknown person sort key %q", params.Sort)
+		}
+	}
+	if params.Filter != nil {
+		for _, term := range params.Filter.Terms {
+			if !slices.Contains(personKeys, term.Field) {
+				return port.Page[domain.Person]{}, fmt.Errorf("memory: unknown person filter key %q", term.Field)
+			}
+		}
+	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	now := r.now()
 	items := make([]domain.Person, 0, len(r.byID))
 	for _, p := range r.byID {
-		if !domain.Expired(p.ExpiresAt, now) && (keep == nil || keep(p)) {
-			items = append(items, clonePerson(p))
+		if domain.Expired(p.ExpiresAt, now) || (keep != nil && !keep(p)) {
+			continue
 		}
+		if !params.Filter.Match(func(field string) (string, bool) { return personKey(p, field) }) {
+			continue
+		}
+		items = append(items, clonePerson(p))
 	}
 	sort.Slice(items, func(i, j int) bool {
 		a, b := items[i], items[j]
+		if params.Sort != "" {
+			av, aok := personKey(a, params.Sort)
+			bv, bok := personKey(b, params.Sort)
+			if aok != bok {
+				return aok // a person without the key goes last in both directions
+			}
+			if av != bv {
+				if params.Desc {
+					return av > bv
+				}
+				return av < bv
+			}
+		}
 		if a.FamilyName != b.FamilyName {
 			return a.FamilyName < b.FamilyName
 		}
@@ -263,7 +324,7 @@ func (r *PersonRepository) list(keep func(domain.Person) bool, params port.ListP
 		return a.ID < b.ID
 	})
 	lo, hi := pageBounds(len(items), params.Offset, params.Limit)
-	return port.Page[domain.Person]{Items: items[lo:hi], Total: len(items)}
+	return port.Page[domain.Person]{Items: items[lo:hi], Total: len(items)}, nil
 }
 
 // pageBounds returns the [lo:hi) slice bounds for a page of a total-length

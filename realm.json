@@ -7,7 +7,7 @@
   "clientScopes": [
     {
       "name": "sis.read",
-      "description": "Read SIS: /api/v1 GET, /api/v1/parse, /oeapi, /eduapi",
+      "description": "Read SIS: /api/v1 GET, /api/v1/parse, /oeapi, /1edtech/eduapi",
       "protocol": "openid-connect",
       "protocolMappers": [
         {

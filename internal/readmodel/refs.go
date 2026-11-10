@@ -3,6 +3,7 @@ package readmodel
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/SUNET/sis/internal/core/domain"
 	"github.com/SUNET/sis/internal/core/service"
@@ -30,18 +31,66 @@ type ref struct {
 	required bool    // the entity is meaningless without it (mirrors Validate)
 }
 
+// listRefs is one optional reference per entry of a list field, named
+// field[i] in validation errors. The targets point into ids, so rewriting
+// them rewrites the list.
+func listRefs(typ, field string, ids []string) []ref {
+	out := make([]ref, len(ids))
+	for i := range ids {
+		out[i] = ref{typ, fmt.Sprintf("%s[%d]", field, i), &ids[i], false}
+	}
+	return out
+}
+
+// dropUnresolved removes the list entries PublishRefs cleared because their
+// target no longer exists, so a list never publishes an empty reference.
+func dropUnresolved(e domain.Entity) {
+	drop := func(ids *[]string) { *ids = slices.DeleteFunc(*ids, func(id string) bool { return id == "" }) }
+	switch v := e.(type) {
+	case *domain.Course:
+		drop(&v.ProgramIDs)
+	case *domain.Offering:
+		drop(&v.CollectionOfferingIDs)
+	case *domain.ComponentTemplate:
+		drop(&v.CourseIDs)
+	case *domain.ComponentOffering:
+		drop(&v.CourseOfferingIDs)
+	}
+}
+
 func refsOf(e domain.Entity) []ref {
 	switch v := e.(type) {
 	case *domain.Organization:
 		return []ref{{"organization", "parentId", &v.ParentID, false}}
 	case *domain.Course:
-		return []ref{{"organization", "orgId", &v.OrgID, false}}
+		return append([]ref{{"organization", "orgId", &v.OrgID, false}},
+			listRefs("program", "programIds", v.ProgramIDs)...)
 	case *domain.Offering:
-		return []ref{
+		return append([]ref{
 			{"course", "courseId", &v.CourseID, true},
 			{"academicSession", "academicSessionId", &v.AcademicSessionID, false},
 			{"organization", "orgId", &v.OrgID, false},
+		}, listRefs("collectionOffering", "collectionOfferingIds", v.CollectionOfferingIDs)...)
+	case *domain.Affiliation:
+		return []ref{
+			{"person", "personId", &v.PersonID, true},
+			{"organization", "orgId", &v.OrgID, true},
 		}
+	case *domain.CollectionOffering:
+		return []ref{
+			{"program", "programId", &v.ProgramID, true},
+			{"academicSession", "academicSessionId", &v.AcademicSessionID, false},
+			{"organization", "orgId", &v.OrgID, false},
+		}
+	case *domain.ComponentTemplate:
+		return append([]ref{{"organization", "orgId", &v.OrgID, false}},
+			listRefs("course", "courseIds", v.CourseIDs)...)
+	case *domain.ComponentOffering:
+		return append([]ref{
+			{"componentTemplate", "componentId", &v.ComponentID, true},
+			{"academicSession", "academicSessionId", &v.AcademicSessionID, false},
+			{"organization", "orgId", &v.OrgID, false},
+		}, listRefs("offering", "courseOfferingIds", v.CourseOfferingIDs)...)
 	case *domain.Enrollment:
 		return []ref{
 			{"person", "personId", &v.PersonID, true},
@@ -57,6 +106,12 @@ func refsOf(e domain.Entity) []ref {
 			{"course", "courseId", &v.CourseID, v.CourseID != ""},
 			{"program", "programId", &v.ProgramID, v.ProgramID != ""},
 			{"offering", "offeringId", &v.OfferingID, false},
+		}
+	case *domain.Entitlement:
+		return []ref{
+			{"person", "personId", &v.PersonID, true},
+			{"organization", "orgId", &v.OrgID, false},
+			{"result", "resultId", &v.ResultID, false},
 		}
 	}
 	return nil
@@ -132,6 +187,7 @@ func (c *Client) PublishRefs(ctx context.Context, entities ...domain.Entity) ([]
 			}
 			*reference.target = sourcedID
 		}
+		dropUnresolved(entities[i])
 	}
 	return publishable, nil
 }
@@ -186,6 +242,12 @@ func (c *Client) sourcedIDs(ctx context.Context, typ string, ids []string) (map[
 		return c.offeringSourcedIDs(ctx, ids)
 	case "program":
 		return entitySourcedIDs(ctx, c.Programs, ids)
+	case "result":
+		return entitySourcedIDs(ctx, c.Results, ids)
+	case "collectionOffering":
+		return entitySourcedIDs(ctx, c.CollectionOfferings, ids)
+	case "componentTemplate":
+		return entitySourcedIDs(ctx, c.ComponentTemplates, ids)
 	}
 	return nil, errUnknownRefType(typ)
 }

@@ -21,4 +21,10 @@ type Client struct {
 	Enrollments      *service.Resource[domain.Enrollment, *domain.Enrollment]
 	Programs         *service.Resource[domain.Program, *domain.Program]
 	Results          *service.Resource[domain.Result, *domain.Result]
+	Entitlements     *service.Resource[domain.Entitlement, *domain.Entitlement]
+
+	Affiliations        *service.Resource[domain.Affiliation, *domain.Affiliation]
+	CollectionOfferings *service.Resource[domain.CollectionOffering, *domain.CollectionOffering]
+	ComponentTemplates  *service.Resource[domain.ComponentTemplate, *domain.ComponentTemplate]
+	ComponentOfferings  *service.Resource[domain.ComponentOffering, *domain.ComponentOffering]
 }

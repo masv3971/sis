@@ -49,11 +49,12 @@ type Client struct {
 }
 
 // New builds the convert Client with every supported format registered.
-func New(_ context.Context, _ *model.Cfg, log *logger.Log) (*Client, error) {
+func New(_ context.Context, cfg *model.Cfg, log *logger.Log) (*Client, error) {
+	edu := edudto.NewMapper(cfg.SIS.Adapter.Inbound.EduAPI.RecordLanguage)
 	return &Client{
 		parsers: map[string]parser{FormatELMv3: parseELM},
 		renderers: map[string]renderer{
-			FormatEduAPI: func(b *domain.Bundle) any { return edudto.FromBundle(b) },
+			FormatEduAPI: func(b *domain.Bundle) any { return edu.Bundle(b) },
 			FormatOEAPI:  func(b *domain.Bundle) any { return oedto.FromBundle(b) },
 		},
 		log: log.New("convert"),

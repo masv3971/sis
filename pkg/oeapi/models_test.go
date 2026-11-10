@@ -77,3 +77,25 @@ func TestMappersUseSourcedIDs(t *testing.T) {
 	assert.Equal(t, "uni", out.Organizations[0].OrganizationID)
 	assert.NotNil(t, out.Courses, "empty lists must be non-nil")
 }
+
+// TestFromBundleNestsFirstResult checks an association gets the result with
+// the smallest sourcedId of its person in its offering, whatever the order
+// of the results, and none when there is no match.
+func TestFromBundleNestsFirstResult(t *testing.T) {
+	base := func(sid string) domain.Base { return domain.Base{ID: "id-" + sid, SourcedID: sid} }
+	out := FromBundle(&domain.Bundle{
+		Enrollments: []*domain.Enrollment{
+			{Base: base("e1"), PersonID: "p", OfferingID: "o"},
+			{Base: base("e2"), PersonID: "q", OfferingID: "o"},
+		},
+		Results: []*domain.Result{
+			{Base: base("r0"), PersonID: "p", CourseID: "c"},
+			{Base: base("r2"), PersonID: "p", CourseID: "c", OfferingID: "o"},
+			{Base: base("r1"), PersonID: "p", CourseID: "c", OfferingID: "o"},
+		},
+	})
+	require.Len(t, out.Associations, 2)
+	require.NotNil(t, out.Associations[0].Result)
+	assert.Equal(t, "r1", out.Associations[0].Result.ResultID)
+	assert.Nil(t, out.Associations[1].Result)
+}

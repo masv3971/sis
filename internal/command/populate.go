@@ -29,7 +29,7 @@ func (m Metadata) Check(converter *convert.Client, withOutput bool) error {
 	case withOutput && !converter.HasOutput(m.OutputFormat):
 		return &domain.ValidationError{Field: "metadata.output_format", Msg: "must be one of " + strings.Join(converter.OutputFormats(), ", ")}
 	case !withOutput && m.OutputFormat != "":
-		return &domain.ValidationError{Field: "metadata.output_format", Msg: "not used by populate; the records are served by /eduapi and /oeapi"}
+		return &domain.ValidationError{Field: "metadata.output_format", Msg: "not used by populate; the records are served by the Edu-API and /oeapi"}
 	}
 	return nil
 }

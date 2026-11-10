@@ -3,6 +3,7 @@ package auth
 import (
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -10,7 +11,24 @@ import (
 	"github.com/SUNET/sis/pkg/helpers"
 )
 
-const claimsKey = "authClaims"
+const (
+	claimsKey   = "authClaims"
+	rendererKey = "authErrorRenderer"
+)
+
+// ErrorRenderer writes the body of a rejected request (the status and the
+// WWW-Authenticate header are already set). msg is the human-readable reason.
+type ErrorRenderer func(gc *gin.Context, status int, msg string)
+
+// RenderErrors makes the auth middleware that runs after it on this route
+// group answer rejections with render instead of ErrorResponse, for an API
+// whose standard prescribes its own error body.
+func RenderErrors(render ErrorRenderer) gin.HandlerFunc {
+	return func(gc *gin.Context) {
+		gc.Set(rendererKey, render)
+		gc.Next()
+	}
+}
 
 // RequireAuth verifies the Bearer token and stores its claims in the context.
 func (v *Verifier) RequireAuth() gin.HandlerFunc {
@@ -70,6 +88,25 @@ func RequireScope(scope string) gin.HandlerFunc {
 	}
 }
 
+// RequireAnyScope is RequireScope for a route that several scopes open. The
+// challenge names the first scope.
+func RequireAnyScope(scopes ...string) gin.HandlerFunc {
+	return func(gc *gin.Context) {
+		claims := ClaimsFrom(gc)
+		if claims == nil {
+			challenge(gc, "")
+			abort(gc, http.StatusUnauthorized, helpers.MsgUnauthenticated)
+			return
+		}
+		if !slices.ContainsFunc(scopes, claims.HasScope) {
+			challenge(gc, `error="insufficient_scope", scope="`+scopes[0]+`"`)
+			abort(gc, http.StatusForbidden, helpers.MsgLacksScope(scopes[0]))
+			return
+		}
+		gc.Next()
+	}
+}
+
 // challenge sets the RFC 6750 §3 WWW-Authenticate header, with optional
 // auth-params.
 func challenge(gc *gin.Context, params string) {
@@ -103,8 +140,16 @@ type ErrorResponse struct {
 
 // abort ends the request with a JSON error whose code follows the status, so
 // clients can tell a failed authentication (401 unauthorized) from missing
-// permissions (403 forbidden) and an issuer outage (503 unavailable).
+// permissions (403 forbidden) and an issuer outage (503 unavailable). A
+// renderer set by RenderErrors writes the body instead.
 func abort(gc *gin.Context, status int, msg string) {
+	if stored, ok := gc.Get(rendererKey); ok {
+		if render, ok := stored.(ErrorRenderer); ok {
+			gc.Abort()
+			render(gc, status, msg)
+			return
+		}
+	}
 	code := helpers.ErrUnauthorized
 	switch status {
 	case http.StatusForbidden:
