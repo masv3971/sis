@@ -154,10 +154,10 @@ export async function completeSignIn(): Promise<string | null> {
 }
 
 // restoreHash puts the route the user asked for back in the address bar. It
-// only accepts an in-app route (#/...), never anything else stored in
-// sessionStorage.
+// only accepts an in-app route (#/..., or #%2F... as some link rewriters send
+// it, which parseRoute decodes), never anything else stored in sessionStorage.
 function restoreHash(hash: unknown): void {
-  if (typeof hash === "string" && /^#\/?[A-Za-z]/.test(hash)) {
+  if (typeof hash === "string" && /^#(?:\/|%2f)?[A-Za-z]/i.test(hash)) {
     history.replaceState(null, "", location.pathname + hash);
   }
 }

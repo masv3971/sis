@@ -42,6 +42,14 @@ export function Students({
     try {
       const page = await searchPersons(query, PAGE_SIZE, at);
       if (gen !== loadGen.current) return;
+      // A saved offset can outlive deletions. Show the last page instead of
+      // an empty one, and rewrite the hash (no history entry) to match.
+      if (page.persons.length === 0 && at > 0 && page.total > 0) {
+        const size = page.limit > 0 ? page.limit : PAGE_SIZE;
+        const last = Math.floor((page.total - 1) / size) * size;
+        history.replaceState(null, "", href("students", studentsParams(query, last)));
+        return load(last);
+      }
       setPersons(page.persons);
       setTotal(page.total);
       setOffset(at);

@@ -162,7 +162,37 @@ test("Back from a person returns to the same search page", async ({ page, signIn
   expect(page.url()).not.toContain("offset");
 });
 
-test("the requested link is restored after sign-in", async ({ page, tokens }) => {
+test("a saved offset past the end shows the last page", async ({ page, signIn, request, tokens }) => {
+  const addPeople = async (from: number, to: number) => {
+    for (let i = from; i < to; i++) {
+      const created = await request.post("/api/v1/persons", {
+        headers: { Authorization: `Bearer ${tokens.writer}` },
+        data: { givenName: "P", familyName: `Fam${String(i).padStart(2, "0")}`, status: "active" },
+      });
+      expect(created.status()).toBe(201);
+    }
+  };
+  await signIn("reader");
+
+  // A link saved with offset 25 outlives deletions: 20 people fit on one page.
+  await addPeople(0, 20);
+  await page.goto("/#/students?offset=25");
+  await expect(page.getByRole("heading", { name: /People \(20\)/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Fam00/ })).toBeVisible();
+  await expect(page.getByText("Nobody matches.")).toHaveCount(0);
+  expect(page.url()).not.toContain("offset");
+
+  // With several pages left, the last one is shown and the pager works.
+  await addPeople(20, 30);
+  await page.goto("/#/students?offset=100");
+  await expect(page.getByText("26–30 of 30")).toBeVisible();
+  expect(page.url()).toContain("offset=25");
+  await page.getByRole("button", { name: "Previous" }).click();
+  await expect(page.getByText("1–25 of 30")).toBeVisible();
+});
+
+for (const link of ["/#/students?q=grace", "/#%2Fstudents%3Fq%3Dgrace"]) {
+test(`the requested link ${link} is restored after sign-in`, async ({ page, tokens }) => {
   const issuer = "https://issuer.test";
   const cors = { "access-control-allow-origin": "*" };
   await page.route("**/auth/config", (route) =>
@@ -184,13 +214,14 @@ test("the requested link is restored after sign-in", async ({ page, tokens }) =>
   });
   await page.route(`${issuer}/token`, (route) => route.fulfill({ headers: cors, json: { access_token: tokens.reader } }));
 
-  await page.goto("/#/students?q=grace");
+  await page.goto(link);
   await page.getByRole("button", { name: "Sign in" }).click();
 
   await expect(page.getByText("read only")).toBeVisible();
   await expect(page.getByRole("searchbox", { name: "Search people" })).toHaveValue("grace");
   expect(new URL(page.url()).search).toBe("");
 });
+}
 
 test("log out drops the token and returns to sign-in", async ({ page, signIn }) => {
   await signIn("writer");
