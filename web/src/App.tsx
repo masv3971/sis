@@ -7,6 +7,7 @@ import { Resource } from "./Resource";
 import { href, offsetOf, useRoute } from "./route";
 import { Student } from "./Student";
 import { Students } from "./Students";
+import logo from "./assets/sunet-logo.svg";
 
 // The UI is person-centric: it opens on the student search, and a student's
 // enrollments and results are edited on their page. The catalog (the
@@ -49,7 +50,10 @@ export function App({ signInError }: { signInError: string }) {
     <div className="app">
       <header className="topbar">
         <h1>
-          <a href={href("students")}>SIS Admin</a>
+          <a href={href("students")}>
+            <img className="logo" src={logo} alt="" />
+            SIS Admin
+          </a>
         </h1>
         {authed && (
           <div className="row">

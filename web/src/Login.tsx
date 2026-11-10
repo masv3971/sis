@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import logo from "./assets/sunet-logo.svg";
 import { authConfig, signIn, type AuthConfig } from "./oidc";
 
 // Login offers sign-in at the configured token issuer. SIS never sees a
@@ -26,6 +27,7 @@ export function Login({ error: initialError }: { error: string }) {
 
   return (
     <div className="card login">
+      <img className="logo" src={logo} alt="Sunet" />
       <h2>Sign in</h2>
       {cfg && !cfg.enabled && <p className="muted">Sign-in is not configured for this SIS.</p>}
       {/* role="alert" is an assertive live region: screen readers announce
