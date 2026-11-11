@@ -1,0 +1,950 @@
+basePath: /oeapi
+definitions:
+  auth.ErrorResponse:
+    properties:
+      error:
+        description: |-
+          Error is "unauthorized" (401: missing, invalid or expired token, or
+          one from an untrusted issuer), "forbidden" (403: the token lacks the
+          required scope) or "unavailable" (503: the token's issuer could not be
+          reached to check it; retry later).
+        example: unauthorized
+        type: string
+      message:
+        example: missing bearer token
+        type: string
+    type: object
+  helpers.Error:
+    properties:
+      details: {}
+      title:
+        type: string
+    type: object
+  helpers.ErrorResponse:
+    properties:
+      error:
+        $ref: '#/definitions/helpers.Error'
+    type: object
+  oeapi.AcademicSession:
+    properties:
+      academicSessionId:
+        type: string
+      endDate:
+        type: string
+      name:
+        type: string
+      startDate:
+        type: string
+      type:
+        type: string
+    type: object
+  oeapi.Association:
+    properties:
+      associationId:
+        type: string
+      offeringId:
+        type: string
+      personId:
+        type: string
+      result:
+        allOf:
+        - $ref: '#/definitions/oeapi.Result'
+        description: Result is the person's result in the offering, when there is
+          one.
+      role:
+        type: string
+      state:
+        type: string
+    type: object
+  oeapi.Course:
+    properties:
+      abbreviation:
+        type: string
+      courseId:
+        type: string
+      name:
+        type: string
+      organizationId:
+        type: string
+    type: object
+  oeapi.Offering:
+    properties:
+      academicSessionId:
+        type: string
+      courseId:
+        type: string
+      name:
+        type: string
+      offeringId:
+        type: string
+    type: object
+  oeapi.Organization:
+    properties:
+      name:
+        type: string
+      organizationId:
+        type: string
+      parentOrganization:
+        type: string
+      type:
+        type: string
+    type: object
+  oeapi.Page-oeapi_AcademicSession:
+    properties:
+      hasNextPage:
+        type: boolean
+      hasPreviousPage:
+        type: boolean
+      items:
+        items:
+          $ref: '#/definitions/oeapi.AcademicSession'
+        type: array
+      pageNumber:
+        type: integer
+      pageSize:
+        type: integer
+      totalPages:
+        type: integer
+    type: object
+  oeapi.Page-oeapi_Association:
+    properties:
+      hasNextPage:
+        type: boolean
+      hasPreviousPage:
+        type: boolean
+      items:
+        items:
+          $ref: '#/definitions/oeapi.Association'
+        type: array
+      pageNumber:
+        type: integer
+      pageSize:
+        type: integer
+      totalPages:
+        type: integer
+    type: object
+  oeapi.Page-oeapi_Course:
+    properties:
+      hasNextPage:
+        type: boolean
+      hasPreviousPage:
+        type: boolean
+      items:
+        items:
+          $ref: '#/definitions/oeapi.Course'
+        type: array
+      pageNumber:
+        type: integer
+      pageSize:
+        type: integer
+      totalPages:
+        type: integer
+    type: object
+  oeapi.Page-oeapi_Offering:
+    properties:
+      hasNextPage:
+        type: boolean
+      hasPreviousPage:
+        type: boolean
+      items:
+        items:
+          $ref: '#/definitions/oeapi.Offering'
+        type: array
+      pageNumber:
+        type: integer
+      pageSize:
+        type: integer
+      totalPages:
+        type: integer
+    type: object
+  oeapi.Page-oeapi_Organization:
+    properties:
+      hasNextPage:
+        type: boolean
+      hasPreviousPage:
+        type: boolean
+      items:
+        items:
+          $ref: '#/definitions/oeapi.Organization'
+        type: array
+      pageNumber:
+        type: integer
+      pageSize:
+        type: integer
+      totalPages:
+        type: integer
+    type: object
+  oeapi.Page-oeapi_Person:
+    properties:
+      hasNextPage:
+        type: boolean
+      hasPreviousPage:
+        type: boolean
+      items:
+        items:
+          $ref: '#/definitions/oeapi.Person'
+        type: array
+      pageNumber:
+        type: integer
+      pageSize:
+        type: integer
+      totalPages:
+        type: integer
+    type: object
+  oeapi.Page-oeapi_Program:
+    properties:
+      hasNextPage:
+        type: boolean
+      hasPreviousPage:
+        type: boolean
+      items:
+        items:
+          $ref: '#/definitions/oeapi.Program'
+        type: array
+      pageNumber:
+        type: integer
+      pageSize:
+        type: integer
+      totalPages:
+        type: integer
+    type: object
+  oeapi.Page-oeapi_Result:
+    properties:
+      hasNextPage:
+        type: boolean
+      hasPreviousPage:
+        type: boolean
+      items:
+        items:
+          $ref: '#/definitions/oeapi.Result'
+        type: array
+      pageNumber:
+        type: integer
+      pageSize:
+        type: integer
+      totalPages:
+        type: integer
+    type: object
+  oeapi.Person:
+    properties:
+      displayName:
+        type: string
+      givenName:
+        type: string
+      mail:
+        type: string
+      personId:
+        type: string
+      surname:
+        type: string
+    type: object
+  oeapi.Program:
+    properties:
+      abbreviation:
+        type: string
+      levelOfQualification:
+        type: string
+      name:
+        type: string
+      organizationId:
+        type: string
+      programId:
+        type: string
+    type: object
+  oeapi.Result:
+    properties:
+      courseId:
+        type: string
+      ects:
+        type: number
+      offeringId:
+        type: string
+      personId:
+        type: string
+      programId:
+        type: string
+      resultDate:
+        type: string
+      resultId:
+        type: string
+      score:
+        type: string
+      state:
+        type: string
+    type: object
+info:
+  contact: {}
+  description: |-
+    Read-only publication of the SIS data in Open Education API v6.0 shapes (/oeapi).
+
+    Every endpoint needs a Bearer access token with scope sis.read from one of
+    the token issuers SIS trusts (sis.auth.issuers).
+
+    Lists use the OEAPI page envelope and pageNumber/pageSize. A record
+    is addressed by its sourcedId, and references between records are
+    sourcedIds, so every relationship can be followed through this API.
+    sort and filter are not supported and answer 400.
+  license:
+    name: BSD-2-Clause
+    url: https://opensource.org/license/bsd-2-clause
+  title: SIS Open Education API (OEAPI) v6.0
+  version: "6.0"
+paths:
+  /academic-sessions:
+    get:
+      description: Lists academic sessions in the OEAPI page envelope.
+      operationId: list-academic-sessions
+      parameters:
+      - description: 1-based page number
+        in: query
+        minimum: 1
+        name: pageNumber
+        type: integer
+      - description: Page size; defaults to default_page_size and is clamped to max_page_size
+        in: query
+        minimum: 1
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/oeapi.Page-oeapi_AcademicSession'
+        "400":
+          description: Invalid paging parameters, or sort/filter given
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List academic sessions
+      tags:
+      - academic-sessions
+  /academic-sessions/{id}:
+    get:
+      description: Returns one academic session by sourcedId.
+      operationId: get-academic-session
+      parameters:
+      - description: Academic session sourcedId
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/oeapi.AcademicSession'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get academic session
+      tags:
+      - academic-sessions
+  /associations:
+    get:
+      description: Lists enrollments as associations, each with the person's result
+        in the offering nested.
+      operationId: list-associations
+      parameters:
+      - description: 1-based page number
+        in: query
+        minimum: 1
+        name: pageNumber
+        type: integer
+      - description: Page size; defaults to default_page_size and is clamped to max_page_size
+        in: query
+        minimum: 1
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/oeapi.Page-oeapi_Association'
+        "400":
+          description: Invalid paging parameters, or sort/filter given
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List associations
+      tags:
+      - associations
+  /associations/{id}:
+    get:
+      description: Returns one enrollment by sourcedId as an association, with its
+        result nested.
+      operationId: get-association
+      parameters:
+      - description: Association (enrollment) sourcedId
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/oeapi.Association'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get association
+      tags:
+      - associations
+  /courses:
+    get:
+      description: Lists courses in the OEAPI page envelope.
+      operationId: list-courses
+      parameters:
+      - description: 1-based page number
+        in: query
+        minimum: 1
+        name: pageNumber
+        type: integer
+      - description: Page size; defaults to default_page_size and is clamped to max_page_size
+        in: query
+        minimum: 1
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/oeapi.Page-oeapi_Course'
+        "400":
+          description: Invalid paging parameters, or sort/filter given
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List courses
+      tags:
+      - courses
+  /courses/{id}:
+    get:
+      description: Returns one course by sourcedId.
+      operationId: get-course
+      parameters:
+      - description: Course sourcedId
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/oeapi.Course'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get course
+      tags:
+      - courses
+  /offerings:
+    get:
+      description: Lists offerings in the OEAPI page envelope.
+      operationId: list-offerings
+      parameters:
+      - description: 1-based page number
+        in: query
+        minimum: 1
+        name: pageNumber
+        type: integer
+      - description: Page size; defaults to default_page_size and is clamped to max_page_size
+        in: query
+        minimum: 1
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/oeapi.Page-oeapi_Offering'
+        "400":
+          description: Invalid paging parameters, or sort/filter given
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List offerings
+      tags:
+      - offerings
+  /offerings/{id}:
+    get:
+      description: Returns one offering by sourcedId.
+      operationId: get-offering
+      parameters:
+      - description: Offering sourcedId
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/oeapi.Offering'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get offering
+      tags:
+      - offerings
+  /organizations:
+    get:
+      description: Lists organizations in the OEAPI page envelope.
+      operationId: list-organizations
+      parameters:
+      - description: 1-based page number
+        in: query
+        minimum: 1
+        name: pageNumber
+        type: integer
+      - description: Page size; defaults to default_page_size and is clamped to max_page_size
+        in: query
+        minimum: 1
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/oeapi.Page-oeapi_Organization'
+        "400":
+          description: Invalid paging parameters, or sort/filter given
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List organizations
+      tags:
+      - organizations
+  /organizations/{id}:
+    get:
+      description: Returns one organization by sourcedId.
+      operationId: get-organization
+      parameters:
+      - description: Organization sourcedId
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/oeapi.Organization'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get organization
+      tags:
+      - organizations
+  /persons:
+    get:
+      description: Lists persons in the OEAPI page envelope.
+      operationId: list-persons
+      parameters:
+      - description: 1-based page number
+        in: query
+        minimum: 1
+        name: pageNumber
+        type: integer
+      - description: Page size; defaults to default_page_size and is clamped to max_page_size
+        in: query
+        minimum: 1
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/oeapi.Page-oeapi_Person'
+        "400":
+          description: Invalid paging parameters, or sort/filter given
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List persons
+      tags:
+      - persons
+  /persons/{id}:
+    get:
+      description: Returns one person by sourcedId.
+      operationId: get-person
+      parameters:
+      - description: Person sourcedId
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/oeapi.Person'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get person
+      tags:
+      - persons
+  /programs:
+    get:
+      description: Lists programs in the OEAPI page envelope.
+      operationId: list-programs
+      parameters:
+      - description: 1-based page number
+        in: query
+        minimum: 1
+        name: pageNumber
+        type: integer
+      - description: Page size; defaults to default_page_size and is clamped to max_page_size
+        in: query
+        minimum: 1
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/oeapi.Page-oeapi_Program'
+        "400":
+          description: Invalid paging parameters, or sort/filter given
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List programs
+      tags:
+      - programs
+  /programs/{id}:
+    get:
+      description: Returns one program by sourcedId.
+      operationId: get-program
+      parameters:
+      - description: Program sourcedId
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/oeapi.Program'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get program
+      tags:
+      - programs
+  /results:
+    get:
+      description: Lists every result as its own resource, including program results,
+        which have no association.
+      operationId: list-results
+      parameters:
+      - description: 1-based page number
+        in: query
+        minimum: 1
+        name: pageNumber
+        type: integer
+      - description: Page size; defaults to default_page_size and is clamped to max_page_size
+        in: query
+        minimum: 1
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/oeapi.Page-oeapi_Result'
+        "400":
+          description: Invalid paging parameters, or sort/filter given
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List results
+      tags:
+      - results
+  /results/{id}:
+    get:
+      description: Returns one result by sourcedId.
+      operationId: get-result
+      parameters:
+      - description: Result sourcedId
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/oeapi.Result'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/auth.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/helpers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get result
+      tags:
+      - results
+securityDefinitions:
+  BearerAuth:
+    description: Access token prefixed with "Bearer ", e.g. "Bearer eyJhbGciOi...".
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

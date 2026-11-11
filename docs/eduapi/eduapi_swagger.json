@@ -1,0 +1,2273 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "Read-only publication of the SIS data in 1EdTech Edu-API v1.0 (Final) shapes.\n\nEvery endpoint needs a Bearer access token from one of the token issuers\nSIS trusts (sis.auth.issuers), with scope sis.read or the spec's\nhttp://purl.1edtech.org/spec/eduapi/v1p0/scope/core.readonly.\n\nLists are bare JSON arrays. X-Total-Count holds the number of stored\nrecords and Link the first, prev, next and last pages. A record is\naddressed by its sourcedId, and references between records are\nsourcedIds. Errors use the spec's Imsx_StatusInfo body. Lists that\nsupport sort and filter say so; the others answer 400.\n\nSIS stores less than the spec requires. A required field with no data\ncarries the extensible term ext:unspecified (registrationStatus: closed).",
+        "title": "SIS Edu-API v1.0",
+        "contact": {},
+        "license": {
+            "name": "BSD-2-Clause",
+            "url": "https://opensource.org/license/bsd-2-clause"
+        },
+        "version": "1.0"
+    },
+    "basePath": "/1edtech/eduapi/base/v1p0",
+    "paths": {
+        "/academicSessions": {
+            "get": {
+                "description": "Lists academic sessions. sort and filter accept sourcedId.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "academicSessions"
+                ],
+                "summary": "List academic sessions",
+                "operationId": "list-academic-sessions",
+                "parameters": [
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Page size; defaults to default_limit and is clamped to max_limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "description": "Number of items to skip",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Field to sort by",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "type": "string",
+                        "description": "Sort direction",
+                        "name": "orderBy",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "One or two terms joined by AND or OR, e.g. sourcedId='x'",
+                        "name": "filter",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/eduapi.AcademicSession"
+                            }
+                        },
+                        "headers": {
+                            "Link": {
+                                "type": "string",
+                                "description": "RFC 8288 first, prev, next and last links"
+                            },
+                            "X-Total-Count": {
+                                "type": "integer",
+                                "description": "Number of stored records"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameter or filter field",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/academicSessions/{id}": {
+            "get": {
+                "description": "Returns one academic session by sourcedId.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "academicSessions"
+                ],
+                "summary": "Get academic session",
+                "operationId": "get-academic-session",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Academic session sourcedId",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.AcademicSession"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/academicSessions/{id}/courseOfferings": {
+            "get": {
+                "description": "Lists the course offerings in one academic session. sort and filter accept sourcedId.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "academicSessions"
+                ],
+                "summary": "List the course offerings of an academic session",
+                "operationId": "list-session-course-offerings",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Academic session sourcedId",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Page size; defaults to default_limit and is clamped to max_limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "description": "Number of items to skip",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Field to sort by",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "type": "string",
+                        "description": "Sort direction",
+                        "name": "orderBy",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "One or two terms joined by AND or OR, e.g. sourcedId='x'",
+                        "name": "filter",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/eduapi.CourseOffering"
+                            }
+                        },
+                        "headers": {
+                            "Link": {
+                                "type": "string",
+                                "description": "RFC 8288 first, prev, next and last links"
+                            },
+                            "X-Total-Count": {
+                                "type": "integer",
+                                "description": "Number of stored records"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameter or filter field",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "404": {
+                        "description": "No such academic session",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/academicSessions/{id}/enrollments": {
+            "get": {
+                "description": "Lists the enrollments on the course offerings of one academic session. Paged in memory: sort and filter answer 400.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "academicSessions"
+                ],
+                "summary": "List the enrollments of an academic session",
+                "operationId": "list-session-enrollments",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Academic session sourcedId",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Page size; defaults to default_limit and is clamped to max_limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "description": "Number of items to skip",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/eduapi.Enrollment"
+                            }
+                        },
+                        "headers": {
+                            "Link": {
+                                "type": "string",
+                                "description": "RFC 8288 first, prev, next and last links"
+                            },
+                            "X-Total-Count": {
+                                "type": "integer",
+                                "description": "Number of stored records"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameter, or sort/filter given",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "404": {
+                        "description": "No such academic session",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/collectionTemplates": {
+            "get": {
+                "description": "Lists collection templates (SIS programs). sort and filter accept sourcedId.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "collectionTemplates"
+                ],
+                "summary": "List collection templates",
+                "operationId": "list-collection-templates",
+                "parameters": [
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Page size; defaults to default_limit and is clamped to max_limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "description": "Number of items to skip",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Field to sort by",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "type": "string",
+                        "description": "Sort direction",
+                        "name": "orderBy",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "One or two terms joined by AND or OR, e.g. sourcedId='x'",
+                        "name": "filter",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/eduapi.CollectionTemplate"
+                            }
+                        },
+                        "headers": {
+                            "Link": {
+                                "type": "string",
+                                "description": "RFC 8288 first, prev, next and last links"
+                            },
+                            "X-Total-Count": {
+                                "type": "integer",
+                                "description": "Number of stored records"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameter or filter field",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/collectionTemplates/{id}": {
+            "get": {
+                "description": "Returns one collection template by sourcedId.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "collectionTemplates"
+                ],
+                "summary": "Get collection template",
+                "operationId": "get-collection-template",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Collection template sourcedId",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.CollectionTemplate"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/courseOfferings": {
+            "get": {
+                "description": "Lists course offerings (SIS offerings). sort and filter accept sourcedId.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "courseOfferings"
+                ],
+                "summary": "List course offerings",
+                "operationId": "list-course-offerings",
+                "parameters": [
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Page size; defaults to default_limit and is clamped to max_limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "description": "Number of items to skip",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Field to sort by",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "type": "string",
+                        "description": "Sort direction",
+                        "name": "orderBy",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "One or two terms joined by AND or OR, e.g. sourcedId='x'",
+                        "name": "filter",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/eduapi.CourseOffering"
+                            }
+                        },
+                        "headers": {
+                            "Link": {
+                                "type": "string",
+                                "description": "RFC 8288 first, prev, next and last links"
+                            },
+                            "X-Total-Count": {
+                                "type": "integer",
+                                "description": "Number of stored records"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameter or filter field",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/courseOfferings/{id}": {
+            "get": {
+                "description": "Returns one course offering by sourcedId.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "courseOfferings"
+                ],
+                "summary": "Get course offering",
+                "operationId": "get-course-offering",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Course offering sourcedId",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.CourseOffering"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/courseOfferings/{id}/enrollments": {
+            "get": {
+                "description": "Lists the enrollments on one course offering. sort and filter accept sourcedId.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "courseOfferings"
+                ],
+                "summary": "List the enrollments of a course offering",
+                "operationId": "list-offering-enrollments",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Course offering sourcedId",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Page size; defaults to default_limit and is clamped to max_limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "description": "Number of items to skip",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Field to sort by",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "type": "string",
+                        "description": "Sort direction",
+                        "name": "orderBy",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "One or two terms joined by AND or OR, e.g. sourcedId='x'",
+                        "name": "filter",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/eduapi.Enrollment"
+                            }
+                        },
+                        "headers": {
+                            "Link": {
+                                "type": "string",
+                                "description": "RFC 8288 first, prev, next and last links"
+                            },
+                            "X-Total-Count": {
+                                "type": "integer",
+                                "description": "Number of stored records"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameter or filter field",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "404": {
+                        "description": "No such course offering",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/courseOfferings/{id}/staff": {
+            "get": {
+                "description": "Lists the persons enrolled on one course offering as staff. Paged in memory: sort and filter answer 400.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "courseOfferings"
+                ],
+                "summary": "List the staff of a course offering",
+                "operationId": "list-offering-staff",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Course offering sourcedId",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Page size; defaults to default_limit and is clamped to max_limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "description": "Number of items to skip",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/eduapi.Person"
+                            }
+                        },
+                        "headers": {
+                            "Link": {
+                                "type": "string",
+                                "description": "RFC 8288 first, prev, next and last links"
+                            },
+                            "X-Total-Count": {
+                                "type": "integer",
+                                "description": "Number of stored records"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameter, or sort/filter given",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "404": {
+                        "description": "No such course offering",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/courseOfferings/{id}/students": {
+            "get": {
+                "description": "Lists the persons enrolled on one course offering as students. Paged in memory: sort and filter answer 400.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "courseOfferings"
+                ],
+                "summary": "List the students of a course offering",
+                "operationId": "list-offering-students",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Course offering sourcedId",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Page size; defaults to default_limit and is clamped to max_limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "description": "Number of items to skip",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/eduapi.Person"
+                            }
+                        },
+                        "headers": {
+                            "Link": {
+                                "type": "string",
+                                "description": "RFC 8288 first, prev, next and last links"
+                            },
+                            "X-Total-Count": {
+                                "type": "integer",
+                                "description": "Number of stored records"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameter, or sort/filter given",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "404": {
+                        "description": "No such course offering",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/courseTemplates": {
+            "get": {
+                "description": "Lists course templates (SIS courses). sort and filter accept sourcedId.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "courseTemplates"
+                ],
+                "summary": "List course templates",
+                "operationId": "list-course-templates",
+                "parameters": [
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Page size; defaults to default_limit and is clamped to max_limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "description": "Number of items to skip",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Field to sort by",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "type": "string",
+                        "description": "Sort direction",
+                        "name": "orderBy",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "One or two terms joined by AND or OR, e.g. sourcedId='x'",
+                        "name": "filter",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/eduapi.CourseTemplate"
+                            }
+                        },
+                        "headers": {
+                            "Link": {
+                                "type": "string",
+                                "description": "RFC 8288 first, prev, next and last links"
+                            },
+                            "X-Total-Count": {
+                                "type": "integer",
+                                "description": "Number of stored records"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameter or filter field",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/courseTemplates/{id}": {
+            "get": {
+                "description": "Returns one course template by sourcedId.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "courseTemplates"
+                ],
+                "summary": "Get course template",
+                "operationId": "get-course-template",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Course template sourcedId",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.CourseTemplate"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/enrollments": {
+            "get": {
+                "description": "Lists enrollments. sort and filter accept sourcedId.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "enrollments"
+                ],
+                "summary": "List enrollments",
+                "operationId": "list-enrollments",
+                "parameters": [
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Page size; defaults to default_limit and is clamped to max_limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "description": "Number of items to skip",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Field to sort by",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "type": "string",
+                        "description": "Sort direction",
+                        "name": "orderBy",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "One or two terms joined by AND or OR, e.g. sourcedId='x'",
+                        "name": "filter",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/eduapi.Enrollment"
+                            }
+                        },
+                        "headers": {
+                            "Link": {
+                                "type": "string",
+                                "description": "RFC 8288 first, prev, next and last links"
+                            },
+                            "X-Total-Count": {
+                                "type": "integer",
+                                "description": "Number of stored records"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameter or filter field",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/enrollments/{id}": {
+            "get": {
+                "description": "Returns one enrollment by sourcedId.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "enrollments"
+                ],
+                "summary": "Get enrollment",
+                "operationId": "get-enrollment",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Enrollment sourcedId",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.Enrollment"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/organizations": {
+            "get": {
+                "description": "Lists organizations. sort and filter accept sourcedId.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "organizations"
+                ],
+                "summary": "List organizations",
+                "operationId": "list-organizations",
+                "parameters": [
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Page size; defaults to default_limit and is clamped to max_limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "description": "Number of items to skip",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Field to sort by",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "type": "string",
+                        "description": "Sort direction",
+                        "name": "orderBy",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "One or two terms joined by AND or OR, e.g. sourcedId='x'",
+                        "name": "filter",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/eduapi.Organization"
+                            }
+                        },
+                        "headers": {
+                            "Link": {
+                                "type": "string",
+                                "description": "RFC 8288 first, prev, next and last links"
+                            },
+                            "X-Total-Count": {
+                                "type": "integer",
+                                "description": "Number of stored records"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameter or filter field",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/organizations/{id}": {
+            "get": {
+                "description": "Returns one organization by sourcedId.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "organizations"
+                ],
+                "summary": "Get organization",
+                "operationId": "get-organization",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Organization sourcedId",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.Organization"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/persons": {
+            "get": {
+                "description": "Lists persons. sort accepts sourcedId, legalName.familyName, legalName.givenName and dateOfBirth; filter accepts the same fields.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "persons"
+                ],
+                "summary": "List persons",
+                "operationId": "list-persons",
+                "parameters": [
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Page size; defaults to default_limit and is clamped to max_limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "description": "Number of items to skip",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Field to sort by",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "type": "string",
+                        "description": "Sort direction",
+                        "name": "orderBy",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "One or two terms joined by AND or OR, e.g. legalName.familyName~'son'",
+                        "name": "filter",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/eduapi.Person"
+                            }
+                        },
+                        "headers": {
+                            "Link": {
+                                "type": "string",
+                                "description": "RFC 8288 first, prev, next and last links"
+                            },
+                            "X-Total-Count": {
+                                "type": "integer",
+                                "description": "Number of stored records"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameter or filter field",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/persons/{id}": {
+            "get": {
+                "description": "Returns one person by sourcedId.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "persons"
+                ],
+                "summary": "Get person",
+                "operationId": "get-person",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Person sourcedId",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.Person"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/staff": {
+            "get": {
+                "description": "Lists the persons with the staff or faculty role. sort and filter as for persons.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "persons"
+                ],
+                "summary": "List staff",
+                "operationId": "list-staff",
+                "parameters": [
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Page size; defaults to default_limit and is clamped to max_limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "description": "Number of items to skip",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Field to sort by",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "type": "string",
+                        "description": "Sort direction",
+                        "name": "orderBy",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "One or two terms joined by AND or OR, e.g. legalName.familyName~'son'",
+                        "name": "filter",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/eduapi.Person"
+                            }
+                        },
+                        "headers": {
+                            "Link": {
+                                "type": "string",
+                                "description": "RFC 8288 first, prev, next and last links"
+                            },
+                            "X-Total-Count": {
+                                "type": "integer",
+                                "description": "Number of stored records"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameter or filter field",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/students": {
+            "get": {
+                "description": "Lists the persons with the student role. sort and filter as for persons.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "persons"
+                ],
+                "summary": "List students",
+                "operationId": "list-students",
+                "parameters": [
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Page size; defaults to default_limit and is clamped to max_limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "description": "Number of items to skip",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Field to sort by",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "type": "string",
+                        "description": "Sort direction",
+                        "name": "orderBy",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "One or two terms joined by AND or OR, e.g. legalName.familyName~'son'",
+                        "name": "filter",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/eduapi.Person"
+                            }
+                        },
+                        "headers": {
+                            "Link": {
+                                "type": "string",
+                                "description": "RFC 8288 first, prev, next and last links"
+                            },
+                            "X-Total-Count": {
+                                "type": "integer",
+                                "description": "Number of stored records"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameter or filter field",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or untrusted token",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks the required scope",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/eduapi.StatusInfo"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        }
+    },
+    "definitions": {
+        "eduapi.AcademicSession": {
+            "type": "object",
+            "properties": {
+                "dateLastModified": {
+                    "type": "string"
+                },
+                "endDate": {
+                    "type": "string"
+                },
+                "recordLanguage": {
+                    "type": "string"
+                },
+                "recordStatus": {
+                    "type": "string"
+                },
+                "sessionType": {
+                    "type": "string"
+                },
+                "sourcedId": {
+                    "type": "string"
+                },
+                "startDate": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/eduapi.LanguageTypedString"
+                    }
+                }
+            }
+        },
+        "eduapi.CodeMinor": {
+            "type": "object",
+            "properties": {
+                "imsx_codeMinorField": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/eduapi.CodeMinorField"
+                    }
+                }
+            }
+        },
+        "eduapi.CodeMinorField": {
+            "type": "object",
+            "properties": {
+                "imsx_codeMinorFieldName": {
+                    "type": "string"
+                },
+                "imsx_codeMinorFieldValue": {
+                    "type": "string"
+                }
+            }
+        },
+        "eduapi.CollectionTemplate": {
+            "type": "object",
+            "properties": {
+                "collectionType": {
+                    "type": "string"
+                },
+                "creditType": {
+                    "type": "string"
+                },
+                "dateLastModified": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/eduapi.LanguageTypedString"
+                    }
+                },
+                "gradingScheme": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/eduapi.LanguageTypedString"
+                    }
+                },
+                "level": {
+                    "type": "string"
+                },
+                "organization": {
+                    "type": "string"
+                },
+                "primaryCode": {
+                    "$ref": "#/definitions/eduapi.IdentifierEntry"
+                },
+                "recordLanguage": {
+                    "type": "string"
+                },
+                "recordStatus": {
+                    "type": "string"
+                },
+                "sourcedId": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/eduapi.LanguageTypedString"
+                    }
+                }
+            }
+        },
+        "eduapi.CourseOffering": {
+            "type": "object",
+            "properties": {
+                "academicSession": {
+                    "type": "string"
+                },
+                "course": {
+                    "type": "string"
+                },
+                "dateLastModified": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/eduapi.LanguageTypedString"
+                    }
+                },
+                "endDate": {
+                    "type": "string"
+                },
+                "offeringFormat": {
+                    "type": "string"
+                },
+                "offeringType": {
+                    "type": "string"
+                },
+                "organization": {
+                    "type": "string"
+                },
+                "primaryCode": {
+                    "$ref": "#/definitions/eduapi.IdentifierEntry"
+                },
+                "recordLanguage": {
+                    "type": "string"
+                },
+                "recordStatus": {
+                    "type": "string"
+                },
+                "registrationStatus": {
+                    "type": "string"
+                },
+                "sourcedId": {
+                    "type": "string"
+                },
+                "startDate": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/eduapi.LanguageTypedString"
+                    }
+                }
+            }
+        },
+        "eduapi.CourseTemplate": {
+            "type": "object",
+            "properties": {
+                "courseType": {
+                    "type": "string"
+                },
+                "creditType": {
+                    "type": "string"
+                },
+                "dateLastModified": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/eduapi.LanguageTypedString"
+                    }
+                },
+                "gradingScheme": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/eduapi.LanguageTypedString"
+                    }
+                },
+                "level": {
+                    "type": "string"
+                },
+                "organization": {
+                    "type": "string"
+                },
+                "primaryCode": {
+                    "$ref": "#/definitions/eduapi.IdentifierEntry"
+                },
+                "recordLanguage": {
+                    "type": "string"
+                },
+                "recordStatus": {
+                    "type": "string"
+                },
+                "sourcedId": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/eduapi.LanguageTypedString"
+                    }
+                }
+            }
+        },
+        "eduapi.Enrollment": {
+            "type": "object",
+            "properties": {
+                "dateLastModified": {
+                    "type": "string"
+                },
+                "educationOffering": {
+                    "type": "string"
+                },
+                "enrollmentStatus": {
+                    "type": "string"
+                },
+                "isActive": {
+                    "type": "boolean"
+                },
+                "offeringType": {
+                    "type": "string"
+                },
+                "person": {
+                    "type": "string"
+                },
+                "recordLanguage": {
+                    "type": "string"
+                },
+                "recordStatus": {
+                    "type": "string"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "sourcedId": {
+                    "type": "string"
+                }
+            }
+        },
+        "eduapi.IdentifierEntry": {
+            "type": "object",
+            "properties": {
+                "identifier": {
+                    "type": "string"
+                },
+                "identifierType": {
+                    "type": "string"
+                }
+            }
+        },
+        "eduapi.LanguageTypedString": {
+            "type": "object",
+            "properties": {
+                "recordLanguage": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "string"
+                }
+            }
+        },
+        "eduapi.OptionallyTypedEmail": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string"
+                },
+                "emailType": {
+                    "type": "string"
+                }
+            }
+        },
+        "eduapi.OptionallyTypedPhone": {
+            "type": "object",
+            "properties": {
+                "phone": {
+                    "type": "string"
+                },
+                "phoneType": {
+                    "type": "string"
+                }
+            }
+        },
+        "eduapi.Organization": {
+            "type": "object",
+            "properties": {
+                "dateLastModified": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/eduapi.LanguageTypedString"
+                    }
+                },
+                "organizationType": {
+                    "type": "string"
+                },
+                "parent": {
+                    "type": "string"
+                },
+                "recordLanguage": {
+                    "type": "string"
+                },
+                "recordStatus": {
+                    "type": "string"
+                },
+                "sourcedId": {
+                    "type": "string"
+                }
+            }
+        },
+        "eduapi.Person": {
+            "type": "object",
+            "properties": {
+                "dateLastModified": {
+                    "type": "string"
+                },
+                "dateOfBirth": {
+                    "type": "string"
+                },
+                "formattedName": {
+                    "type": "string"
+                },
+                "legalName": {
+                    "$ref": "#/definitions/eduapi.PersonName"
+                },
+                "otherEmails": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/eduapi.TypedEmail"
+                    }
+                },
+                "otherIdentifiers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/eduapi.IdentifierEntry"
+                    }
+                },
+                "otherPhones": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/eduapi.TypedPhone"
+                    }
+                },
+                "primaryEmail": {
+                    "$ref": "#/definitions/eduapi.OptionallyTypedEmail"
+                },
+                "primaryPhone": {
+                    "$ref": "#/definitions/eduapi.OptionallyTypedPhone"
+                },
+                "recordLanguage": {
+                    "type": "string"
+                },
+                "recordStatus": {
+                    "type": "string"
+                },
+                "sourcedId": {
+                    "type": "string"
+                }
+            }
+        },
+        "eduapi.PersonName": {
+            "type": "object",
+            "properties": {
+                "additionalName": {
+                    "type": "string"
+                },
+                "familyName": {
+                    "type": "string"
+                },
+                "givenName": {
+                    "type": "string"
+                }
+            }
+        },
+        "eduapi.StatusInfo": {
+            "type": "object",
+            "properties": {
+                "imsx_codeMajor": {
+                    "type": "string"
+                },
+                "imsx_codeMinor": {
+                    "$ref": "#/definitions/eduapi.CodeMinor"
+                },
+                "imsx_description": {
+                    "type": "string"
+                },
+                "imsx_severity": {
+                    "type": "string"
+                }
+            }
+        },
+        "eduapi.TypedEmail": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string"
+                },
+                "emailType": {
+                    "type": "string"
+                }
+            }
+        },
+        "eduapi.TypedPhone": {
+            "type": "object",
+            "properties": {
+                "phone": {
+                    "type": "string"
+                },
+                "phoneType": {
+                    "type": "string"
+                }
+            }
+        }
+    },
+    "securityDefinitions": {
+        "BearerAuth": {
+            "description": "Access token prefixed with \"Bearer \", e.g. \"Bearer eyJhbGciOi...\".",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        }
+    }
+}
