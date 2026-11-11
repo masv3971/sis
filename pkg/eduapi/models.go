@@ -315,7 +315,7 @@ func (m Mapper) AcademicSession(session *domain.AcademicSession) AcademicSession
 func (m Mapper) CourseTemplate(course *domain.Course) CourseTemplate {
 	return CourseTemplate{
 		CourseType: "standard",
-		template:   m.template(&course.Base, course.Title, course.Code, course.OrgID, ""),
+		template:   m.template(&course.Base, course.Title, course.Code, course.OrgID, course.Level),
 	}
 }
 

@@ -63,6 +63,8 @@ type Course struct {
 	Base
 	Code  string `json:"code,omitempty"`
 	Title string `json:"title"`
+	// Level is the course level, e.g. an EQF level ("6") or a local level code.
+	Level string `json:"level,omitempty"`
 	OrgID string `json:"orgId,omitempty"`
 	// ProgramIDs are the programs the course is part of.
 	ProgramIDs []string `json:"programIds,omitempty"`

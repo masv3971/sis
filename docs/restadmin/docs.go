@@ -5090,6 +5090,10 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "level": {
+                    "description": "Level is the course level, e.g. an EQF level (\"6\") or a local level code.",
+                    "type": "string"
+                },
                 "orgId": {
                     "type": "string"
                 },

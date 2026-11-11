@@ -404,10 +404,12 @@ What SIS cannot fill from its own data:
 - Every record and text carries `sis.adapter.inbound.eduapi.record_language`
   (default `en`): SIS stores no language.
 - Required fields SIS has no data for get the spec's extension term
-  `ext:unspecified` (`level`, `creditType`, `offeringFormat`) or a fixed
-  value (`registrationStatus: closed`; `gradingScheme: unspecified`). A
-  program's EQF level maps to `level` where it can (6 is `undergraduate`, 7
-  `graduate`, 8 `doctoral`).
+  `ext:unspecified` (`creditType`, `offeringFormat`, and `level` without a
+  stored level) or a fixed value (`registrationStatus: closed`;
+  `gradingScheme: unspecified`). SIS keeps these as placeholders on purpose:
+  it has no data for them. A course's or program's `level` maps from its
+  EQF level where it can (6 is `undergraduate`, 7 `graduate`, 8 `doctoral`)
+  and is otherwise an extension term.
 - A course offering's `startDate` and `endDate` come from its academic
   session, and are left out without one.
 - `organization` is required by the spec on templates and offerings, but a

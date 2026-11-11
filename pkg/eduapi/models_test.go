@@ -99,6 +99,11 @@ func TestCourseTemplate(t *testing.T) {
 	noCode := mapper.CourseTemplate(&domain.Course{Base: domain.Base{SourcedID: "c"}, Title: "Biology"})
 	assert.Equal(t, IdentifierEntry{Identifier: "c", IdentifierType: "systemId"}, noCode.PrimaryCode, "primaryCode is required")
 	assert.NotContains(t, toMap(t, noCode), "organization")
+
+	for level, want := range map[string]string{"": "ext:unspecified", "6": "undergraduate", "7": "graduate", "8": "doctoral", "9": "ext:9"} {
+		leveled := mapper.CourseTemplate(&domain.Course{Base: domain.Base{SourcedID: "c"}, Title: "Biology", Level: level})
+		assert.Equal(t, want, leveled.Level, "course level %q", level)
+	}
 }
 
 func TestCollectionTemplate(t *testing.T) {
