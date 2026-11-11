@@ -1,15 +1,22 @@
 :root {
-  --bg: #0f172a;
-  --panel: #1e293b;
-  --fg: #e2e8f0;
-  --muted: #94a3b8;
-  /* WCAG AA (4.5:1) for normal text: white on --accent is 6.3:1 and
-     --danger on --panel is 5.3:1. --focus is the lighter indigo used for
-     the focus ring so it keeps 3:1 against the dark input background. */
-  --accent: #4f46e5;
-  --focus: #818cf8;
-  --danger: #f87171;
-  --border: #334155;
+  /* Sunet brand: red #ca402b, ink #1d1c1a, tint #ffe7dd (from sunet.se). */
+  --bg: #f7f5f3;
+  --panel: #ffffff;
+  --fg: #1d1c1a;
+  --muted: #5c5955;
+  /* WCAG AA (4.5:1) for normal text: white on --accent is 4.9:1, --accent-dark
+     on white is 6.7:1, --danger on white is 6.5:1. --border-strong is 3:1+
+     against white for input outlines. */
+  --accent: #ca402b;
+  --accent-dark: #a83322;
+  --tint: #ffe7dd;
+  --hover: #fff4ef;
+  --focus: #ca402b;
+  --danger: #b42318;
+  --border: #e2ded9;
+  --border-strong: #918b85;
+  --radius: 10px;
+  --shadow: 0 1px 2px rgba(29, 28, 26, 0.06), 0 4px 16px rgba(29, 28, 26, 0.06);
 }
 
 * {
@@ -20,11 +27,12 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--fg);
-  font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  font: 15px/1.5 "Inter Variable", system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  border-top: 4px solid var(--accent);
 }
 
 .app {
-  max-width: 1000px;
+  max-width: 1360px;
   margin: 0 auto;
   padding: 0 20px 40px;
 }
@@ -33,25 +41,44 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 20px 0;
+  padding: 14px 0;
+  margin-bottom: 24px;
+  background: var(--panel);
+  /* Full-width white bar while the content stays in the centered column. */
+  box-shadow: 0 0 0 100vmax var(--panel);
+  clip-path: inset(0 -100vmax);
+  border-bottom: 1px solid var(--border);
 }
 
 .topbar h1 {
   font-size: 20px;
+  font-weight: 700;
   margin: 0;
+}
+
+.topbar h1 a {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.logo {
+  height: 44px;
+  width: auto;
+  display: block;
 }
 
 .grid {
   display: grid;
   /* minmax(0, …) lets both columns shrink below their content width, so a
      wide table scrolls inside its card instead of widening the page. */
-  grid-template-columns: minmax(0, 320px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 300px) minmax(0, 1fr);
   gap: 20px;
   align-items: start;
 }
 
 /* Narrow screens and high zoom: stack the form above the list. */
-@media (max-width: 720px) {
+@media (max-width: 900px) {
   .grid {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -60,8 +87,9 @@ body {
 .card {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 20px;
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: 24px;
   min-width: 0;
 }
 
@@ -76,8 +104,19 @@ body {
 }
 
 .login {
-  max-width: 360px;
-  margin: 40px auto;
+  max-width: 380px;
+  margin: 56px auto;
+  text-align: center;
+  border-top: 4px solid var(--accent);
+}
+
+.login .logo {
+  height: 72px;
+  margin: 0 auto 16px;
+}
+
+.login h2 {
+  font-size: 20px;
 }
 
 label {
@@ -91,8 +130,8 @@ label {
 
 input,
 select {
-  background: #0b1220;
-  border: 1px solid var(--border);
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
   color: var(--fg);
   border-radius: 8px;
   padding: 9px 11px;
@@ -104,17 +143,29 @@ select {
 input:focus,
 select:focus {
   outline: 2px solid var(--focus);
-  outline-offset: 0;
+  outline-offset: 1px;
 }
 
 button {
   background: var(--accent);
   color: white;
-  border: 0;
+  border: 1px solid var(--accent);
   border-radius: 8px;
-  padding: 9px 14px;
+  padding: 9px 16px;
   font: inherit;
+  font-weight: 600;
   cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+
+button:hover:not(:disabled) {
+  background: var(--accent-dark);
+  border-color: var(--accent-dark);
+}
+
+button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 
 button:disabled {
@@ -124,14 +175,24 @@ button:disabled {
 
 button.ghost {
   background: transparent;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   color: var(--fg);
+}
+
+button.ghost:hover:not(:disabled) {
+  background: var(--hover);
+  border-color: var(--accent);
 }
 
 button.danger {
   background: transparent;
   border: 1px solid var(--danger);
   color: var(--danger);
+}
+
+button.danger:hover:not(:disabled) {
+  background: #fdecea;
+  border-color: var(--danger);
 }
 
 fieldset.plain {
@@ -152,10 +213,14 @@ table {
   border-collapse: collapse;
 }
 
+td.row button {
+  white-space: nowrap;
+}
+
 th,
 td {
   text-align: left;
-  padding: 8px 6px;
+  padding: 8px 10px;
   border-bottom: 1px solid var(--border);
   font-size: 14px;
 }
@@ -163,6 +228,9 @@ td {
 th {
   color: var(--muted);
   font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .mono {
@@ -196,16 +264,23 @@ th {
 .tabs a {
   color: var(--fg);
   text-decoration: none;
+  background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 6px 12px;
+  border-radius: 999px;
+  padding: 6px 14px;
   font-size: 14px;
+}
+
+.tabs a:hover {
+  background: var(--tint);
+  border-color: var(--accent);
 }
 
 .tabs a[aria-current="page"] {
   background: var(--accent);
   border-color: var(--accent);
   color: white;
+  font-weight: 600;
 }
 
 .tabs a:focus-visible {
@@ -230,7 +305,7 @@ th {
 }
 
 a {
-  color: var(--focus);
+  color: var(--accent-dark);
 }
 
 .stack {
@@ -262,7 +337,7 @@ table.clickable tbody tr {
 }
 
 table.clickable tbody tr:hover {
-  background: #243247;
+  background: var(--hover);
 }
 
 .back {
@@ -393,7 +468,7 @@ button.icon {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 10px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 10px 30px rgba(29, 28, 26, 0.18);
 }
 
 .calendar-head {
@@ -426,14 +501,16 @@ button.icon {
   width: 100%;
   padding: 6px 0;
   background: transparent;
+  border: 0;
   color: var(--fg);
+  font-weight: 400;
   border-radius: 6px;
   font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
 
 .calendar td button:hover:not(:disabled) {
-  background: #243247;
+  background: var(--tint);
 }
 
 .calendar td button:focus-visible {
@@ -445,9 +522,17 @@ button.icon {
   box-shadow: inset 0 0 0 1px var(--focus);
 }
 
-.calendar td button.selected {
+.calendar td button.selected,
+.calendar td button.selected:hover:not(:disabled) {
   background: var(--accent);
   color: white;
+  font-weight: 600;
+}
+
+/* --focus equals --accent, so a selected day needs a white ring to show focus. */
+.calendar td button.selected:focus-visible {
+  outline-color: white;
+  outline-offset: -4px;
 }
 
 .calendar td button:disabled {

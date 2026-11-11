@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { App } from "./App";
 import { setToken } from "./api";
 import { completeSignIn } from "./oidc";
+import "@fontsource-variable/inter/wght.css";
 import "./styles.css";
 
 // Finish a sign-in the issuer redirected back from before first render, so
