@@ -529,6 +529,12 @@ button.icon {
   font-weight: 600;
 }
 
+/* --focus equals --accent, so a selected day needs a white ring to show focus. */
+.calendar td button.selected:focus-visible {
+  outline-color: white;
+  outline-offset: -4px;
+}
+
 .calendar td button:disabled {
   opacity: 0.3;
 }
