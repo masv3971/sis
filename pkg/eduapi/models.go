@@ -315,7 +315,7 @@ func (m Mapper) AcademicSession(session *domain.AcademicSession) AcademicSession
 func (m Mapper) CourseTemplate(course *domain.Course) CourseTemplate {
 	return CourseTemplate{
 		CourseType: "standard",
-		template:   m.template(&course.Base, course.Title, course.Code, course.OrgID, ""),
+		template:   m.template(&course.Base, course.Title, course.Code, course.OrgID, course.Level),
 	}
 }
 
@@ -480,13 +480,14 @@ func role(r domain.Role) string {
 	return extTerm(string(r))
 }
 
-// educationLevel maps a qualification level onto the spec's levels. An EQF
-// level maps to the nearest one; anything else is an extension term.
+// educationLevel maps a qualification level onto the spec's levels. EQF 6, 7
+// and 8 match the bachelor's, post-bachelor's and doctoral definitions; any
+// other level, including EQF 5 (below a bachelor's), is an extension term.
 func educationLevel(level string) string {
 	switch level {
 	case "":
 		return unspecified
-	case "5", "6":
+	case "6":
 		return "undergraduate"
 	case "7":
 		return "graduate"

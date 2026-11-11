@@ -148,11 +148,12 @@ export const catalog: ResourceDef[] = [
     fields: [
       { key: "code", label: "Code", kind: "text" },
       { key: "title", label: "Title", kind: "text", required: true },
+      { key: "level", label: "Level", kind: "text", placeholder: "e.g. EQF level 6" },
       orgField,
       statusField,
       sourcedIdField,
     ],
-    columns: ["code", "title", "orgId", "status", "sourcedId"],
+    columns: ["code", "title", "level", "orgId", "status", "sourcedId"],
     empty,
   },
   {
