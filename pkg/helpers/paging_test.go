@@ -74,6 +74,10 @@ func TestParsePageNumberSize(t *testing.T) {
 		{"pageNumber=x", true, 0, 0, 0},
 		{"pageNumber=", true, 0, 0, 0}, // empty value is present, not absent
 		{"pageSize=", true, 0, 0, 0},
+		// sort/filter are not implemented, so they must not be silently ignored.
+		{"sort=familyName", true, 0, 0, 0},
+		{"filter=status%3D%27active%27", true, 0, 0, 0},
+		{"sort=&filter=", false, 1, 10, 0}, // empty means "not requested"
 	}
 	for _, tc := range cases {
 		number, size, params, err := ParsePageNumberSize(ctxWithQuery(tc.query), 10, testMax)

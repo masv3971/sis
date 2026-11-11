@@ -49,14 +49,28 @@ func parseLimitOffset(gc *gin.Context, maxLimit int, params *port.ListParams) er
 // does not implement them.
 var unsupportedListParams = []string{"sort", "filter"}
 
+// rejectSortFilter answers 400 to a non-empty sort or filter.
+func rejectSortFilter(gc *gin.Context) error {
+	for _, name := range unsupportedListParams {
+		if gc.Query(name) != "" {
+			return pagingError(name, "not supported")
+		}
+	}
+	return nil
+}
+
 // ParsePageNumberSize parses OEAPI-style 1-based pageNumber/pageSize query
 // parameters. pageSize is clamped to maxPageSize
 // (sis.adapter.inbound.oeapi.max_page_size), and a pageNumber whose offset
 // (pageNumber-1)*pageSize would overflow int is rejected. It returns the
 // effective pageNumber/pageSize (for the response envelope) alongside the
-// equivalent ListParams.
+// equivalent ListParams. A non-empty sort or filter is a 400, as in
+// ParseLimitOffset.
 func ParsePageNumberSize(gc *gin.Context, defaultPageSize, maxPageSize int) (pageNumber, pageSize int, params port.ListParams, err error) {
 	if defaultPageSize, maxPageSize, err = checkBounds(defaultPageSize, maxPageSize); err != nil {
+		return 0, 0, port.ListParams{}, err
+	}
+	if err = rejectSortFilter(gc); err != nil {
 		return 0, 0, port.ListParams{}, err
 	}
 	pageNumber, pageSize = 1, defaultPageSize
