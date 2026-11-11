@@ -27,7 +27,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--fg);
-  font: 15px/1.5 Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  font: 15px/1.5 "Inter Variable", system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
   border-top: 4px solid var(--accent);
 }
 
