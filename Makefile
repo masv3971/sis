@@ -244,8 +244,12 @@ web: web-install web-build ## Install SPA dependencies and build (one-shot)
 web-ci: ## Install SPA dependencies from the lockfile and build (CI, as in the Dockerfile)
 	cd web && npm ci && npm run build
 
+# CI sets this empty. On the runner --with-deps only adds fonts, and its
+# apt-get step fails whenever the Ubuntu mirrors are unreachable.
+PLAYWRIGHT_DEPS ?= --with-deps
+
 web-e2e: ## Build the SPA and run the browser tests against a local SIS (needs Go and Node)
-	cd web && npm ci && npm run build && npx playwright install --with-deps chromium && npx playwright test
+	cd web && npm ci && npm run build && npx playwright install $(PLAYWRIGHT_DEPS) chromium && npx playwright test
 
 # ==============================================================================
 # Release Management
