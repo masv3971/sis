@@ -408,8 +408,9 @@ What SIS cannot fill from its own data:
   stored level) or a fixed value (`registrationStatus: closed`;
   `gradingScheme: unspecified`). SIS keeps these as placeholders on purpose:
   it has no data for them. A course's or program's `level` maps from its
-  EQF level where it can (6 is `undergraduate`, 7 `graduate`, 8 `doctoral`)
-  and is otherwise an extension term.
+  EQF level where the spec's definition fits (6 is `undergraduate`, 7
+  `graduate`, 8 `doctoral`) and is otherwise an extension term, e.g. `ext:5`
+  for a short-cycle qualification below a bachelor's degree.
 - A course offering's `startDate` and `endDate` come from its academic
   session, and are left out without one.
 - `organization` is required by the spec on templates and offerings, but a

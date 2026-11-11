@@ -100,14 +100,14 @@ func TestCourseTemplate(t *testing.T) {
 	assert.Equal(t, IdentifierEntry{Identifier: "c", IdentifierType: "systemId"}, noCode.PrimaryCode, "primaryCode is required")
 	assert.NotContains(t, toMap(t, noCode), "organization")
 
-	for level, want := range map[string]string{"": "ext:unspecified", "6": "undergraduate", "7": "graduate", "8": "doctoral", "9": "ext:9"} {
+	for level, want := range map[string]string{"": "ext:unspecified", "5": "ext:5", "6": "undergraduate", "7": "graduate", "8": "doctoral", "9": "ext:9"} {
 		leveled := mapper.CourseTemplate(&domain.Course{Base: domain.Base{SourcedID: "c"}, Title: "Biology", Level: level})
 		assert.Equal(t, want, leveled.Level, "course level %q", level)
 	}
 }
 
 func TestCollectionTemplate(t *testing.T) {
-	for level, want := range map[string]string{"": "ext:unspecified", "6": "undergraduate", "7": "graduate", "8": "doctoral", "9": "ext:9", "graduate": "graduate"} {
+	for level, want := range map[string]string{"": "ext:unspecified", "5": "ext:5", "6": "undergraduate", "7": "graduate", "8": "doctoral", "9": "ext:9", "graduate": "graduate"} {
 		program := mapper.CollectionTemplate(&domain.Program{Base: domain.Base{SourcedID: "p"}, Title: "BSc", Level: level})
 		assert.Equal(t, "program", program.CollectionType)
 		assert.Equal(t, want, program.Level, "level %q", level)
