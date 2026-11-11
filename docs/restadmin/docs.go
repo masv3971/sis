@@ -21,11 +21,6 @@ const docTemplate = `{
     "paths": {
         "/academic-sessions": {
             "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
                 "description": "Lists academic sessions with limit/offset paging.",
                 "produces": [
                     "application/json"
@@ -82,14 +77,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            },
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "post": {
                 "description": "Creates an academic session. title is required. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.",
                 "consumes": [
                     "application/json"
@@ -156,16 +151,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            }
-        },
-        "/academic-sessions/{id}": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/academic-sessions/{id}": {
+            "get": {
                 "description": "Returns one academic session by id.",
                 "produces": [
                     "application/json"
@@ -215,14 +210,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            },
-            "put": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "put": {
                 "description": "Replaces an academic session. The path id wins over any id in the body; createdAt is preserved and an empty sourcedId keeps the stored one.",
                 "consumes": [
                     "application/json"
@@ -302,14 +297,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            },
-            "delete": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "delete": {
                 "description": "Deletes one academic session by id.",
                 "produces": [
                     "application/json"
@@ -356,16 +351,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            }
-        },
-        "/affiliations": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/affiliations": {
+            "get": {
                 "description": "Lists affiliations with limit/offset paging.",
                 "produces": [
                     "application/json"
@@ -422,14 +417,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            },
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "post": {
                 "description": "Creates a affiliation. personId and orgId are required; role is one of student, staff, faculty, guest. personId and orgId must be the ids (not sourcedIds) of an existing person and organization. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.",
                 "consumes": [
                     "application/json"
@@ -496,16 +491,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            }
-        },
-        "/affiliations/{id}": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/affiliations/{id}": {
+            "get": {
                 "description": "Returns one affiliation by id.",
                 "produces": [
                     "application/json"
@@ -555,14 +550,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            },
-            "put": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "put": {
                 "description": "Replaces a affiliation. References must be the ids of existing records. The path id wins over any id in the body; createdAt is preserved and an empty sourcedId keeps the stored one.",
                 "consumes": [
                     "application/json"
@@ -642,14 +637,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            },
-            "delete": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "delete": {
                 "description": "Deletes one affiliation by id.",
                 "produces": [
                     "application/json"
@@ -696,16 +691,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            }
-        },
-        "/collection-offerings": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/collection-offerings": {
+            "get": {
                 "description": "Lists collection offerings with limit/offset paging.",
                 "produces": [
                     "application/json"
@@ -762,14 +757,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            },
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "post": {
                 "description": "Creates a collection offering. programId is required; academicSessionId and orgId are optional. All must be the ids (not sourcedIds) of existing records. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.",
                 "consumes": [
                     "application/json"
@@ -836,16 +831,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            }
-        },
-        "/collection-offerings/{id}": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/collection-offerings/{id}": {
+            "get": {
                 "description": "Returns one collection offering by id.",
                 "produces": [
                     "application/json"
@@ -895,14 +890,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            },
-            "put": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "put": {
                 "description": "Replaces a collection offering. References must be the ids of existing records. The path id wins over any id in the body; createdAt is preserved and an empty sourcedId keeps the stored one.",
                 "consumes": [
                     "application/json"
@@ -982,14 +977,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            },
-            "delete": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "delete": {
                 "description": "Deletes one collection offering by id.",
                 "produces": [
                     "application/json"
@@ -1036,16 +1031,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            }
-        },
-        "/component-offerings": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/component-offerings": {
+            "get": {
                 "description": "Lists component offerings with limit/offset paging.",
                 "produces": [
                     "application/json"
@@ -1102,14 +1097,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            },
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "post": {
                 "description": "Creates a component offering. componentId is required and must be the id (not sourcedId) of an existing component template; academicSessionId, orgId and each of courseOfferingIds are optional and must be ids of existing records. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.",
                 "consumes": [
                     "application/json"
@@ -1176,16 +1171,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            }
-        },
-        "/component-offerings/{id}": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/component-offerings/{id}": {
+            "get": {
                 "description": "Returns one component offering by id.",
                 "produces": [
                     "application/json"
@@ -1235,14 +1230,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            },
-            "put": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "put": {
                 "description": "Replaces a component offering. References must be the ids of existing records. The path id wins over any id in the body; createdAt is preserved and an empty sourcedId keeps the stored one.",
                 "consumes": [
                     "application/json"
@@ -1322,14 +1317,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            },
-            "delete": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "delete": {
                 "description": "Deletes one component offering by id.",
                 "produces": [
                     "application/json"
@@ -1376,16 +1371,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            }
-        },
-        "/component-templates": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/component-templates": {
+            "get": {
                 "description": "Lists component templates with limit/offset paging.",
                 "produces": [
                     "application/json"
@@ -1442,14 +1437,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            },
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "post": {
                 "description": "Creates a component template. title is required; orgId and each of courseIds, when set, must be the ids (not sourcedIds) of existing records. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.",
                 "consumes": [
                     "application/json"
@@ -1516,16 +1511,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            }
-        },
-        "/component-templates/{id}": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/component-templates/{id}": {
+            "get": {
                 "description": "Returns one component template by id.",
                 "produces": [
                     "application/json"
@@ -1575,14 +1570,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            },
-            "put": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "put": {
                 "description": "Replaces a component template. References must be the ids of existing records. The path id wins over any id in the body; createdAt is preserved and an empty sourcedId keeps the stored one.",
                 "consumes": [
                     "application/json"
@@ -1662,14 +1657,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            },
-            "delete": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "delete": {
                 "description": "Deletes one component template by id.",
                 "produces": [
                     "application/json"
@@ -1716,16 +1711,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            }
-        },
-        "/courses": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/courses": {
+            "get": {
                 "description": "Lists courses with limit/offset paging.",
                 "produces": [
                     "application/json"
@@ -1782,14 +1777,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            },
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "post": {
                 "description": "Creates a course. title is required; orgId, when set, must be the id (not sourcedId) of an existing organization. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.",
                 "consumes": [
                     "application/json"
@@ -1856,16 +1851,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            }
-        },
-        "/courses/{id}": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/courses/{id}": {
+            "get": {
                 "description": "Returns one course by id.",
                 "produces": [
                     "application/json"
@@ -1915,14 +1910,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            },
-            "put": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "put": {
                 "description": "Replaces a course. orgId, when set, must be the id of an existing organization. The path id wins over any id in the body; createdAt is preserved and an empty sourcedId keeps the stored one.",
                 "consumes": [
                     "application/json"
@@ -2002,14 +1997,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            },
-            "delete": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "delete": {
                 "description": "Deletes one course by id.",
                 "produces": [
                     "application/json"
@@ -2056,16 +2051,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            }
-        },
-        "/enrollments": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/enrollments": {
+            "get": {
                 "description": "Lists enrollments with limit/offset paging.",
                 "produces": [
                     "application/json"
@@ -2122,14 +2117,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            },
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "post": {
                 "description": "Creates an enrollment. personId and offeringId are required and must be the ids (not sourcedIds) of an existing person and offering. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.",
                 "consumes": [
                     "application/json"
@@ -2196,16 +2191,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            }
-        },
-        "/enrollments/{id}": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/enrollments/{id}": {
+            "get": {
                 "description": "Returns one enrollment by id.",
                 "produces": [
                     "application/json"
@@ -2255,14 +2250,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            },
-            "put": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "put": {
                 "description": "Replaces an enrollment. personId and offeringId must be the ids of an existing person and offering. The path id wins over any id in the body; createdAt is preserved and an empty sourcedId keeps the stored one.",
                 "consumes": [
                     "application/json"
@@ -2342,14 +2337,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            },
-            "delete": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "delete": {
                 "description": "Deletes one enrollment by id.",
                 "produces": [
                     "application/json"
@@ -2396,16 +2391,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            }
-        },
-        "/entitlements": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/entitlements": {
+            "get": {
                 "description": "Lists entitlements with limit/offset paging.",
                 "produces": [
                     "application/json"
@@ -2462,14 +2457,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            },
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "post": {
                 "description": "Creates an entitlement. personId and title are required; orgId and resultId are optional. All references must be the ids (not sourcedIds) of existing records. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.",
                 "consumes": [
                     "application/json"
@@ -2536,16 +2531,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            }
-        },
-        "/entitlements/{id}": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/entitlements/{id}": {
+            "get": {
                 "description": "Returns one entitlement by id.",
                 "produces": [
                     "application/json"
@@ -2595,14 +2590,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            },
-            "put": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "put": {
                 "description": "Replaces an entitlement. References must be the ids of existing records. The path id wins over any id in the body; createdAt is preserved and an empty sourcedId keeps the stored one.",
                 "consumes": [
                     "application/json"
@@ -2682,14 +2677,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            },
-            "delete": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "delete": {
                 "description": "Deletes one entitlement by id.",
                 "produces": [
                     "application/json"
@@ -2736,16 +2731,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            }
-        },
-        "/offerings": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/offerings": {
+            "get": {
                 "description": "Lists offerings with limit/offset paging.",
                 "produces": [
                     "application/json"
@@ -2802,14 +2797,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            },
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "post": {
                 "description": "Creates an offering. courseId is required; courseId, academicSessionId and orgId must be ids (not sourcedIds) of existing records. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.",
                 "consumes": [
                     "application/json"
@@ -2876,16 +2871,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            }
-        },
-        "/offerings/{id}": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/offerings/{id}": {
+            "get": {
                 "description": "Returns one offering by id.",
                 "produces": [
                     "application/json"
@@ -2935,14 +2930,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            },
-            "put": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "put": {
                 "description": "Replaces an offering. courseId, academicSessionId and orgId must be ids of existing records. The path id wins over any id in the body; createdAt is preserved and an empty sourcedId keeps the stored one.",
                 "consumes": [
                     "application/json"
@@ -3022,14 +3017,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            },
-            "delete": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "delete": {
                 "description": "Deletes one offering by id.",
                 "produces": [
                     "application/json"
@@ -3076,16 +3071,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            }
-        },
-        "/organizations": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/organizations": {
+            "get": {
                 "description": "Lists organizations with limit/offset paging.",
                 "produces": [
                     "application/json"
@@ -3142,14 +3137,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            },
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "post": {
                 "description": "Creates an organization. name is required; parentId, when set, must be the id (not sourcedId) of an existing organization. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.",
                 "consumes": [
                     "application/json"
@@ -3216,16 +3211,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            }
-        },
-        "/organizations/{id}": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/organizations/{id}": {
+            "get": {
                 "description": "Returns one organization by id.",
                 "produces": [
                     "application/json"
@@ -3275,14 +3270,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            },
-            "put": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "put": {
                 "description": "Replaces an organization. parentId, when set, must be the id of an existing organization. The path id wins over any id in the body; createdAt is preserved and an empty sourcedId keeps the stored one.",
                 "consumes": [
                     "application/json"
@@ -3362,14 +3357,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            },
-            "delete": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "delete": {
                 "description": "Deletes one organization by id.",
                 "produces": [
                     "application/json"
@@ -3416,16 +3411,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            }
-        },
-        "/parse": {
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/parse": {
+            "post": {
                 "description": "Converts data from metadata.input_format (elm_v3: an ELM v3 / European Digital Credential JSON-LD document, plain, in EDCI's {\"credential\": ...} upload wrapper, or sealed as {\"payload\": ..., \"signatures\": ...}; the seal is not verified) to metadata.output_format (eduapi or oeapi) and returns it. Nothing is stored. Records keep the document's ids as sourcedIds; references between them are sourcedIds. Requires scope sis.read.",
                 "consumes": [
                     "application/json"
@@ -3486,16 +3481,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            }
-        },
-        "/persons": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/persons": {
+            "get": {
                 "description": "Lists persons ordered by family name, given name, with limit/offset paging. With q, only persons matching every whitespace-separated term are listed: a term matches when it occurs, case-insensitively, in a name, the id, the sourcedId, or an identifier or email value (e.g. a student number). Requires scope sis.read.",
                 "produces": [
                     "application/json"
@@ -3559,14 +3554,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            },
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "post": {
                 "description": "Creates a person. givenName, familyName and status are required. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server. Requires scope sis.write.",
                 "consumes": [
                     "application/json"
@@ -3633,16 +3628,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            }
-        },
-        "/persons/{id}": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/persons/{id}": {
+            "get": {
                 "description": "Returns one person by id. Requires scope sis.read.",
                 "produces": [
                     "application/json"
@@ -3692,14 +3687,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            },
-            "put": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "put": {
                 "description": "Replaces a person. The path id wins over any id in the body; createdAt is preserved and an empty sourcedId keeps the stored one. Requires scope sis.write.",
                 "consumes": [
                     "application/json"
@@ -3779,14 +3774,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            },
-            "delete": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "delete": {
                 "description": "Deletes one person by id, together with their enrollments and results. Requires scope sis.write.",
                 "produces": [
                     "application/json"
@@ -3833,16 +3828,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            }
-        },
-        "/persons/{id}/enrollments": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/persons/{id}/enrollments": {
+            "get": {
                 "description": "Lists the enrollments of one person (their personId is the path id), with limit/offset paging.",
                 "produces": [
                     "application/json"
@@ -3912,16 +3907,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            }
-        },
-        "/persons/{id}/results": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/persons/{id}/results": {
+            "get": {
                 "description": "Lists the results of one person (their personId is the path id), with limit/offset paging.",
                 "produces": [
                     "application/json"
@@ -3991,16 +3986,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            }
-        },
-        "/populate": {
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/populate": {
+            "post": {
                 "description": "Converts data from metadata.input_format (elm_v3, plain or in an EDCI envelope as for parse) and upserts every record by sourcedId, so the Edu-API and /oeapi (and /api/v1) serve them. With ttl the records stop being served after that duration and are then deleted; re-populating refreshes the expiry, but a record that already existed without expiry keeps none. References in the document must resolve within it or to stored records. The document is checked completely before anything is stored; a storage failure part-way leaves earlier records stored, and retrying the same request converges. Requires scope sis.write.",
                 "consumes": [
                     "application/json"
@@ -4067,16 +4062,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            }
-        },
-        "/programs": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/programs": {
+            "get": {
                 "description": "Lists programs with limit/offset paging.",
                 "produces": [
                     "application/json"
@@ -4133,14 +4128,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            },
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "post": {
                 "description": "Creates a program. title is required; orgId, when set, must be the id (not sourcedId) of an existing organization. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.",
                 "consumes": [
                     "application/json"
@@ -4207,16 +4202,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            }
-        },
-        "/programs/{id}": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/programs/{id}": {
+            "get": {
                 "description": "Returns one program by id.",
                 "produces": [
                     "application/json"
@@ -4266,14 +4261,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            },
-            "put": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "put": {
                 "description": "Replaces a program. orgId, when set, must be the id of an existing organization. The path id wins over any id in the body; createdAt is preserved and an empty sourcedId keeps the stored one.",
                 "consumes": [
                     "application/json"
@@ -4353,14 +4348,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            },
-            "delete": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "delete": {
                 "description": "Deletes one program by id.",
                 "produces": [
                     "application/json"
@@ -4407,16 +4402,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            }
-        },
-        "/results": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/results": {
+            "get": {
                 "description": "Lists results with limit/offset paging.",
                 "produces": [
                     "application/json"
@@ -4473,14 +4468,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            },
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "post": {
                 "description": "Creates a result. personId is required, and exactly one of courseId and programId; offeringId is optional. All must be the ids (not sourcedIds) of existing records. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.",
                 "consumes": [
                     "application/json"
@@ -4547,16 +4542,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            }
-        },
-        "/results/{id}": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/results/{id}": {
+            "get": {
                 "description": "Returns one result by id.",
                 "produces": [
                     "application/json"
@@ -4606,14 +4601,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            },
-            "put": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "put": {
                 "description": "Replaces a result. References must be the ids of existing records. The path id wins over any id in the body; createdAt is preserved and an empty sourcedId keeps the stored one.",
                 "consumes": [
                     "application/json"
@@ -4693,14 +4688,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
-            },
-            "delete": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "delete": {
                 "description": "Deletes one result by id.",
                 "produces": [
                     "application/json"
@@ -4747,7 +4742,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/helpers.ErrorResponse"
                         }
                     }
-                }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
             }
         }
     },
