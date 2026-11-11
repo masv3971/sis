@@ -145,20 +145,36 @@ SWAG         := go tool swag
 # The Dockerfile build stage runs `make swagger` before `go build`.
 SWAGGER_OPTS := --packageName restadmin --parseInternal --parseFuncBody --quiet
 
-swagger: swagger-fmt swagger-restadmin ## Generate all Swagger docs
+swagger: swagger-fmt swagger-restadmin swagger-oeapi swagger-eduapi ## Generate all Swagger docs
 
 swagger-fmt: ## Format Swagger annotations
 	$(SWAG) fmt -d internal/adapter/inbound/restadmin,internal/adapter/inbound/convertapi -g swagger.go
+	$(SWAG) fmt -d internal/adapter/inbound/oeapi/apidoc -g swagger.go
+	$(SWAG) fmt -d internal/adapter/inbound/eduapi/apidoc -g swagger.go
 
 swagger-restadmin: ## Generate /api/v1 Swagger docs into docs/restadmin
 	$(info Generating /api/v1 Swagger docs)
 	$(SWAG) init -d internal/adapter/inbound/restadmin,internal/adapter/inbound/convertapi,internal/command,internal/readmodel,internal/core/domain,internal/auth,pkg/helpers \
 		-g swagger.go --output docs/restadmin $(SWAGGER_OPTS)
 
+# OEAPI and Edu-API are separate swag instances, so the UI can switch between
+# the three documents.
+swagger-oeapi: ## Generate /oeapi Swagger docs into docs/oeapi
+	$(info Generating /oeapi Swagger docs)
+	$(SWAG) init -d internal/adapter/inbound/oeapi/apidoc,pkg/oeapi,internal/core/domain,internal/auth,pkg/helpers \
+		-g swagger.go --output docs/oeapi --packageName oeapi --instanceName oeapi \
+		--parseInternal --parseFuncBody --quiet
+
+swagger-eduapi: ## Generate Edu-API Swagger docs into docs/eduapi
+	$(info Generating Edu-API Swagger docs)
+	$(SWAG) init -d internal/adapter/inbound/eduapi/apidoc,pkg/eduapi,internal/core/domain,internal/auth,pkg/helpers \
+		-g swagger.go --output docs/eduapi --packageName eduapi --instanceName eduapi \
+		--parseInternal --parseFuncBody --quiet
+
 swagger-check: swagger ## Fail if the committed Swagger docs are stale
-	@out="$$(git status --porcelain -- docs/ internal/adapter/inbound/restadmin/)"; \
+	@out="$$(git status --porcelain -- docs/ internal/adapter/inbound/restadmin/ internal/adapter/inbound/oeapi/apidoc/ internal/adapter/inbound/eduapi/apidoc/)"; \
 	if [ -n "$$out" ]; then \
-		echo "$$out"; git --no-pager diff -- docs/ internal/adapter/inbound/restadmin/; \
+		echo "$$out"; git --no-pager diff -- docs/ internal/adapter/inbound/restadmin/ internal/adapter/inbound/oeapi/apidoc/ internal/adapter/inbound/eduapi/apidoc/; \
 		echo "Swagger docs are stale: run 'make swagger' and commit the result"; exit 1; \
 	fi
 
@@ -228,8 +244,12 @@ web: web-install web-build ## Install SPA dependencies and build (one-shot)
 web-ci: ## Install SPA dependencies from the lockfile and build (CI, as in the Dockerfile)
 	cd web && npm ci && npm run build
 
+# CI sets this empty. On the runner --with-deps only adds fonts, and its
+# apt-get step fails whenever the Ubuntu mirrors are unreachable.
+PLAYWRIGHT_DEPS ?= --with-deps
+
 web-e2e: ## Build the SPA and run the browser tests against a local SIS (needs Go and Node)
-	cd web && npm ci && npm run build && npx playwright install --with-deps chromium && npx playwright test
+	cd web && npm ci && npm run build && npx playwright install $(PLAYWRIGHT_DEPS) chromium && npx playwright test
 
 # ==============================================================================
 # Release Management

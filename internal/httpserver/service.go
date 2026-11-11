@@ -17,7 +17,9 @@ import (
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 
-	// Registers the generated /api/v1 OpenAPI document (make swagger).
+	// Register the generated OpenAPI documents (make swagger).
+	_ "github.com/SUNET/sis/docs/eduapi"
+	_ "github.com/SUNET/sis/docs/oeapi"
 	_ "github.com/SUNET/sis/docs/restadmin"
 
 	"github.com/SUNET/sis/internal/adapter/inbound/authapi"
@@ -215,11 +217,32 @@ func New(ctx context.Context, cfg *model.Cfg, verifier *auth.Verifier, catalog *
 
 	httpCfg := cfg.SIS.HTTPServer
 
-	// Swagger UI and the generated /api/v1 OpenAPI document (served at
-	// /swagger/doc.json). Public: the spec reveals nothing a client could not
-	// learn by probing, and every call made from the UI still needs a token.
+	// Swagger UI and the generated OpenAPI documents: /api/v1 at /swagger,
+	// OEAPI at /swagger/oeapi and Edu-API at /swagger/eduapi (each serves its
+	// own doc.json). Public: the specs reveal nothing a client could not learn
+	// by probing, and every call made from the UI still needs a token.
 	if httpCfg.Swagger.Enabled {
-		engine.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler, ginSwagger.PersistAuthorization(true)))
+		// gin allows one catch-all under /swagger, so dispatch by prefix.
+		uis := map[string]gin.HandlerFunc{
+			"/swagger": ginSwagger.WrapHandler(swaggerFiles.Handler, ginSwagger.PersistAuthorization(true)),
+		}
+		for _, ui := range []struct{ path, instance, title string }{
+			{"/swagger/oeapi", "oeapi", "SIS OEAPI"},
+			{"/swagger/eduapi", "eduapi", "SIS Edu-API"},
+		} {
+			uis[ui.path] = ginSwagger.CustomWrapHandler(&ginSwagger.Config{
+				URL: "doc.json", InstanceName: ui.instance, Title: ui.title, PersistAuthorization: true,
+			}, swaggerFiles.NewHandler())
+		}
+		engine.GET("/swagger/*any", func(gc *gin.Context) {
+			for _, prefix := range []string{"/swagger/oeapi", "/swagger/eduapi"} {
+				if underRoot(gc.Request.URL.Path, prefix) {
+					uis[prefix](gc)
+					return
+				}
+			}
+			uis["/swagger"](gc)
+		})
 	}
 
 	// Built React SPA, when configured. Empty root means API-only (the dev

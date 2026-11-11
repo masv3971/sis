@@ -39,10 +39,8 @@ func ParseListQuery(gc *gin.Context, defaultLimit, maxLimit int, fields ListFiel
 	}
 	params := port.ListParams{Limit: defaultLimit}
 	if fields == nil {
-		for _, name := range unsupportedListParams {
-			if gc.Query(name) != "" {
-				return port.ListParams{}, pagingError(name, "not supported")
-			}
+		if err := rejectSortFilter(gc); err != nil {
+			return port.ListParams{}, err
 		}
 	} else if err := parseSortFilter(gc, fields, &params); err != nil {
 		return port.ListParams{}, err

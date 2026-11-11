@@ -1,0 +1,1525 @@
+basePath: /1edtech/eduapi/base/v1p0
+definitions:
+  eduapi.AcademicSession:
+    properties:
+      dateLastModified:
+        type: string
+      endDate:
+        type: string
+      recordLanguage:
+        type: string
+      recordStatus:
+        type: string
+      sessionType:
+        type: string
+      sourcedId:
+        type: string
+      startDate:
+        type: string
+      title:
+        items:
+          $ref: '#/definitions/eduapi.LanguageTypedString'
+        type: array
+    type: object
+  eduapi.CodeMinor:
+    properties:
+      imsx_codeMinorField:
+        items:
+          $ref: '#/definitions/eduapi.CodeMinorField'
+        type: array
+    type: object
+  eduapi.CodeMinorField:
+    properties:
+      imsx_codeMinorFieldName:
+        type: string
+      imsx_codeMinorFieldValue:
+        type: string
+    type: object
+  eduapi.CollectionTemplate:
+    properties:
+      collectionType:
+        type: string
+      creditType:
+        type: string
+      dateLastModified:
+        type: string
+      description:
+        items:
+          $ref: '#/definitions/eduapi.LanguageTypedString'
+        type: array
+      gradingScheme:
+        items:
+          $ref: '#/definitions/eduapi.LanguageTypedString'
+        type: array
+      level:
+        type: string
+      organization:
+        type: string
+      primaryCode:
+        $ref: '#/definitions/eduapi.IdentifierEntry'
+      recordLanguage:
+        type: string
+      recordStatus:
+        type: string
+      sourcedId:
+        type: string
+      title:
+        items:
+          $ref: '#/definitions/eduapi.LanguageTypedString'
+        type: array
+    type: object
+  eduapi.CourseOffering:
+    properties:
+      academicSession:
+        type: string
+      course:
+        type: string
+      dateLastModified:
+        type: string
+      description:
+        items:
+          $ref: '#/definitions/eduapi.LanguageTypedString'
+        type: array
+      endDate:
+        type: string
+      offeringFormat:
+        type: string
+      offeringType:
+        type: string
+      organization:
+        type: string
+      primaryCode:
+        $ref: '#/definitions/eduapi.IdentifierEntry'
+      recordLanguage:
+        type: string
+      recordStatus:
+        type: string
+      registrationStatus:
+        type: string
+      sourcedId:
+        type: string
+      startDate:
+        type: string
+      title:
+        items:
+          $ref: '#/definitions/eduapi.LanguageTypedString'
+        type: array
+    type: object
+  eduapi.CourseTemplate:
+    properties:
+      courseType:
+        type: string
+      creditType:
+        type: string
+      dateLastModified:
+        type: string
+      description:
+        items:
+          $ref: '#/definitions/eduapi.LanguageTypedString'
+        type: array
+      gradingScheme:
+        items:
+          $ref: '#/definitions/eduapi.LanguageTypedString'
+        type: array
+      level:
+        type: string
+      organization:
+        type: string
+      primaryCode:
+        $ref: '#/definitions/eduapi.IdentifierEntry'
+      recordLanguage:
+        type: string
+      recordStatus:
+        type: string
+      sourcedId:
+        type: string
+      title:
+        items:
+          $ref: '#/definitions/eduapi.LanguageTypedString'
+        type: array
+    type: object
+  eduapi.Enrollment:
+    properties:
+      dateLastModified:
+        type: string
+      educationOffering:
+        type: string
+      enrollmentStatus:
+        type: string
+      isActive:
+        type: boolean
+      offeringType:
+        type: string
+      person:
+        type: string
+      recordLanguage:
+        type: string
+      recordStatus:
+        type: string
+      role:
+        type: string
+      sourcedId:
+        type: string
+    type: object
+  eduapi.IdentifierEntry:
+    properties:
+      identifier:
+        type: string
+      identifierType:
+        type: string
+    type: object
+  eduapi.LanguageTypedString:
+    properties:
+      recordLanguage:
+        type: string
+      value:
+        type: string
+    type: object
+  eduapi.OptionallyTypedEmail:
+    properties:
+      email:
+        type: string
+      emailType:
+        type: string
+    type: object
+  eduapi.OptionallyTypedPhone:
+    properties:
+      phone:
+        type: string
+      phoneType:
+        type: string
+    type: object
+  eduapi.Organization:
+    properties:
+      dateLastModified:
+        type: string
+      name:
+        items:
+          $ref: '#/definitions/eduapi.LanguageTypedString'
+        type: array
+      organizationType:
+        type: string
+      parent:
+        type: string
+      recordLanguage:
+        type: string
+      recordStatus:
+        type: string
+      sourcedId:
+        type: string
+    type: object
+  eduapi.Person:
+    properties:
+      dateLastModified:
+        type: string
+      dateOfBirth:
+        type: string
+      formattedName:
+        type: string
+      legalName:
+        $ref: '#/definitions/eduapi.PersonName'
+      otherEmails:
+        items:
+          $ref: '#/definitions/eduapi.TypedEmail'
+        type: array
+      otherIdentifiers:
+        items:
+          $ref: '#/definitions/eduapi.IdentifierEntry'
+        type: array
+      otherPhones:
+        items:
+          $ref: '#/definitions/eduapi.TypedPhone'
+        type: array
+      primaryEmail:
+        $ref: '#/definitions/eduapi.OptionallyTypedEmail'
+      primaryPhone:
+        $ref: '#/definitions/eduapi.OptionallyTypedPhone'
+      recordLanguage:
+        type: string
+      recordStatus:
+        type: string
+      sourcedId:
+        type: string
+    type: object
+  eduapi.PersonName:
+    properties:
+      additionalName:
+        type: string
+      familyName:
+        type: string
+      givenName:
+        type: string
+    type: object
+  eduapi.StatusInfo:
+    properties:
+      imsx_codeMajor:
+        type: string
+      imsx_codeMinor:
+        $ref: '#/definitions/eduapi.CodeMinor'
+      imsx_description:
+        type: string
+      imsx_severity:
+        type: string
+    type: object
+  eduapi.TypedEmail:
+    properties:
+      email:
+        type: string
+      emailType:
+        type: string
+    type: object
+  eduapi.TypedPhone:
+    properties:
+      phone:
+        type: string
+      phoneType:
+        type: string
+    type: object
+info:
+  contact: {}
+  description: |-
+    Read-only publication of the SIS data in 1EdTech Edu-API v1.0 (Final) shapes.
+
+    Every endpoint needs a Bearer access token from one of the token issuers
+    SIS trusts (sis.auth.issuers), with scope sis.read or the spec's
+    http://purl.1edtech.org/spec/eduapi/v1p0/scope/core.readonly.
+
+    Lists are bare JSON arrays. X-Total-Count holds the number of stored
+    records and Link the first, prev, next and last pages. A record is
+    addressed by its sourcedId, and references between records are
+    sourcedIds. Errors use the spec's Imsx_StatusInfo body. Lists that
+    support sort and filter say so; the others answer 400.
+
+    SIS stores less than the spec requires, so a required field with no data
+    is filled in one of three ways. Free text (title, description) falls back
+    to the record's own title, then its course title or sourcedId. An
+    enumeration carries the extensible term ext:unspecified, except
+    registrationStatus, which is always closed. References and dates are
+    omitted rather than invented, so a client can receive a record without them.
+  license:
+    name: BSD-2-Clause
+    url: https://opensource.org/license/bsd-2-clause
+  title: SIS Edu-API v1.0
+  version: "1.0"
+paths:
+  /academicSessions:
+    get:
+      description: Lists academic sessions. sort and filter accept sourcedId.
+      operationId: list-academic-sessions
+      parameters:
+      - description: Page size; defaults to default_limit and is clamped to max_limit
+        in: query
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Number of items to skip
+        in: query
+        minimum: 0
+        name: offset
+        type: integer
+      - description: Field to sort by
+        in: query
+        name: sort
+        type: string
+      - description: Sort direction
+        enum:
+        - asc
+        - desc
+        in: query
+        name: orderBy
+        type: string
+      - description: One or two terms joined by AND or OR, e.g. sourcedId='x'
+        in: query
+        name: filter
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          headers:
+            Link:
+              description: RFC 8288 first, prev, next and last links
+              type: string
+            X-Total-Count:
+              description: Number of stored records
+              type: integer
+          schema:
+            items:
+              $ref: '#/definitions/eduapi.AcademicSession'
+            type: array
+        "400":
+          description: Invalid query parameter or filter field
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+      security:
+      - BearerAuth: []
+      summary: List academic sessions
+      tags:
+      - academicSessions
+  /academicSessions/{id}:
+    get:
+      description: Returns one academic session by sourcedId.
+      operationId: get-academic-session
+      parameters:
+      - description: Academic session sourcedId
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/eduapi.AcademicSession'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+      security:
+      - BearerAuth: []
+      summary: Get academic session
+      tags:
+      - academicSessions
+  /academicSessions/{id}/courseOfferings:
+    get:
+      description: Lists the course offerings in one academic session. sort and filter
+        accept sourcedId.
+      operationId: list-session-course-offerings
+      parameters:
+      - description: Academic session sourcedId
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Page size; defaults to default_limit and is clamped to max_limit
+        in: query
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Number of items to skip
+        in: query
+        minimum: 0
+        name: offset
+        type: integer
+      - description: Field to sort by
+        in: query
+        name: sort
+        type: string
+      - description: Sort direction
+        enum:
+        - asc
+        - desc
+        in: query
+        name: orderBy
+        type: string
+      - description: One or two terms joined by AND or OR, e.g. sourcedId='x'
+        in: query
+        name: filter
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          headers:
+            Link:
+              description: RFC 8288 first, prev, next and last links
+              type: string
+            X-Total-Count:
+              description: Number of stored records
+              type: integer
+          schema:
+            items:
+              $ref: '#/definitions/eduapi.CourseOffering'
+            type: array
+        "400":
+          description: Invalid query parameter or filter field
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "404":
+          description: No such academic session
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+      security:
+      - BearerAuth: []
+      summary: List the course offerings of an academic session
+      tags:
+      - academicSessions
+  /academicSessions/{id}/enrollments:
+    get:
+      description: 'Lists the enrollments on the course offerings of one academic
+        session. Paged in memory: sort and filter answer 400.'
+      operationId: list-session-enrollments
+      parameters:
+      - description: Academic session sourcedId
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Page size; defaults to default_limit and is clamped to max_limit
+        in: query
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Number of items to skip
+        in: query
+        minimum: 0
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          headers:
+            Link:
+              description: RFC 8288 first, prev, next and last links
+              type: string
+            X-Total-Count:
+              description: Number of stored records
+              type: integer
+          schema:
+            items:
+              $ref: '#/definitions/eduapi.Enrollment'
+            type: array
+        "400":
+          description: Invalid query parameter, or sort/filter given
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "404":
+          description: No such academic session
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+      security:
+      - BearerAuth: []
+      summary: List the enrollments of an academic session
+      tags:
+      - academicSessions
+  /collectionTemplates:
+    get:
+      description: Lists collection templates (SIS programs). sort and filter accept
+        sourcedId.
+      operationId: list-collection-templates
+      parameters:
+      - description: Page size; defaults to default_limit and is clamped to max_limit
+        in: query
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Number of items to skip
+        in: query
+        minimum: 0
+        name: offset
+        type: integer
+      - description: Field to sort by
+        in: query
+        name: sort
+        type: string
+      - description: Sort direction
+        enum:
+        - asc
+        - desc
+        in: query
+        name: orderBy
+        type: string
+      - description: One or two terms joined by AND or OR, e.g. sourcedId='x'
+        in: query
+        name: filter
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          headers:
+            Link:
+              description: RFC 8288 first, prev, next and last links
+              type: string
+            X-Total-Count:
+              description: Number of stored records
+              type: integer
+          schema:
+            items:
+              $ref: '#/definitions/eduapi.CollectionTemplate'
+            type: array
+        "400":
+          description: Invalid query parameter or filter field
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+      security:
+      - BearerAuth: []
+      summary: List collection templates
+      tags:
+      - collectionTemplates
+  /collectionTemplates/{id}:
+    get:
+      description: Returns one collection template by sourcedId.
+      operationId: get-collection-template
+      parameters:
+      - description: Collection template sourcedId
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/eduapi.CollectionTemplate'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+      security:
+      - BearerAuth: []
+      summary: Get collection template
+      tags:
+      - collectionTemplates
+  /courseOfferings:
+    get:
+      description: Lists course offerings (SIS offerings). sort and filter accept
+        sourcedId.
+      operationId: list-course-offerings
+      parameters:
+      - description: Page size; defaults to default_limit and is clamped to max_limit
+        in: query
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Number of items to skip
+        in: query
+        minimum: 0
+        name: offset
+        type: integer
+      - description: Field to sort by
+        in: query
+        name: sort
+        type: string
+      - description: Sort direction
+        enum:
+        - asc
+        - desc
+        in: query
+        name: orderBy
+        type: string
+      - description: One or two terms joined by AND or OR, e.g. sourcedId='x'
+        in: query
+        name: filter
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          headers:
+            Link:
+              description: RFC 8288 first, prev, next and last links
+              type: string
+            X-Total-Count:
+              description: Number of stored records
+              type: integer
+          schema:
+            items:
+              $ref: '#/definitions/eduapi.CourseOffering'
+            type: array
+        "400":
+          description: Invalid query parameter or filter field
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+      security:
+      - BearerAuth: []
+      summary: List course offerings
+      tags:
+      - courseOfferings
+  /courseOfferings/{id}:
+    get:
+      description: Returns one course offering by sourcedId.
+      operationId: get-course-offering
+      parameters:
+      - description: Course offering sourcedId
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/eduapi.CourseOffering'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+      security:
+      - BearerAuth: []
+      summary: Get course offering
+      tags:
+      - courseOfferings
+  /courseOfferings/{id}/enrollments:
+    get:
+      description: Lists the enrollments on one course offering. sort and filter accept
+        sourcedId.
+      operationId: list-offering-enrollments
+      parameters:
+      - description: Course offering sourcedId
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Page size; defaults to default_limit and is clamped to max_limit
+        in: query
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Number of items to skip
+        in: query
+        minimum: 0
+        name: offset
+        type: integer
+      - description: Field to sort by
+        in: query
+        name: sort
+        type: string
+      - description: Sort direction
+        enum:
+        - asc
+        - desc
+        in: query
+        name: orderBy
+        type: string
+      - description: One or two terms joined by AND or OR, e.g. sourcedId='x'
+        in: query
+        name: filter
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          headers:
+            Link:
+              description: RFC 8288 first, prev, next and last links
+              type: string
+            X-Total-Count:
+              description: Number of stored records
+              type: integer
+          schema:
+            items:
+              $ref: '#/definitions/eduapi.Enrollment'
+            type: array
+        "400":
+          description: Invalid query parameter or filter field
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "404":
+          description: No such course offering
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+      security:
+      - BearerAuth: []
+      summary: List the enrollments of a course offering
+      tags:
+      - courseOfferings
+  /courseOfferings/{id}/staff:
+    get:
+      description: 'Lists the persons enrolled on one course offering as staff. Paged
+        in memory: sort and filter answer 400.'
+      operationId: list-offering-staff
+      parameters:
+      - description: Course offering sourcedId
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Page size; defaults to default_limit and is clamped to max_limit
+        in: query
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Number of items to skip
+        in: query
+        minimum: 0
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          headers:
+            Link:
+              description: RFC 8288 first, prev, next and last links
+              type: string
+            X-Total-Count:
+              description: Number of stored records
+              type: integer
+          schema:
+            items:
+              $ref: '#/definitions/eduapi.Person'
+            type: array
+        "400":
+          description: Invalid query parameter, or sort/filter given
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "404":
+          description: No such course offering
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+      security:
+      - BearerAuth: []
+      summary: List the staff of a course offering
+      tags:
+      - courseOfferings
+  /courseOfferings/{id}/students:
+    get:
+      description: 'Lists the persons enrolled on one course offering as students.
+        Paged in memory: sort and filter answer 400.'
+      operationId: list-offering-students
+      parameters:
+      - description: Course offering sourcedId
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Page size; defaults to default_limit and is clamped to max_limit
+        in: query
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Number of items to skip
+        in: query
+        minimum: 0
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          headers:
+            Link:
+              description: RFC 8288 first, prev, next and last links
+              type: string
+            X-Total-Count:
+              description: Number of stored records
+              type: integer
+          schema:
+            items:
+              $ref: '#/definitions/eduapi.Person'
+            type: array
+        "400":
+          description: Invalid query parameter, or sort/filter given
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "404":
+          description: No such course offering
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+      security:
+      - BearerAuth: []
+      summary: List the students of a course offering
+      tags:
+      - courseOfferings
+  /courseTemplates:
+    get:
+      description: Lists course templates (SIS courses). sort and filter accept sourcedId.
+      operationId: list-course-templates
+      parameters:
+      - description: Page size; defaults to default_limit and is clamped to max_limit
+        in: query
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Number of items to skip
+        in: query
+        minimum: 0
+        name: offset
+        type: integer
+      - description: Field to sort by
+        in: query
+        name: sort
+        type: string
+      - description: Sort direction
+        enum:
+        - asc
+        - desc
+        in: query
+        name: orderBy
+        type: string
+      - description: One or two terms joined by AND or OR, e.g. sourcedId='x'
+        in: query
+        name: filter
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          headers:
+            Link:
+              description: RFC 8288 first, prev, next and last links
+              type: string
+            X-Total-Count:
+              description: Number of stored records
+              type: integer
+          schema:
+            items:
+              $ref: '#/definitions/eduapi.CourseTemplate'
+            type: array
+        "400":
+          description: Invalid query parameter or filter field
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+      security:
+      - BearerAuth: []
+      summary: List course templates
+      tags:
+      - courseTemplates
+  /courseTemplates/{id}:
+    get:
+      description: Returns one course template by sourcedId.
+      operationId: get-course-template
+      parameters:
+      - description: Course template sourcedId
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/eduapi.CourseTemplate'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+      security:
+      - BearerAuth: []
+      summary: Get course template
+      tags:
+      - courseTemplates
+  /enrollments:
+    get:
+      description: Lists enrollments. sort and filter accept sourcedId.
+      operationId: list-enrollments
+      parameters:
+      - description: Page size; defaults to default_limit and is clamped to max_limit
+        in: query
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Number of items to skip
+        in: query
+        minimum: 0
+        name: offset
+        type: integer
+      - description: Field to sort by
+        in: query
+        name: sort
+        type: string
+      - description: Sort direction
+        enum:
+        - asc
+        - desc
+        in: query
+        name: orderBy
+        type: string
+      - description: One or two terms joined by AND or OR, e.g. sourcedId='x'
+        in: query
+        name: filter
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          headers:
+            Link:
+              description: RFC 8288 first, prev, next and last links
+              type: string
+            X-Total-Count:
+              description: Number of stored records
+              type: integer
+          schema:
+            items:
+              $ref: '#/definitions/eduapi.Enrollment'
+            type: array
+        "400":
+          description: Invalid query parameter or filter field
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+      security:
+      - BearerAuth: []
+      summary: List enrollments
+      tags:
+      - enrollments
+  /enrollments/{id}:
+    get:
+      description: Returns one enrollment by sourcedId.
+      operationId: get-enrollment
+      parameters:
+      - description: Enrollment sourcedId
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/eduapi.Enrollment'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+      security:
+      - BearerAuth: []
+      summary: Get enrollment
+      tags:
+      - enrollments
+  /organizations:
+    get:
+      description: Lists organizations. sort and filter accept sourcedId.
+      operationId: list-organizations
+      parameters:
+      - description: Page size; defaults to default_limit and is clamped to max_limit
+        in: query
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Number of items to skip
+        in: query
+        minimum: 0
+        name: offset
+        type: integer
+      - description: Field to sort by
+        in: query
+        name: sort
+        type: string
+      - description: Sort direction
+        enum:
+        - asc
+        - desc
+        in: query
+        name: orderBy
+        type: string
+      - description: One or two terms joined by AND or OR, e.g. sourcedId='x'
+        in: query
+        name: filter
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          headers:
+            Link:
+              description: RFC 8288 first, prev, next and last links
+              type: string
+            X-Total-Count:
+              description: Number of stored records
+              type: integer
+          schema:
+            items:
+              $ref: '#/definitions/eduapi.Organization'
+            type: array
+        "400":
+          description: Invalid query parameter or filter field
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+      security:
+      - BearerAuth: []
+      summary: List organizations
+      tags:
+      - organizations
+  /organizations/{id}:
+    get:
+      description: Returns one organization by sourcedId.
+      operationId: get-organization
+      parameters:
+      - description: Organization sourcedId
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/eduapi.Organization'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+      security:
+      - BearerAuth: []
+      summary: Get organization
+      tags:
+      - organizations
+  /persons:
+    get:
+      description: Lists persons. sort accepts sourcedId, legalName.familyName, legalName.givenName
+        and dateOfBirth; filter accepts the same fields.
+      operationId: list-persons
+      parameters:
+      - description: Page size; defaults to default_limit and is clamped to max_limit
+        in: query
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Number of items to skip
+        in: query
+        minimum: 0
+        name: offset
+        type: integer
+      - description: Field to sort by
+        in: query
+        name: sort
+        type: string
+      - description: Sort direction
+        enum:
+        - asc
+        - desc
+        in: query
+        name: orderBy
+        type: string
+      - description: One or two terms joined by AND or OR, e.g. legalName.familyName~'son'
+        in: query
+        name: filter
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          headers:
+            Link:
+              description: RFC 8288 first, prev, next and last links
+              type: string
+            X-Total-Count:
+              description: Number of stored records
+              type: integer
+          schema:
+            items:
+              $ref: '#/definitions/eduapi.Person'
+            type: array
+        "400":
+          description: Invalid query parameter or filter field
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+      security:
+      - BearerAuth: []
+      summary: List persons
+      tags:
+      - persons
+  /persons/{id}:
+    get:
+      description: Returns one person by sourcedId.
+      operationId: get-person
+      parameters:
+      - description: Person sourcedId
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/eduapi.Person'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+      security:
+      - BearerAuth: []
+      summary: Get person
+      tags:
+      - persons
+  /staff:
+    get:
+      description: Lists the persons with the staff or faculty role. sort and filter
+        as for persons.
+      operationId: list-staff
+      parameters:
+      - description: Page size; defaults to default_limit and is clamped to max_limit
+        in: query
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Number of items to skip
+        in: query
+        minimum: 0
+        name: offset
+        type: integer
+      - description: Field to sort by
+        in: query
+        name: sort
+        type: string
+      - description: Sort direction
+        enum:
+        - asc
+        - desc
+        in: query
+        name: orderBy
+        type: string
+      - description: One or two terms joined by AND or OR, e.g. legalName.familyName~'son'
+        in: query
+        name: filter
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          headers:
+            Link:
+              description: RFC 8288 first, prev, next and last links
+              type: string
+            X-Total-Count:
+              description: Number of stored records
+              type: integer
+          schema:
+            items:
+              $ref: '#/definitions/eduapi.Person'
+            type: array
+        "400":
+          description: Invalid query parameter or filter field
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+      security:
+      - BearerAuth: []
+      summary: List staff
+      tags:
+      - persons
+  /students:
+    get:
+      description: Lists the persons with the student role. sort and filter as for
+        persons.
+      operationId: list-students
+      parameters:
+      - description: Page size; defaults to default_limit and is clamped to max_limit
+        in: query
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Number of items to skip
+        in: query
+        minimum: 0
+        name: offset
+        type: integer
+      - description: Field to sort by
+        in: query
+        name: sort
+        type: string
+      - description: Sort direction
+        enum:
+        - asc
+        - desc
+        in: query
+        name: orderBy
+        type: string
+      - description: One or two terms joined by AND or OR, e.g. legalName.familyName~'son'
+        in: query
+        name: filter
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          headers:
+            Link:
+              description: RFC 8288 first, prev, next and last links
+              type: string
+            X-Total-Count:
+              description: Number of stored records
+              type: integer
+          schema:
+            items:
+              $ref: '#/definitions/eduapi.Person'
+            type: array
+        "400":
+          description: Invalid query parameter or filter field
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "401":
+          description: Missing, invalid or untrusted token
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "403":
+          description: Token lacks the required scope
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/eduapi.StatusInfo'
+      security:
+      - BearerAuth: []
+      summary: List students
+      tags:
+      - persons
+securityDefinitions:
+  BearerAuth:
+    description: Access token prefixed with "Bearer ", e.g. "Bearer eyJhbGciOi...".
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

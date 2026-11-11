@@ -31,7 +31,7 @@ RUN go mod download
 
 COPY . .
 
-# Generate the /api/v1 OpenAPI package (docs/restadmin) before building.
+# Generate the OpenAPI packages (docs/restadmin, oeapi, eduapi) before building.
 # internal/httpserver imports it unconditionally, so the build fails without
 # it even when Swagger is disabled in config. Regenerating here (rather than
 # relying on a committed copy) keeps the image in step with the annotations.
