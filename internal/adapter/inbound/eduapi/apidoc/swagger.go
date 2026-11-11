@@ -24,8 +24,12 @@ import _ "github.com/SUNET/sis/pkg/eduapi"
 //	@description	sourcedIds. Errors use the spec's Imsx_StatusInfo body. Lists that
 //	@description	support sort and filter say so; the others answer 400.
 //	@description
-//	@description				SIS stores less than the spec requires. A required field with no data
-//	@description				carries the extensible term ext:unspecified (registrationStatus: closed).
+//	@description				SIS stores less than the spec requires, so a required field with no data
+//	@description				is filled in one of three ways. Free text (title, description) falls back
+//	@description				to the record's own title, then its course title or sourcedId. An
+//	@description				enumeration carries the extensible term ext:unspecified, except
+//	@description				registrationStatus, which is always closed. References and dates are
+//	@description				omitted rather than invented, so a client can receive a record without them.
 //	@license.name				BSD-2-Clause
 //	@license.url				https://opensource.org/license/bsd-2-clause
 //	@BasePath					/1edtech/eduapi/base/v1p0

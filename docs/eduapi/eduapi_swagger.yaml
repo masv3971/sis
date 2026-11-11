@@ -290,8 +290,12 @@ info:
     sourcedIds. Errors use the spec's Imsx_StatusInfo body. Lists that
     support sort and filter say so; the others answer 400.
 
-    SIS stores less than the spec requires. A required field with no data
-    carries the extensible term ext:unspecified (registrationStatus: closed).
+    SIS stores less than the spec requires, so a required field with no data
+    is filled in one of three ways. Free text (title, description) falls back
+    to the record's own title, then its course title or sourcedId. An
+    enumeration carries the extensible term ext:unspecified, except
+    registrationStatus, which is always closed. References and dates are
+    omitted rather than invented, so a client can receive a record without them.
   license:
     name: BSD-2-Clause
     url: https://opensource.org/license/bsd-2-clause
