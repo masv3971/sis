@@ -300,6 +300,39 @@ func TestSwaggerServesSpecOnlyWhenEnabled(t *testing.T) {
 	}
 }
 
+// TestSwaggerServesStandardsSpecs checks OEAPI and Edu-API each serve their
+// own document, next to the /api/v1 one.
+func TestSwaggerServesStandardsSpecs(t *testing.T) {
+	cfg := testCfg("127.0.0.1:0")
+	cfg.SIS.HTTPServer.Swagger.Enabled = true
+	srv, err := newTestServerWithCfg(t, cfg)
+	require.NoError(t, err, "New")
+	t.Cleanup(func() { _ = srv.Close(context.Background()) })
+
+	for _, tc := range []struct{ path, basePath, route string }{
+		{"/swagger/oeapi/doc.json", "/oeapi", "/associations/{id}"},
+		{"/swagger/eduapi/doc.json", "/1edtech/eduapi/base/v1p0", "/courseOfferings/{id}/students"},
+	} {
+		resp, err := httpGet(t, http.DefaultClient, "http://"+srv.Addr().String()+tc.path)
+		require.NoError(t, err, "GET %s", tc.path)
+		var doc struct {
+			BasePath string                     `json:"basePath"`
+			Paths    map[string]json.RawMessage `json:"paths"`
+		}
+		decodeErr := json.NewDecoder(resp.Body).Decode(&doc)
+		_ = resp.Body.Close()
+		require.Equal(t, http.StatusOK, resp.StatusCode, tc.path)
+		require.NoError(t, decodeErr, "%s: expected JSON", tc.path)
+		assert.Equal(t, tc.basePath, doc.BasePath, tc.path)
+		assert.Contains(t, doc.Paths, tc.route, tc.path)
+	}
+
+	resp, err := httpGet(t, http.DefaultClient, "http://"+srv.Addr().String()+"/swagger/oeapi/index.html")
+	require.NoError(t, err, "GET index.html")
+	_ = resp.Body.Close()
+	assert.Equal(t, http.StatusOK, resp.StatusCode, "oeapi UI")
+}
+
 // TestIDsWithSlashesRoundTrip checks a record whose id and sourcedId contain
 // "/" can be read, updated and deleted through /api/v1 and read through both
 // standards providers when the slash is sent escaped (%2F), for persons and

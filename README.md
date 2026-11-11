@@ -45,7 +45,9 @@ SIS listens on <https://localhost:8080> (loopback only by default; see
 | ---- | --- |
 | Web UI (admin SPA) | <https://localhost:8080/> |
 | Swagger UI (`/api/v1`) | <https://localhost:8080/swagger/index.html> |
-| OpenAPI spec (JSON) | <https://localhost:8080/swagger/doc.json> |
+| Swagger UI (OEAPI) | <https://localhost:8080/swagger/oeapi/index.html> |
+| Swagger UI (Edu-API) | <https://localhost:8080/swagger/eduapi/index.html> |
+| OpenAPI specs (JSON) | `/swagger/doc.json`, `/swagger/oeapi/doc.json`, `/swagger/eduapi/doc.json` |
 | Health check | <https://localhost:8080/healthz> |
 
 ### Development TLS
@@ -93,8 +95,9 @@ make web-dev
 
 ### Swagger
 
-`/swagger/index.html` documents `/api/v1`, including parse/populate. The page
-itself is public; use **Authorize** with a Bearer token (see below) to send
+`/swagger/index.html` documents `/api/v1`, including parse/populate.
+`/swagger/oeapi/index.html` documents the OEAPI read provider and
+`/swagger/eduapi/index.html` the Edu-API one. The pages themselves are public; use **Authorize** with a Bearer token (see below) to send
 requests from it. Disable with `sis.httpserver.swagger.enabled: false`.
 Regenerate the docs after changing handler annotations:
 
@@ -430,7 +433,7 @@ make build        # ./bin/sis
 make test         # go test ./... (extra flags: GOTEST_FLAGS="-race -count=1")
 make lint         # gofmt, vet, staticcheck, govulncheck, swagger-check
 make web          # npm install + build the SPA into web/dist
-make swagger      # regenerate docs/restadmin
+make swagger      # regenerate docs/restadmin, docs/oeapi, docs/eduapi
 make docker-build # docker.sunet.se/iam_vc/sis:local
 make diagram      # render docs/diagrams/*.puml
 ```
