@@ -131,10 +131,22 @@ type template struct {
 	GradingScheme []LanguageTypedString `json:"gradingScheme"`
 }
 
+// delivery holds the fields shared by every offering that follow its
+// education fields.
+type delivery struct {
+	AcademicSession    string `json:"academicSession,omitempty"`
+	OfferingFormat     string `json:"offeringFormat"`
+	RegistrationStatus string `json:"registrationStatus"`
+	StartDate          string `json:"startDate,omitempty"`
+	EndDate            string `json:"endDate,omitempty"`
+}
+
 // CourseTemplate is a time-independent description of a course: our Course.
 type CourseTemplate struct {
 	CourseType string `json:"courseType"`
 	template
+	// Parent holds the collection templates (programs) the course is part of.
+	Parent []string `json:"parent,omitempty"`
 }
 
 // CollectionTemplate is a grouping of courses, e.g. a program: our Program.
@@ -143,16 +155,95 @@ type CollectionTemplate struct {
 	template
 }
 
+// ComponentTemplate is a part of a course, such as a lecture or a laboratory:
+// our ComponentTemplate.
+type ComponentTemplate struct {
+	ComponentType string `json:"componentType"`
+	template
+	// Parent holds the course templates the component is part of.
+	Parent []string `json:"parent,omitempty"`
+}
+
+// Education is the type-neutral view of a course, collection or component
+// template, as /educationTemplates lists them. The spec's Education schema
+// has no type and no parent, so neither is published here.
+type Education struct{ template }
+
 // CourseOffering is a course delivered in an academic session: our Offering.
 type CourseOffering struct {
 	OfferingType string `json:"offeringType"`
 	Course       string `json:"course"`
 	education
-	AcademicSession    string `json:"academicSession,omitempty"`
-	OfferingFormat     string `json:"offeringFormat"`
-	RegistrationStatus string `json:"registrationStatus"`
-	StartDate          string `json:"startDate,omitempty"`
-	EndDate            string `json:"endDate,omitempty"`
+	delivery
+	// Parent holds the collection offerings the course offering is part of.
+	Parent []string `json:"parent,omitempty"`
+}
+
+// CollectionOffering is a program delivered in an academic session: our
+// CollectionOffering.
+type CollectionOffering struct {
+	OfferingType string `json:"offeringType"`
+	Collection   string `json:"collection"`
+	education
+	delivery
+}
+
+// ComponentOffering is a component delivered in an academic session: our
+// ComponentOffering.
+type ComponentOffering struct {
+	OfferingType string `json:"offeringType"`
+	Component    string `json:"component"`
+	education
+	delivery
+	// Parent holds the course offerings the component is delivered with.
+	Parent []string `json:"parent,omitempty"`
+}
+
+// EducationOffering is the type-neutral view of a course, collection or
+// component offering, as /educationOfferings lists them. Its offeringType is
+// collection, course or component.
+type EducationOffering struct {
+	OfferingType string `json:"offeringType"`
+	education
+	delivery
+}
+
+// Education returns the type-neutral view of the template.
+func (t CourseTemplate) Education() Education { return Education{t.template} }
+
+// Education returns the type-neutral view of the template.
+func (t CollectionTemplate) Education() Education { return Education{t.template} }
+
+// Education returns the type-neutral view of the template.
+func (t ComponentTemplate) Education() Education { return Education{t.template} }
+
+// Education returns the type-neutral view of the offering.
+func (o CourseOffering) Education() EducationOffering {
+	return EducationOffering{"course", o.education, o.delivery}
+}
+
+// Education returns the type-neutral view of the offering.
+func (o CollectionOffering) Education() EducationOffering {
+	return EducationOffering{"collection", o.education, o.delivery}
+}
+
+// Education returns the type-neutral view of the offering.
+func (o ComponentOffering) Education() EducationOffering {
+	return EducationOffering{"component", o.education, o.delivery}
+}
+
+// Affiliation relates a person to an organization in a role. The spec's
+// schema has no recordLanguage.
+type Affiliation struct {
+	SourcedID         string `json:"sourcedId"`
+	Person            string `json:"person"`
+	Organization      string `json:"organization"`
+	Role              string `json:"role"`
+	AffiliationStatus string `json:"affiliationStatus"`
+	StartDate         string `json:"startDate,omitempty"`
+	EndDate           string `json:"endDate,omitempty"`
+	DateLastModified  string `json:"dateLastModified,omitempty"`
+	RecordStatus      string `json:"recordStatus"`
 }
 
 // Enrollment joins a person and an offering in a role.
@@ -316,6 +407,23 @@ func (m Mapper) CourseTemplate(course *domain.Course) CourseTemplate {
 	return CourseTemplate{
 		CourseType: "standard",
 		template:   m.template(&course.Base, course.Title, course.Code, course.OrgID, course.Level),
+		Parent:     course.ProgramIDs,
+	}
+}
+
+// componentTypes are the spec's component types, shared by templates and
+// offerings.
+var componentTypes = []string{
+	"individualizedInstruction", "integratedLectureLab", "laboratory", "lecture", "practicum",
+	"recitation", "research", "seminar", "independentStudy", "fieldExperience", "exam",
+}
+
+// ComponentTemplate maps a canonical component template.
+func (m Mapper) ComponentTemplate(component *domain.ComponentTemplate) ComponentTemplate {
+	return ComponentTemplate{
+		ComponentType: cmp.Or(enum(component.Type, componentTypes...), unspecified),
+		template:      m.template(&component.Base, component.Title, component.Code, component.OrgID, ""),
+		Parent:        component.CourseIDs,
 	}
 }
 
@@ -332,16 +440,55 @@ func (m Mapper) CollectionTemplate(program *domain.Program) CollectionTemplate {
 // them out. An offering may have no title but the spec requires one, so
 // courseTitle (the offering's course) stands in, then the sourcedId.
 func (m Mapper) CourseOffering(offering *domain.Offering, session *domain.AcademicSession, courseTitle string) CourseOffering {
-	title := cmp.Or(offering.Title, courseTitle, offering.SourcedID)
-	out := CourseOffering{
+	base, when := m.offering(&offering.Base, cmp.Or(offering.Title, courseTitle, offering.SourcedID), offering.OrgID, offering.AcademicSessionID, session)
+	return CourseOffering{
 		OfferingType: "standard", Course: offering.CourseID,
-		education: education{
-			SourcedID: offering.SourcedID, RecordLanguage: m.lang,
-			Title: m.text(title), Description: m.text(title),
-			PrimaryCode:  IdentifierEntry{Identifier: offering.SourcedID, IdentifierType: "systemId"},
-			Organization: offering.OrgID, DateLastModified: rfc3339(offering.UpdatedAt), RecordStatus: recordStatus(offering.Status),
-		},
-		AcademicSession: offering.AcademicSessionID,
+		education: base, delivery: when, Parent: offering.CollectionOfferingIDs,
+	}
+}
+
+// CollectionOffering maps a canonical collection offering. session and
+// programTitle are as for CourseOffering.
+func (m Mapper) CollectionOffering(offering *domain.CollectionOffering, session *domain.AcademicSession, programTitle string) CollectionOffering {
+	base, when := m.offering(&offering.Base, cmp.Or(offering.Title, programTitle, offering.SourcedID), offering.OrgID, offering.AcademicSessionID, session)
+	return CollectionOffering{OfferingType: "program", Collection: offering.ProgramID, education: base, delivery: when}
+}
+
+// ComponentOffering maps a canonical component offering. session is as for
+// CourseOffering. component is the offering's template, which supplies the
+// title of an untitled offering and the offering type; nil leaves both to
+// the fallbacks.
+func (m Mapper) ComponentOffering(offering *domain.ComponentOffering, session *domain.AcademicSession, component *domain.ComponentTemplate) ComponentOffering {
+	var componentTitle, componentType string
+	if component != nil {
+		componentTitle, componentType = component.Title, component.Type
+	}
+	base, when := m.offering(&offering.Base, cmp.Or(offering.Title, componentTitle, offering.SourcedID), offering.OrgID, offering.AcademicSessionID, session)
+	return ComponentOffering{
+		OfferingType: cmp.Or(enum(componentType, componentTypes...), unspecified), Component: offering.ComponentID,
+		education: base, delivery: when, Parent: offering.CourseOfferingIDs,
+	}
+}
+
+// Affiliation maps a canonical affiliation.
+func (m Mapper) Affiliation(affiliation *domain.Affiliation) Affiliation {
+	status := "active"
+	if affiliation.Status == domain.StatusInactive {
+		status = "inactive"
+	}
+	return Affiliation{
+		SourcedID: affiliation.SourcedID, Person: affiliation.PersonID, Organization: affiliation.OrgID,
+		Role: role(affiliation.Role), AffiliationStatus: status,
+		StartDate: dateTimeZ(affiliation.StartDate), EndDate: dateTimeZ(affiliation.EndDate),
+		DateLastModified: rfc3339(affiliation.UpdatedAt), RecordStatus: recordStatus(affiliation.Status),
+	}
+}
+
+// offering builds the fields every offering carries. title is already the
+// final text; session, when set, supplies the dates.
+func (m Mapper) offering(base *domain.Base, title, orgID, sessionID string, session *domain.AcademicSession) (education, delivery) {
+	out := delivery{
+		AcademicSession: sessionID,
 		OfferingFormat:  unspecified,
 		// SIS publishes records of past and current study, not a catalog to
 		// enrol in.
@@ -350,7 +497,12 @@ func (m Mapper) CourseOffering(offering *domain.Offering, session *domain.Academ
 	if session != nil {
 		out.StartDate, out.EndDate = dateTimeZ(session.StartDate), dateTimeZ(session.EndDate)
 	}
-	return out
+	return education{
+		SourcedID: base.SourcedID, RecordLanguage: m.lang,
+		Title: m.text(title), Description: m.text(title),
+		PrimaryCode:  IdentifierEntry{Identifier: base.SourcedID, IdentifierType: "systemId"},
+		Organization: orgID, DateLastModified: rfc3339(base.UpdatedAt), RecordStatus: recordStatus(base.Status),
+	}, out
 }
 
 // Enrollment maps a canonical enrollment. SIS enrolls people only in

@@ -51,6 +51,18 @@ import _ "github.com/SUNET/sis/pkg/eduapi"
 //	@tag.description			Courses delivered in an academic session
 //	@tag.name					enrollments
 //	@tag.description			A person's participation in an offering, in a role
+//	@tag.name					affiliations
+//	@tag.description			A person's relationship to an organization, in a role
+//	@tag.name					componentTemplates
+//	@tag.description			Parts of a course, such as a lecture or a laboratory
+//	@tag.name					collectionOfferings
+//	@tag.description			Programs delivered in an academic session
+//	@tag.name					componentOfferings
+//	@tag.description			Components delivered in an academic session
+//	@tag.name					educationTemplates
+//	@tag.description			Course, collection and component templates in one list
+//	@tag.name					educationOfferings
+//	@tag.description			Course, collection and component offerings in one list
 
 // -- persons ------------------------------------------------------------------
 
@@ -444,3 +456,257 @@ import _ "github.com/SUNET/sis/pkg/eduapi"
 //	@Failure		404	{object}	eduapi.StatusInfo	"Not Found"
 //	@Failure		500	{object}	eduapi.StatusInfo	"Internal Server Error"
 //	@Router			/enrollments/{id} [get]
+
+// -- affiliations -------------------------------------------------------------
+
+//	@Summary		List affiliations
+//	@ID				list-affiliations
+//	@Description	Lists affiliations. sort and filter accept sourcedId.
+//	@Tags			affiliations
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			limit	query		int					false	"Page size; defaults to default_limit and is clamped to max_limit"	minimum(1)
+//	@Param			offset	query		int					false	"Number of items to skip"											minimum(0)
+//	@Param			sort	query		string				false	"Field to sort by"
+//	@Param			orderBy	query		string				false	"Sort direction"	Enums(asc, desc)
+//	@Param			filter	query		string				false	"One or two terms joined by AND or OR, e.g. sourcedId='x'"
+//	@Success		200		{array}		eduapi.Affiliation	"Success"
+//	@Header			200		{integer}	X-Total-Count		"Number of stored records"
+//	@Header			200		{string}	Link				"RFC 8288 first, prev, next and last links"
+//	@Failure		400		{object}	eduapi.StatusInfo	"Invalid query parameter or filter field"
+//	@Failure		401		{object}	eduapi.StatusInfo	"Missing, invalid or untrusted token"
+//	@Failure		403		{object}	eduapi.StatusInfo	"Token lacks the required scope"
+//	@Failure		500		{object}	eduapi.StatusInfo	"Internal Server Error"
+//	@Router			/affiliations [get]
+
+//	@Summary		Get affiliation
+//	@ID				get-affiliation
+//	@Description	Returns one affiliation by sourcedId.
+//	@Tags			affiliations
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			id	path		string				true	"Affiliation sourcedId"
+//	@Success		200	{object}	eduapi.Affiliation	"Success"
+//	@Failure		401	{object}	eduapi.StatusInfo	"Missing, invalid or untrusted token"
+//	@Failure		403	{object}	eduapi.StatusInfo	"Token lacks the required scope"
+//	@Failure		404	{object}	eduapi.StatusInfo	"Not Found"
+//	@Failure		500	{object}	eduapi.StatusInfo	"Internal Server Error"
+//	@Router			/affiliations/{id} [get]
+
+// -- componentTemplates -------------------------------------------------------
+
+//	@Summary		List component templates
+//	@ID				list-component-templates
+//	@Description	Lists component templates. sort and filter accept sourcedId.
+//	@Tags			componentTemplates
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			limit	query		int							false	"Page size; defaults to default_limit and is clamped to max_limit"	minimum(1)
+//	@Param			offset	query		int							false	"Number of items to skip"											minimum(0)
+//	@Param			sort	query		string						false	"Field to sort by"
+//	@Param			orderBy	query		string						false	"Sort direction"	Enums(asc, desc)
+//	@Param			filter	query		string						false	"One or two terms joined by AND or OR, e.g. sourcedId='x'"
+//	@Success		200		{array}		eduapi.ComponentTemplate	"Success"
+//	@Header			200		{integer}	X-Total-Count				"Number of stored records"
+//	@Header			200		{string}	Link						"RFC 8288 first, prev, next and last links"
+//	@Failure		400		{object}	eduapi.StatusInfo			"Invalid query parameter or filter field"
+//	@Failure		401		{object}	eduapi.StatusInfo			"Missing, invalid or untrusted token"
+//	@Failure		403		{object}	eduapi.StatusInfo			"Token lacks the required scope"
+//	@Failure		500		{object}	eduapi.StatusInfo			"Internal Server Error"
+//	@Router			/componentTemplates [get]
+
+//	@Summary		Get component template
+//	@ID				get-component-template
+//	@Description	Returns one component template by sourcedId.
+//	@Tags			componentTemplates
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			id	path		string						true	"Component template sourcedId"
+//	@Success		200	{object}	eduapi.ComponentTemplate	"Success"
+//	@Failure		401	{object}	eduapi.StatusInfo			"Missing, invalid or untrusted token"
+//	@Failure		403	{object}	eduapi.StatusInfo			"Token lacks the required scope"
+//	@Failure		404	{object}	eduapi.StatusInfo			"Not Found"
+//	@Failure		500	{object}	eduapi.StatusInfo			"Internal Server Error"
+//	@Router			/componentTemplates/{id} [get]
+
+// -- collectionOfferings ------------------------------------------------------
+
+//	@Summary		List collection offerings
+//	@ID				list-collection-offerings
+//	@Description	Lists collection offerings (SIS collection offerings). sort and filter accept sourcedId.
+//	@Tags			collectionOfferings
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			limit	query		int							false	"Page size; defaults to default_limit and is clamped to max_limit"	minimum(1)
+//	@Param			offset	query		int							false	"Number of items to skip"											minimum(0)
+//	@Param			sort	query		string						false	"Field to sort by"
+//	@Param			orderBy	query		string						false	"Sort direction"	Enums(asc, desc)
+//	@Param			filter	query		string						false	"One or two terms joined by AND or OR, e.g. sourcedId='x'"
+//	@Success		200		{array}		eduapi.CollectionOffering	"Success"
+//	@Header			200		{integer}	X-Total-Count				"Number of stored records"
+//	@Header			200		{string}	Link						"RFC 8288 first, prev, next and last links"
+//	@Failure		400		{object}	eduapi.StatusInfo			"Invalid query parameter or filter field"
+//	@Failure		401		{object}	eduapi.StatusInfo			"Missing, invalid or untrusted token"
+//	@Failure		403		{object}	eduapi.StatusInfo			"Token lacks the required scope"
+//	@Failure		500		{object}	eduapi.StatusInfo			"Internal Server Error"
+//	@Router			/collectionOfferings [get]
+
+//	@Summary		Get collection offering
+//	@ID				get-collection-offering
+//	@Description	Returns one collection offering by sourcedId.
+//	@Tags			collectionOfferings
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			id	path		string						true	"Collection offering sourcedId"
+//	@Success		200	{object}	eduapi.CollectionOffering	"Success"
+//	@Failure		401	{object}	eduapi.StatusInfo			"Missing, invalid or untrusted token"
+//	@Failure		403	{object}	eduapi.StatusInfo			"Token lacks the required scope"
+//	@Failure		404	{object}	eduapi.StatusInfo			"Not Found"
+//	@Failure		500	{object}	eduapi.StatusInfo			"Internal Server Error"
+//	@Router			/collectionOfferings/{id} [get]
+
+//	@Summary		List the collection offerings of an academic session
+//	@ID				list-session-collection-offerings
+//	@Description	Lists the collection offerings in one academic session. sort and filter accept sourcedId.
+//	@Tags			academicSessions
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			id		path		string						true	"Academic session sourcedId"
+//	@Param			limit	query		int							false	"Page size; defaults to default_limit and is clamped to max_limit"	minimum(1)
+//	@Param			offset	query		int							false	"Number of items to skip"											minimum(0)
+//	@Param			sort	query		string						false	"Field to sort by"
+//	@Param			orderBy	query		string						false	"Sort direction"	Enums(asc, desc)
+//	@Param			filter	query		string						false	"One or two terms joined by AND or OR, e.g. sourcedId='x'"
+//	@Success		200		{array}		eduapi.CollectionOffering	"Success"
+//	@Header			200		{integer}	X-Total-Count				"Number of stored records"
+//	@Header			200		{string}	Link						"RFC 8288 first, prev, next and last links"
+//	@Failure		400		{object}	eduapi.StatusInfo			"Invalid query parameter or filter field"
+//	@Failure		401		{object}	eduapi.StatusInfo			"Missing, invalid or untrusted token"
+//	@Failure		403		{object}	eduapi.StatusInfo			"Token lacks the required scope"
+//	@Failure		404		{object}	eduapi.StatusInfo			"No such academic session"
+//	@Failure		500		{object}	eduapi.StatusInfo			"Internal Server Error"
+//	@Router			/academicSessions/{id}/collectionOfferings [get]
+
+// -- componentOfferings -------------------------------------------------------
+
+//	@Summary		List component offerings
+//	@ID				list-component-offerings
+//	@Description	Lists component offerings. sort and filter accept sourcedId.
+//	@Tags			componentOfferings
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			limit	query		int							false	"Page size; defaults to default_limit and is clamped to max_limit"	minimum(1)
+//	@Param			offset	query		int							false	"Number of items to skip"											minimum(0)
+//	@Param			sort	query		string						false	"Field to sort by"
+//	@Param			orderBy	query		string						false	"Sort direction"	Enums(asc, desc)
+//	@Param			filter	query		string						false	"One or two terms joined by AND or OR, e.g. sourcedId='x'"
+//	@Success		200		{array}		eduapi.ComponentOffering	"Success"
+//	@Header			200		{integer}	X-Total-Count				"Number of stored records"
+//	@Header			200		{string}	Link						"RFC 8288 first, prev, next and last links"
+//	@Failure		400		{object}	eduapi.StatusInfo			"Invalid query parameter or filter field"
+//	@Failure		401		{object}	eduapi.StatusInfo			"Missing, invalid or untrusted token"
+//	@Failure		403		{object}	eduapi.StatusInfo			"Token lacks the required scope"
+//	@Failure		500		{object}	eduapi.StatusInfo			"Internal Server Error"
+//	@Router			/componentOfferings [get]
+
+//	@Summary		Get component offering
+//	@ID				get-component-offering
+//	@Description	Returns one component offering by sourcedId.
+//	@Tags			componentOfferings
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			id	path		string						true	"Component offering sourcedId"
+//	@Success		200	{object}	eduapi.ComponentOffering	"Success"
+//	@Failure		401	{object}	eduapi.StatusInfo			"Missing, invalid or untrusted token"
+//	@Failure		403	{object}	eduapi.StatusInfo			"Token lacks the required scope"
+//	@Failure		404	{object}	eduapi.StatusInfo			"Not Found"
+//	@Failure		500	{object}	eduapi.StatusInfo			"Internal Server Error"
+//	@Router			/componentOfferings/{id} [get]
+
+//	@Summary		List the component offerings of an academic session
+//	@ID				list-session-component-offerings
+//	@Description	Lists the component offerings in one academic session. sort and filter accept sourcedId.
+//	@Tags			academicSessions
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			id		path		string						true	"Academic session sourcedId"
+//	@Param			limit	query		int							false	"Page size; defaults to default_limit and is clamped to max_limit"	minimum(1)
+//	@Param			offset	query		int							false	"Number of items to skip"											minimum(0)
+//	@Param			sort	query		string						false	"Field to sort by"
+//	@Param			orderBy	query		string						false	"Sort direction"	Enums(asc, desc)
+//	@Param			filter	query		string						false	"One or two terms joined by AND or OR, e.g. sourcedId='x'"
+//	@Success		200		{array}		eduapi.ComponentOffering	"Success"
+//	@Header			200		{integer}	X-Total-Count				"Number of stored records"
+//	@Header			200		{string}	Link						"RFC 8288 first, prev, next and last links"
+//	@Failure		400		{object}	eduapi.StatusInfo			"Invalid query parameter or filter field"
+//	@Failure		401		{object}	eduapi.StatusInfo			"Missing, invalid or untrusted token"
+//	@Failure		403		{object}	eduapi.StatusInfo			"Token lacks the required scope"
+//	@Failure		404		{object}	eduapi.StatusInfo			"No such academic session"
+//	@Failure		500		{object}	eduapi.StatusInfo			"Internal Server Error"
+//	@Router			/academicSessions/{id}/componentOfferings [get]
+
+// -- educationTemplates -------------------------------------------------------
+
+//	@Summary		List education templates
+//	@ID				list-education-templates
+//	@Description	Lists course, collection and component templates in one list, ordered by sourcedId. Paged in memory: sort and filter answer 400. A template has no type and no parent here; use the typed resources for those.
+//	@Tags			educationTemplates
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			limit	query		int					false	"Page size; defaults to default_limit and is clamped to max_limit"	minimum(1)
+//	@Param			offset	query		int					false	"Number of items to skip"											minimum(0)
+//	@Success		200		{array}		eduapi.Education	"Success"
+//	@Header			200		{integer}	X-Total-Count		"Number of stored records"
+//	@Header			200		{string}	Link				"RFC 8288 first, prev, next and last links"
+//	@Failure		400		{object}	eduapi.StatusInfo	"Invalid query parameter, or sort/filter given"
+//	@Failure		401		{object}	eduapi.StatusInfo	"Missing, invalid or untrusted token"
+//	@Failure		403		{object}	eduapi.StatusInfo	"Token lacks the required scope"
+//	@Failure		500		{object}	eduapi.StatusInfo	"Internal Server Error"
+//	@Router			/educationTemplates [get]
+
+//	@Summary		Get education template
+//	@ID				get-education-template
+//	@Description	Returns one template by sourcedId, whether it is a course, collection or component template.
+//	@Tags			educationTemplates
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			id	path		string				true	"Template sourcedId"
+//	@Success		200	{object}	eduapi.Education	"Success"
+//	@Failure		401	{object}	eduapi.StatusInfo	"Missing, invalid or untrusted token"
+//	@Failure		403	{object}	eduapi.StatusInfo	"Token lacks the required scope"
+//	@Failure		404	{object}	eduapi.StatusInfo	"Not Found"
+//	@Failure		500	{object}	eduapi.StatusInfo	"Internal Server Error"
+//	@Router			/educationTemplates/{id} [get]
+
+// -- educationOfferings -------------------------------------------------------
+
+//	@Summary		List education offerings
+//	@ID				list-education-offerings
+//	@Description	Lists course, collection and component offerings in one list, ordered by sourcedId. offeringType is collection, course or component. Paged in memory: sort and filter answer 400.
+//	@Tags			educationOfferings
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			limit	query		int							false	"Page size; defaults to default_limit and is clamped to max_limit"	minimum(1)
+//	@Param			offset	query		int							false	"Number of items to skip"											minimum(0)
+//	@Success		200		{array}		eduapi.EducationOffering	"Success"
+//	@Header			200		{integer}	X-Total-Count				"Number of stored records"
+//	@Header			200		{string}	Link						"RFC 8288 first, prev, next and last links"
+//	@Failure		400		{object}	eduapi.StatusInfo			"Invalid query parameter, or sort/filter given"
+//	@Failure		401		{object}	eduapi.StatusInfo			"Missing, invalid or untrusted token"
+//	@Failure		403		{object}	eduapi.StatusInfo			"Token lacks the required scope"
+//	@Failure		500		{object}	eduapi.StatusInfo			"Internal Server Error"
+//	@Router			/educationOfferings [get]
+
+//	@Summary		Get education offering
+//	@ID				get-education-offering
+//	@Description	Returns one offering by sourcedId, whether it is a course, collection or component offering.
+//	@Tags			educationOfferings
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			id	path		string						true	"Offering sourcedId"
+//	@Success		200	{object}	eduapi.EducationOffering	"Success"
+//	@Failure		401	{object}	eduapi.StatusInfo			"Missing, invalid or untrusted token"
+//	@Failure		403	{object}	eduapi.StatusInfo			"Token lacks the required scope"
+//	@Failure		404	{object}	eduapi.StatusInfo			"Not Found"
+//	@Failure		500	{object}	eduapi.StatusInfo			"Internal Server Error"
+//	@Router			/educationOfferings/{id} [get]

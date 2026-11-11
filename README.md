@@ -375,11 +375,25 @@ The Final release (Oct 2026), under the base path the spec requires.
 
 `persons`, `organizations`, `academicSessions`, `courseTemplates`,
 `courseOfferings`, `collectionTemplates` (programs), `enrollments`, `students`,
-`staff`
+`staff`, `affiliations`, `componentTemplates`, `collectionOfferings`,
+`componentOfferings`
 
 Nested routes: `/courseOfferings/{id}/enrollments|students|staff` and
-`/academicSessions/{id}/courseOfferings|enrollments`. An unknown or orphaned
-parent answers 404.
+`/academicSessions/{id}/courseOfferings|collectionOfferings|componentOfferings|enrollments`.
+An unknown or orphaned parent answers 404.
+
+`/educationTemplates` and `/educationOfferings` list the course, collection
+and component kinds together, ordered by `sourcedId`, and `/{id}` finds a
+record of any kind. They page in memory, so `sort` and `filter` answer 400.
+The spec's `Education` schema has no type, so a template there carries no
+`courseType` and no `parent`; an offering carries `offeringType` set to
+`collection`, `course` or `component`. Use the typed resources for the rest.
+A `sourcedId` shared by two kinds answers with the first, tried as course,
+collection, component.
+
+A course template's `parent` lists its programs, a course offering's lists
+its collection offerings, a component template's lists its courses and a
+component offering's lists its course offerings.
 
 A list is a bare JSON array. It carries `X-Total-Count` (stored records) and
 a `Link` header with `first`, `prev`, `next` and `last`. `limit` is capped at
@@ -411,17 +425,28 @@ What SIS cannot fill from its own data:
   EQF level where the spec's definition fits (6 is `undergraduate`, 7
   `graduate`, 8 `doctoral`) and is otherwise an extension term, e.g. `ext:5`
   for a short-cycle qualification below a bachelor's degree.
-- A course offering's `startDate` and `endDate` come from its academic
-  session, and are left out without one.
+- An offering's `startDate` and `endDate` come from its academic session,
+  and are left out without one. A collection or component offering without a
+  title takes the title of its program or component template, then its
+  `sourcedId`.
+- A component template's `componentType` and a component offering's
+  `offeringType` map from the stored component type, and are
+  `ext:unspecified` without one. A collection offering's `offeringType` is
+  `program`.
+- An affiliation has no `recordLanguage` in the spec, so it carries none.
+  `affiliationStatus` is `active` unless the record is inactive.
 - `organization` is required by the spec on templates and offerings, but a
   SIS record's `orgId` is optional: without it the field is left out and the
   record is not schema-valid. Set `orgId` on courses, programs and offerings
   that consumers validate strictly.
 - A person has no `roles`: the spec puts role on the enrollment.
 - Not published: results (they belong to the separate Edu-API Gradebook
-  spec), entitlements, `affiliation`, component templates and offerings,
-  and collection offerings. SIS stores the last four but does not publish
-  them.
+  spec) and entitlements.
+- Not served: `/students/{id}/collectionOfferings`,
+  `/students/{id}/componentOfferings`, `/staff/{id}/...Offerings`,
+  `/staff/{id}/organizations`, `/students/{id}/organizations`,
+  `/organizations/{id}/students|staff` and the same routes under collection
+  and component offerings. Add on demand.
 
 Both standards APIs address resources by `sourcedId`, not by canonical id:
 
