@@ -2033,7 +2033,7 @@ const docTemplateeduapi = `{
         },
         "/educationOfferings": {
             "get": {
-                "description": "Lists course, collection and component offerings in one list, ordered by sourcedId. offeringType is collection, course or component. Paged in memory: sort and filter answer 400.",
+                "description": "Lists course, collection and component offerings in one list, ordered by sourcedId. offeringType is collection, course or component. sort and filter answer 400.",
                 "produces": [
                     "application/json"
                 ],
@@ -2171,7 +2171,7 @@ const docTemplateeduapi = `{
         },
         "/educationTemplates": {
             "get": {
-                "description": "Lists course, collection and component templates in one list, ordered by sourcedId. Paged in memory: sort and filter answer 400. A template has no type and no parent here; use the typed resources for those.",
+                "description": "Lists course, collection and component templates in one list, ordered by sourcedId. sort and filter answer 400. A template has no type and no parent here; use the typed resources for those.",
                 "produces": [
                     "application/json"
                 ],

@@ -649,7 +649,7 @@ import _ "github.com/SUNET/sis/pkg/eduapi"
 
 //	@Summary		List education templates
 //	@ID				list-education-templates
-//	@Description	Lists course, collection and component templates in one list, ordered by sourcedId. Paged in memory: sort and filter answer 400. A template has no type and no parent here; use the typed resources for those.
+//	@Description	Lists course, collection and component templates in one list, ordered by sourcedId. sort and filter answer 400. A template has no type and no parent here; use the typed resources for those.
 //	@Tags			educationTemplates
 //	@Produce		json
 //	@Security		BearerAuth
@@ -682,7 +682,7 @@ import _ "github.com/SUNET/sis/pkg/eduapi"
 
 //	@Summary		List education offerings
 //	@ID				list-education-offerings
-//	@Description	Lists course, collection and component offerings in one list, ordered by sourcedId. offeringType is collection, course or component. Paged in memory: sort and filter answer 400.
+//	@Description	Lists course, collection and component offerings in one list, ordered by sourcedId. offeringType is collection, course or component. sort and filter answer 400.
 //	@Tags			educationOfferings
 //	@Produce		json
 //	@Security		BearerAuth

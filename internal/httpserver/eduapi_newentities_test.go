@@ -1,10 +1,12 @@
 package httpserver
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"strconv"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -12,10 +14,29 @@ import (
 
 	"github.com/SUNET/sis/internal/adapter/outbound/memory"
 	"github.com/SUNET/sis/internal/core/domain"
+	"github.com/SUNET/sis/internal/core/port"
 	"github.com/SUNET/sis/internal/core/service"
 	"github.com/SUNET/sis/internal/readmodel"
 	"github.com/SUNET/sis/pkg/logger"
 )
+
+// unboundedLists counts List calls made without a limit.
+var unboundedLists atomic.Int64
+
+// limitSpy is a repository that counts the List calls with no limit, which
+// read the whole kind.
+type limitSpy[T any, PT domain.EntityPtr[T]] struct{ port.Repository[T, PT] }
+
+func (s limitSpy[T, PT]) List(ctx context.Context, params port.ListParams) (port.Page[PT], error) {
+	if params.Limit <= 0 {
+		unboundedLists.Add(1)
+	}
+	return s.Repository.List(ctx, params)
+}
+
+func spied[T any, PT domain.EntityPtr[T]](log *logger.Log) *service.Resource[T, PT] {
+	return service.NewResource[T, PT](limitSpy[T, PT]{memory.NewDocRepo[T, PT]()}, nil, nil, log)
+}
 
 // TestEduAPINewEntities reads affiliations, component templates, collection
 // and component offerings, and the type-neutral /educationTemplates and
@@ -27,14 +48,15 @@ func TestEduAPINewEntities(t *testing.T) {
 		Persons:             service.New(memory.NewPersonRepository(), nil, nil, log),
 		Organizations:       service.NewResource(memory.NewDocRepo[domain.Organization](), nil, nil, log),
 		AcademicSessions:    service.NewResource(memory.NewDocRepo[domain.AcademicSession](), nil, nil, log),
-		Courses:             service.NewResource(memory.NewDocRepo[domain.Course](), nil, nil, log),
-		Offerings:           service.NewResource(memory.NewDocRepo[domain.Offering](), nil, nil, log),
-		Programs:            service.NewResource(memory.NewDocRepo[domain.Program](), nil, nil, log),
+		Courses:             spied[domain.Course](log),
+		Offerings:           spied[domain.Offering](log),
+		Programs:            spied[domain.Program](log),
 		Affiliations:        service.NewResource(memory.NewDocRepo[domain.Affiliation](), nil, nil, log),
-		CollectionOfferings: service.NewResource(memory.NewDocRepo[domain.CollectionOffering](), nil, nil, log),
-		ComponentTemplates:  service.NewResource(memory.NewDocRepo[domain.ComponentTemplate](), nil, nil, log),
-		ComponentOfferings:  service.NewResource(memory.NewDocRepo[domain.ComponentOffering](), nil, nil, log),
+		CollectionOfferings: spied[domain.CollectionOffering](log),
+		ComponentTemplates:  spied[domain.ComponentTemplate](log),
+		ComponentOfferings:  spied[domain.ComponentOffering](log),
 	}
+	unboundedLists.Store(0)
 	must := func(_ any, err error) {
 		t.Helper()
 		require.NoError(t, err)
@@ -172,7 +194,7 @@ func TestEduAPINewEntities(t *testing.T) {
 	t.Run("education offerings", func(t *testing.T) {
 		status, total, list, _ := get("/educationOfferings")
 		require.Equal(t, http.StatusOK, status)
-		assert.Equal(t, 3, total)
+		assert.Equal(t, 4, total, "X-Total-Count counts stored records, the orphan included")
 		assert.Equal(t, []any{"BSc-ht26", "DA101-ht26", "DA101-lab-ht26"}, ids(list))
 		kinds := map[any]any{}
 		for _, item := range list {
@@ -187,6 +209,19 @@ func TestEduAPINewEntities(t *testing.T) {
 		}
 		status, _, _, _ = get("/educationOfferings/ORPHAN-ht26")
 		assert.Equal(t, http.StatusNotFound, status)
+
+		// One at a time, a page spans the kinds in sourcedId order. The last
+		// stored record is the orphan, so its page is empty but not the end.
+		for offset, want := range [][]any{{"BSc-ht26"}, {"DA101-ht26"}, {"DA101-lab-ht26"}, {}, {}} {
+			status, total, page, _ := get("/educationOfferings?limit=1&offset=" + strconv.Itoa(offset))
+			require.Equal(t, http.StatusOK, status, "offset %d", offset)
+			assert.Equal(t, 4, total, "offset %d", offset)
+			assert.Equal(t, want, ids(page), "offset %d", offset)
+		}
+		_, _, page, _ := get("/educationOfferings?limit=2&offset=1")
+		assert.Equal(t, []any{"DA101-ht26", "DA101-lab-ht26"}, ids(page))
+		_, _, page, _ = get("/educationOfferings?offset=9223372036854775807&limit=10")
+		assert.Empty(t, page, "a huge offset must not overflow")
 	})
 
 	// Last, because it adds records the counts above do not expect.
@@ -205,4 +240,6 @@ func TestEduAPINewEntities(t *testing.T) {
 		_, _, _, one = get("/courseOfferings/DA102-ht26")
 		assert.Equal(t, []any{"BSc-ht26"}, one["parent"], "parent must not list an offering that answers 404")
 	})
+
+	assert.Zero(t, unboundedLists.Load(), "no request may read a whole kind to serve a page")
 }

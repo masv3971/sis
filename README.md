@@ -384,7 +384,9 @@ An unknown or orphaned parent answers 404.
 
 `/educationTemplates` and `/educationOfferings` list the course, collection
 and component kinds together, ordered by `sourcedId`, and `/{id}` finds a
-record of any kind. They page in memory, so `sort` and `filter` answer 400.
+record of any kind. `sort` and `filter` answer 400. A page reads at most
+`offset + limit` records of each kind, so the work follows the page and how
+deep it is, not the size of the catalog.
 The spec's `Education` schema has no type, so a template there carries no
 `courseType` and no `parent`; an offering carries `offeringType` set to
 `collection`, `course` or `component`. Use the typed resources for the rest.

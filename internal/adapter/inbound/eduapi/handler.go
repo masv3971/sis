@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"slices"
 	"sort"
@@ -444,34 +445,15 @@ func (c *Client) componentOfferingDTOs(ctx context.Context, offerings []*domain.
 }
 
 // ListEducationTemplates publishes course, collection and component
-// templates as one list. The union is paged in memory, ordered by sourcedId,
-// so sort and filter answer 400.
+// templates as one list, ordered by sourcedId. A page reads at most
+// offset+limit records of each kind (see listUnion), so sort and filter
+// answer 400.
 func (c *Client) ListEducationTemplates(gc *gin.Context) {
-	listUnion(c, gc, func(ctx context.Context) ([]dto.Education, error) {
-		courses, err := publishedAll(ctx, c, c.catalog.Courses)
-		if err != nil {
-			return nil, err
-		}
-		programs, err := publishedAll(ctx, c, c.catalog.Programs)
-		if err != nil {
-			return nil, err
-		}
-		components, err := publishedAll(ctx, c, c.catalog.ComponentTemplates)
-		if err != nil {
-			return nil, err
-		}
-		out := make([]dto.Education, 0, len(courses)+len(programs)+len(components))
-		for _, course := range courses {
-			out = append(out, c.mapper.CourseTemplate(course).Education())
-		}
-		for _, program := range programs {
-			out = append(out, c.mapper.CollectionTemplate(program).Education())
-		}
-		for _, component := range components {
-			out = append(out, c.mapper.ComponentTemplate(component).Education())
-		}
-		return out, nil
-	}, func(e dto.Education) string { return e.SourcedID })
+	listUnion(c, gc, func(e dto.Education) string { return e.SourcedID },
+		unionOf(c, c.catalog.Courses, viaView(each(c.mapper.CourseTemplate), dto.CourseTemplate.Education)),
+		unionOf(c, c.catalog.Programs, viaView(each(c.mapper.CollectionTemplate), dto.CollectionTemplate.Education)),
+		unionOf(c, c.catalog.ComponentTemplates, viaView(each(c.mapper.ComponentTemplate), dto.ComponentTemplate.Education)),
+	)
 }
 
 // GetEducationTemplate publishes one template by sourcedId, whatever its
@@ -494,45 +476,13 @@ func (c *Client) GetEducationTemplate(gc *gin.Context) {
 }
 
 // ListEducationOfferings publishes course, collection and component
-// offerings as one list, paged in memory like ListEducationTemplates.
+// offerings as one list, paged like ListEducationTemplates.
 func (c *Client) ListEducationOfferings(gc *gin.Context) {
-	listUnion(c, gc, func(ctx context.Context) ([]dto.EducationOffering, error) {
-		courseOfferings, err := publishedAll(ctx, c, c.catalog.Offerings)
-		if err != nil {
-			return nil, err
-		}
-		collectionOfferings, err := publishedAll(ctx, c, c.catalog.CollectionOfferings)
-		if err != nil {
-			return nil, err
-		}
-		componentOfferings, err := publishedAll(ctx, c, c.catalog.ComponentOfferings)
-		if err != nil {
-			return nil, err
-		}
-		out := make([]dto.EducationOffering, 0, len(courseOfferings)+len(collectionOfferings)+len(componentOfferings))
-		courses, err := c.offeringDTOs(ctx, courseOfferings)
-		if err != nil {
-			return nil, err
-		}
-		for _, offering := range courses {
-			out = append(out, offering.Education())
-		}
-		collections, err := c.collectionOfferingDTOs(ctx, collectionOfferings)
-		if err != nil {
-			return nil, err
-		}
-		for _, offering := range collections {
-			out = append(out, offering.Education())
-		}
-		components, err := c.componentOfferingDTOs(ctx, componentOfferings)
-		if err != nil {
-			return nil, err
-		}
-		for _, offering := range components {
-			out = append(out, offering.Education())
-		}
-		return out, nil
-	}, func(e dto.EducationOffering) string { return e.SourcedID })
+	listUnion(c, gc, func(e dto.EducationOffering) string { return e.SourcedID },
+		unionOf(c, c.catalog.Offerings, viaView(c.offeringDTOs, dto.CourseOffering.Education)),
+		unionOf(c, c.catalog.CollectionOfferings, viaView(c.collectionOfferingDTOs, dto.CollectionOffering.Education)),
+		unionOf(c, c.catalog.ComponentOfferings, viaView(c.componentOfferingDTOs, dto.ComponentOffering.Education)),
+	)
 }
 
 // GetEducationOffering publishes one offering by sourcedId, whatever its
@@ -553,36 +503,125 @@ func (c *Client) GetEducationOffering(gc *gin.Context) {
 	writeFound(gc, out, ok, err)
 }
 
-// listUnion answers a list request with the records build returns, ordered by
-// the sourcedId key picks and paged in memory. It takes no sort or filter.
-func listUnion[D any](c *Client, gc *gin.Context, build func(context.Context) ([]D, error), key func(D) string) {
+// unionSource is one resource kind of a union list.
+type unionSource[D any] struct {
+	// head reads the kind's first n records in sourcedId order.
+	head func(ctx context.Context, n int) (unionHead[D], error)
+}
+
+// unionHead is what a source read: the sourcedIds of its first records, its
+// stored total, and a way to publish and map some of those records.
+type unionHead[D any] struct {
+	ids   []string
+	total int
+	// publish maps the records at the given indexes of ids. Orphans are left
+	// out, so it may return fewer.
+	publish func(ctx context.Context, keep []int) ([]D, error)
+}
+
+// unionOf makes a union source of a resource. toDTOs maps records whose
+// references are already sourcedIds.
+func unionOf[T any, PT domain.EntityPtr[T], D any](c *Client, svc *service.Resource[T, PT], toDTOs func(context.Context, []PT) ([]D, error)) unionSource[D] {
+	return unionSource[D]{head: func(ctx context.Context, n int) (unionHead[D], error) {
+		page, err := svc.List(ctx, port.ListParams{Limit: n, Sort: "sourcedId"})
+		if err != nil {
+			return unionHead[D]{}, err
+		}
+		ids := make([]string, len(page.Items))
+		for i, e := range page.Items {
+			ids[i] = e.GetSourcedID()
+		}
+		return unionHead[D]{ids: ids, total: page.Total, publish: func(ctx context.Context, keep []int) ([]D, error) {
+			picked := make([]PT, 0, len(keep))
+			for _, i := range keep {
+				picked = append(picked, page.Items[i])
+			}
+			items, err := publishRefs(ctx, c, picked...)
+			if err != nil {
+				return nil, err
+			}
+			return toDTOs(ctx, items)
+		}}, nil
+	}}
+}
+
+// viaView adds a step to a batch mapper, e.g. a template's type-neutral view.
+func viaView[PT, D, E any](toDTOs func(context.Context, []PT) ([]D, error), view func(D) E) func(context.Context, []PT) ([]E, error) {
+	return func(ctx context.Context, items []PT) ([]E, error) {
+		dtos, err := toDTOs(ctx, items)
+		if err != nil {
+			return nil, err
+		}
+		out := make([]E, 0, len(dtos))
+		for _, d := range dtos {
+			out = append(out, view(d))
+		}
+		return out, nil
+	}
+}
+
+// listUnion answers a list request with the records of several kinds, ordered
+// by the sourcedId key picks. Each kind is read up to offset+limit records,
+// which is enough to find the requested page of the whole, and only that page
+// is published and mapped, so the work follows the page and how deep it is,
+// not the catalog. A sourcedId shared by two kinds lists the earlier source
+// first. X-Total-Count is the sum of the stored totals; orphans are left out
+// of the page, which can then be short. It takes no sort or filter.
+func listUnion[D any](c *Client, gc *gin.Context, key func(D) string, sources ...unionSource[D]) {
 	params, err := c.listParams(gc, nil)
 	if err != nil {
 		writeError(gc, err)
 		return
 	}
-	all, err := build(gc.Request.Context())
-	if err != nil {
-		writeError(gc, err)
-		return
+	ctx := gc.Request.Context()
+	// Never add offset and limit blindly: a huge offset must not overflow.
+	n := params.Limit
+	if params.Offset > math.MaxInt-n {
+		n = math.MaxInt
+	} else {
+		n += params.Offset
 	}
-	sort.SliceStable(all, func(i, j int) bool { return key(all[i]) < key(all[j]) })
-	page := slicePage(all, params)
-	pageHeaders(gc, params, page.Total)
-	if page.Items == nil {
-		page.Items = []D{}
-	}
-	gc.JSON(http.StatusOK, page.Items)
-}
 
-// publishedAll returns every publishable record of a resource, references
-// rewritten to sourcedIds.
-func publishedAll[T any, PT domain.EntityPtr[T]](ctx context.Context, c *Client, svc *service.Resource[T, PT]) ([]PT, error) {
-	page, err := svc.List(ctx, port.ListParams{})
-	if err != nil {
-		return nil, err
+	type candidate struct {
+		id       string
+		src, idx int
 	}
-	return publishRefs(ctx, c, page.Items...)
+	var candidates []candidate
+	heads := make([]unionHead[D], len(sources))
+	total := 0
+	for i, source := range sources {
+		head, err := source.head(ctx, n)
+		if err != nil {
+			writeError(gc, err)
+			return
+		}
+		heads[i] = head
+		total += head.total
+		for j, id := range head.ids {
+			candidates = append(candidates, candidate{id, i, j})
+		}
+	}
+	sort.SliceStable(candidates, func(i, j int) bool { return candidates[i].id < candidates[j].id })
+
+	keep := make([][]int, len(sources))
+	for _, cand := range slicePage(candidates, params).Items {
+		keep[cand.src] = append(keep[cand.src], cand.idx)
+	}
+	out := []D{}
+	for i, head := range heads {
+		if len(keep[i]) == 0 {
+			continue
+		}
+		published, err := head.publish(ctx, keep[i])
+		if err != nil {
+			writeError(gc, err)
+			return
+		}
+		out = append(out, published...)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return key(out[i]) < key(out[j]) })
+	pageHeaders(gc, params, total)
+	gc.JSON(http.StatusOK, out)
 }
 
 // lookup finds the record with the sourcedId and maps it to E. A record that
