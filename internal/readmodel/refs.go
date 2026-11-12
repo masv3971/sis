@@ -245,7 +245,7 @@ func (c *Client) sourcedIDs(ctx context.Context, typ string, ids []string) (map[
 	case "result":
 		return entitySourcedIDs(ctx, c.Results, ids)
 	case "collectionOffering":
-		return entitySourcedIDs(ctx, c.CollectionOfferings, ids)
+		return c.collectionOfferingSourcedIDs(ctx, ids)
 	case "componentTemplate":
 		return entitySourcedIDs(ctx, c.ComponentTemplates, ids)
 	}
@@ -272,6 +272,31 @@ func (c *Client) offeringSourcedIDs(ctx context.Context, ids []string) (map[stri
 	out := make(map[string]string, len(offerings))
 	for _, offering := range offerings {
 		if _, ok := courses[offering.CourseID]; ok {
+			out[offering.ID] = offering.SourcedID
+		}
+	}
+	return out, nil
+}
+
+// collectionOfferingSourcedIDs is offeringSourcedIDs for collection
+// offerings: one whose required program is gone does not resolve, since the
+// providers do not publish it.
+func (c *Client) collectionOfferingSourcedIDs(ctx context.Context, ids []string) (map[string]string, error) {
+	offerings, err := c.CollectionOfferings.GetByIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	programIDs := make([]string, 0, len(offerings))
+	for _, offering := range offerings {
+		programIDs = append(programIDs, offering.ProgramID)
+	}
+	programs, err := entitySourcedIDs(ctx, c.Programs, programIDs)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(offerings))
+	for _, offering := range offerings {
+		if _, ok := programs[offering.ProgramID]; ok {
 			out[offering.ID] = offering.SourcedID
 		}
 	}

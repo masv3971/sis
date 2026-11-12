@@ -214,6 +214,20 @@ func New(ctx context.Context, cfg *model.Cfg, verifier *auth.Verifier, catalog *
 	edu.GET("/courseOfferings/:id/staff", eduAPI.ListOfferingStaff)
 	edu.GET("/academicSessions/:id/courseOfferings", eduAPI.ListSessionOfferings)
 	edu.GET("/academicSessions/:id/enrollments", eduAPI.ListSessionEnrollments)
+	edu.GET("/academicSessions/:id/collectionOfferings", eduAPI.ListSessionCollectionOfferings)
+	edu.GET("/academicSessions/:id/componentOfferings", eduAPI.ListSessionComponentOfferings)
+	edu.GET("/affiliations", eduapi.List(eduAPI, catalog.Affiliations, mapper.Affiliation))
+	edu.GET("/affiliations/:id", eduapi.Get(eduAPI, catalog.Affiliations, mapper.Affiliation))
+	edu.GET("/componentTemplates", eduapi.List(eduAPI, catalog.ComponentTemplates, mapper.ComponentTemplate))
+	edu.GET("/componentTemplates/:id", eduapi.Get(eduAPI, catalog.ComponentTemplates, mapper.ComponentTemplate))
+	edu.GET("/collectionOfferings", eduAPI.ListCollectionOfferings)
+	edu.GET("/collectionOfferings/:id", eduAPI.GetCollectionOffering)
+	edu.GET("/componentOfferings", eduAPI.ListComponentOfferings)
+	edu.GET("/componentOfferings/:id", eduAPI.GetComponentOffering)
+	edu.GET("/educationTemplates", eduAPI.ListEducationTemplates)
+	edu.GET("/educationTemplates/:id", eduAPI.GetEducationTemplate)
+	edu.GET("/educationOfferings", eduAPI.ListEducationOfferings)
+	edu.GET("/educationOfferings/:id", eduAPI.GetEducationOffering)
 
 	httpCfg := cfg.SIS.HTTPServer
 

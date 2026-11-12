@@ -150,6 +150,97 @@ func TestUntitledCourseOffering(t *testing.T) {
 	assert.Equal(t, "Own title", mapper.CourseOffering(titled, nil, "Biology").Title[0].Value, "the offering's own title wins")
 }
 
+func TestParentReferences(t *testing.T) {
+	course := mapper.CourseTemplate(&domain.Course{Base: domain.Base{SourcedID: "c"}, Title: "C", ProgramIDs: []string{"BSc"}})
+	assert.Equal(t, []string{"BSc"}, course.Parent)
+	assert.NotContains(t, toMap(t, mapper.CourseTemplate(&domain.Course{Title: "C"})), "parent")
+
+	offering := mapper.CourseOffering(&domain.Offering{Base: domain.Base{SourcedID: "o"}, CourseID: "c", CollectionOfferingIDs: []string{"k"}}, nil, "")
+	assert.Equal(t, []string{"k"}, offering.Parent)
+}
+
+func TestComponentTemplate(t *testing.T) {
+	lab := mapper.ComponentTemplate(&domain.ComponentTemplate{
+		Base: domain.Base{SourcedID: "lab"}, Code: "L1", Title: "Lab", Type: "laboratory", OrgID: "uni", CourseIDs: []string{"c"},
+	})
+	assert.Equal(t, "laboratory", lab.ComponentType)
+	assert.Equal(t, IdentifierEntry{Identifier: "L1", IdentifierType: "identifier"}, lab.PrimaryCode)
+	assert.Equal(t, []string{"c"}, lab.Parent)
+	assert.Equal(t, "ext:unspecified", lab.Level)
+
+	assert.Equal(t, "ext:unspecified", mapper.ComponentTemplate(&domain.ComponentTemplate{Title: "T"}).ComponentType, "componentType is required")
+	assert.Equal(t, "ext:workshop", mapper.ComponentTemplate(&domain.ComponentTemplate{Title: "T", Type: "workshop"}).ComponentType)
+}
+
+func TestCollectionOffering(t *testing.T) {
+	offering := &domain.CollectionOffering{Base: domain.Base{SourcedID: "k"}, ProgramID: "BSc", AcademicSessionID: "ht26"}
+	session := &domain.AcademicSession{StartDate: "2026-08-31", EndDate: "2027-01-15"}
+
+	out := mapper.CollectionOffering(offering, session, "BSc Biology")
+	assert.Equal(t, "BSc", out.Collection)
+	assert.Equal(t, "program", out.OfferingType)
+	assert.Equal(t, "ht26", out.AcademicSession)
+	assert.Equal(t, "2026-08-31T00:00:00Z", out.StartDate)
+	assert.Equal(t, "closed", out.RegistrationStatus)
+	assert.Equal(t, "BSc Biology", out.Title[0].Value, "an untitled offering takes its program's title")
+	assert.Equal(t, "k", mapper.CollectionOffering(offering, nil, "").Title[0].Value)
+	assert.NotContains(t, toMap(t, mapper.CollectionOffering(offering, nil, "")), "startDate")
+}
+
+func TestComponentOffering(t *testing.T) {
+	offering := &domain.ComponentOffering{Base: domain.Base{SourcedID: "lo"}, ComponentID: "lab", CourseOfferingIDs: []string{"o"}}
+	template := &domain.ComponentTemplate{Title: "Lab", Type: "laboratory"}
+
+	out := mapper.ComponentOffering(offering, nil, template)
+	assert.Equal(t, "lab", out.Component)
+	assert.Equal(t, "laboratory", out.OfferingType, "offeringType comes from the component's type")
+	assert.Equal(t, "Lab", out.Title[0].Value)
+	assert.Equal(t, []string{"o"}, out.Parent)
+
+	bare := mapper.ComponentOffering(offering, nil, nil)
+	assert.Equal(t, "ext:unspecified", bare.OfferingType)
+	assert.Equal(t, "lo", bare.Title[0].Value)
+}
+
+func TestAffiliation(t *testing.T) {
+	out := mapper.Affiliation(&domain.Affiliation{
+		Base: domain.Base{SourcedID: "a"}, PersonID: "p", OrgID: "o", Role: domain.RoleFaculty, StartDate: "2026-01-01", EndDate: "soon",
+	})
+	assert.Equal(t, "p", out.Person)
+	assert.Equal(t, "o", out.Organization)
+	assert.Equal(t, "teacher", out.Role)
+	assert.Equal(t, "active", out.AffiliationStatus)
+	assert.Equal(t, "2026-01-01T00:00:00Z", out.StartDate)
+	assert.Empty(t, out.EndDate, "unreadable dates are left out")
+
+	got := toMap(t, mapper.Affiliation(&domain.Affiliation{Base: domain.Base{Status: domain.StatusInactive}}))
+	assert.Equal(t, "inactive", got["affiliationStatus"])
+	assert.Equal(t, "member", got["role"], "role is required")
+	assert.NotContains(t, got, "recordLanguage", "the spec's affiliation has no recordLanguage")
+}
+
+// TestEducationViews checks the type-neutral views drop what the spec's
+// Education and EducationOffering schemas lack.
+func TestEducationViews(t *testing.T) {
+	course := toMap(t, mapper.CourseTemplate(&domain.Course{Base: domain.Base{SourcedID: "c"}, Title: "C", ProgramIDs: []string{"BSc"}}).Education())
+	assert.Equal(t, "c", course["sourcedId"])
+	assert.NotContains(t, course, "courseType")
+	assert.NotContains(t, course, "parent")
+
+	for kind, offering := range map[string]EducationOffering{
+		"course":     mapper.CourseOffering(&domain.Offering{Base: domain.Base{SourcedID: "o"}}, nil, "").Education(),
+		"collection": mapper.CollectionOffering(&domain.CollectionOffering{Base: domain.Base{SourcedID: "k"}}, nil, "").Education(),
+		"component":  mapper.ComponentOffering(&domain.ComponentOffering{Base: domain.Base{SourcedID: "l"}}, nil, nil).Education(),
+	} {
+		assert.Equal(t, kind, offering.OfferingType)
+		got := toMap(t, offering)
+		assert.NotContains(t, got, "course")
+		assert.NotContains(t, got, "collection")
+		assert.NotContains(t, got, "component")
+		assert.NotContains(t, got, "parent")
+	}
+}
+
 func TestEnrollment(t *testing.T) {
 	active := mapper.Enrollment(&domain.Enrollment{Base: domain.Base{SourcedID: "e"}, PersonID: "stu", OfferingID: "o", Role: domain.RoleFaculty})
 	assert.True(t, active.IsActive)
@@ -226,6 +317,19 @@ func TestRequiredFields(t *testing.T) {
 		}, session, ""), append([]string{"course"}, offering...)},
 		{"enrollment", mapper.Enrollment(&domain.Enrollment{Base: domain.Base{SourcedID: "e"}, PersonID: "p", OfferingID: "f"}),
 			[]string{"sourcedId", "recordLanguage", "isActive", "enrollmentStatus", "person", "role", "educationOffering", "offeringType", "recordStatus"}},
+		{"affiliation", mapper.Affiliation(&domain.Affiliation{Base: domain.Base{SourcedID: "a"}, PersonID: "p", OrgID: "o"}),
+			[]string{"sourcedId", "person", "organization", "role", "affiliationStatus", "recordStatus"}},
+		{"componentTemplate", mapper.ComponentTemplate(&domain.ComponentTemplate{Base: domain.Base{SourcedID: "t"}, Title: "T", OrgID: "o"}), append([]string{"componentType"}, template...)},
+		{"educationTemplate", mapper.CourseTemplate(&domain.Course{Base: domain.Base{SourcedID: "c"}, Title: "C", OrgID: "o"}).Education(), template},
+		{"collectionOffering", mapper.CollectionOffering(&domain.CollectionOffering{
+			Base: domain.Base{SourcedID: "k"}, Title: "K", ProgramID: "p", AcademicSessionID: "ht26", OrgID: "o",
+		}, session, ""), append([]string{"collection"}, offering...)},
+		{"componentOffering", mapper.ComponentOffering(&domain.ComponentOffering{
+			Base: domain.Base{SourcedID: "l"}, Title: "L", ComponentID: "t", AcademicSessionID: "ht26", OrgID: "o",
+		}, session, nil), append([]string{"component"}, offering...)},
+		{"educationOffering", mapper.CourseOffering(&domain.Offering{
+			Base: domain.Base{SourcedID: "f"}, Title: "F", CourseID: "c", AcademicSessionID: "ht26", OrgID: "o",
+		}, session, "").Education(), offering},
 	}
 	for _, tc := range cases {
 		got := toMap(t, tc.record)
