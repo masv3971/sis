@@ -7,7 +7,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/signal"
 	"slices"
@@ -124,10 +123,6 @@ func main() {
 	// needs a recording parent.
 	startupCtx, endStartup := trace.Start(startupCtx, "startup")
 	adapterSvc, err := adapter.New(startupCtx, cfg, log)
-	if err == nil && startupCtx.Err() != nil {
-		// Finished, but after a signal or the deadline: do not serve.
-		err = fmt.Errorf("startup: %w", startupCtx.Err())
-	}
 	endStartup(err)
 	cancelStartup()
 	if err != nil {
@@ -135,7 +130,7 @@ func main() {
 		// os.Exit skips the batcher's flush, and the startup span is what
 		// explains this failure.
 		closeTelemetry(ctx, cfg, mainLog, telemetry)
-		os.Exit(1) //nolint:gocritic // the adapter built nothing to close; the OS reaps the rest
+		os.Exit(1) //nolint:gocritic // adapter.New closed what it had started; the OS reaps the rest
 	}
 	services = append(services, namedService{"adapter", adapterSvc})
 

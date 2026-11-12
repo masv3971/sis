@@ -88,6 +88,11 @@ func TestCommandsDoNotInheritTheStartupSpan(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("message not settled")
 	}
+	// The settlement is signalled before the span ends; Close waits for the
+	// command in flight.
+	closeCtx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	require.NoError(t, svc.Close(closeCtx), "Close")
 
 	for _, span := range spans.Ended() {
 		if span.Name() == "amqp person.create" {
