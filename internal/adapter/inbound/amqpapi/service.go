@@ -57,6 +57,7 @@ type Service struct {
 	stopRecv context.CancelFunc
 	abort    context.CancelFunc
 	done     chan struct{}
+	tel      *telemetry
 	log      *logger.Log
 }
 
@@ -81,7 +82,7 @@ func start(ctx context.Context, cfg model.AMQPAPI, verifier tokenVerifier, comma
 	recvCtx, stopRecv := context.WithCancel(workCtx)
 	s := &Service{
 		cfg: cfg, verifier: verifier, commands: commands, dial: dial,
-		stopRecv: stopRecv, abort: abort, done: make(chan struct{}), log: log,
+		stopRecv: stopRecv, abort: abort, done: make(chan struct{}), tel: newTelemetry(log), log: log,
 	}
 	go s.run(recvCtx, workCtx)
 	return s
@@ -177,6 +178,12 @@ func (s *Service) consume(recvCtx, workCtx context.Context, receiver link) error
 // a failed settlement.
 func (s *Service) process(ctx context.Context, receiver link, msg *amqp.Message) error {
 	began := time.Now()
+	// Only subjects in the command table are labels: a sender picks the rest.
+	subject := "unknown"
+	if _, known := s.commands[subjectOf(msg)]; known {
+		subject = subjectOf(msg)
+	}
+	ctx, end := s.tel.begin(ctx, subject, msg)
 	err := s.runCommand(ctx, msg)
 	apiErr := helpers.NewErrorFromError(err)
 
@@ -197,6 +204,8 @@ func (s *Service) process(ctx context.Context, receiver link, msg *amqp.Message)
 		rejectErr = rejection(apiErr)
 		settleErr = receiver.RejectMessage(settleCtx, msg, rejectErr)
 	}
+
+	end(outcome, err)
 
 	props := msg.Properties
 	if props == nil {

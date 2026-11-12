@@ -9,6 +9,7 @@ import (
 	"github.com/SUNET/sis/internal/convert"
 	"github.com/SUNET/sis/internal/core/domain"
 	"github.com/SUNET/sis/internal/readmodel"
+	"github.com/SUNET/sis/pkg/trace"
 )
 
 // Metadata describes a document's format.
@@ -60,7 +61,9 @@ type PopulateReply struct {
 
 // Populate converts req.Data and upserts its records by sourcedId (see
 // readmodel.Populate).
-func (c *Client) Populate(ctx context.Context, req PopulateRequest) (*PopulateReply, error) {
+func (c *Client) Populate(ctx context.Context, req PopulateRequest) (reply *PopulateReply, err error) {
+	ctx, end := trace.Start(ctx, "command populate")
+	defer func() { end(err) }()
 	if err := req.Metadata.Check(c.converter, false); err != nil {
 		return nil, err
 	}

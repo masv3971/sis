@@ -116,6 +116,31 @@ func TestNewAMQPAPIRules(t *testing.T) {
 	}
 }
 
+func TestNewTelemetryRules(t *testing.T) {
+	cases := []struct {
+		name    string
+		body    string
+		wantErr string
+	}{
+		{"disabled needs nothing", "common:\n  production: true\n", ""},
+		{"tracing needs endpoint", "common:\n  tracing:\n    enabled: true\n", "common.tracing.endpoint"},
+		{"metrics needs endpoint", "common:\n  metrics:\n    enabled: true\n", "common.metrics.endpoint"},
+		{"endpoint must be a url", "common:\n  tracing:\n    enabled: true\n    endpoint: collector:4318\n", "common.tracing.endpoint"},
+		{"dev allows http", "common:\n  tracing:\n    enabled: true\n    endpoint: http://c:4318\n  metrics:\n    enabled: true\n    endpoint: http://c:4318\n", ""},
+		{"prod requires https for tracing", "common:\n  production: true\n  tracing:\n    enabled: true\n    endpoint: http://c:4318\n", "common.tracing.endpoint"},
+		{"prod requires https for metrics", "common:\n  production: true\n  metrics:\n    enabled: true\n    endpoint: http://c:4318\n", "common.metrics.endpoint"},
+		{"prod https ok", "common:\n  production: true\n  tracing:\n    enabled: true\n    endpoint: https://c:4318\n  metrics:\n    enabled: true\n    endpoint: https://c:4318\n", ""},
+		{"zero metrics interval", "common:\n  metrics:\n    interval: 0s\n", "common.metrics.interval"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("SIS_CONFIG_YAML", writeConfig(t, tc.body))
+			_, err := configuration.New(t.Context(), "sis")
+			assertErr(t, tc.wantErr, err)
+		})
+	}
+}
+
 func TestNewEduAPIRecordLanguage(t *testing.T) {
 	lang := func(tag string) string {
 		return "sis:\n  adapter:\n    inbound:\n      eduapi:\n        record_language: " + tag + "\n"

@@ -10,6 +10,9 @@ import (
 	"github.com/SUNET/sis/internal/core/port"
 )
 
+// personType is the entity type of persons, as in their events and spans.
+const personType = "person"
+
 // MergeExpiry returns the expiry a record gets when data with expiry
 // incoming is upserted onto a stored record whose expiry is stored: a
 // permanent record (stored == nil) stays permanent, otherwise the incoming
@@ -23,7 +26,9 @@ func MergeExpiry(stored, incoming *time.Time) *time.Time {
 
 // CreatePerson validates, assigns identity/timestamps, persists, and emits an
 // event. ExpiresAt is server-managed: the caller's value is dropped.
-func (s *Service) CreatePerson(ctx context.Context, person domain.Person) (domain.Person, error) {
+func (s *Service) CreatePerson(ctx context.Context, person domain.Person) (out domain.Person, err error) {
+	ctx, end := startSpan(ctx, personType, "create")
+	defer func() { end(err) }()
 	person.ExpiresAt = nil
 	return s.createPerson(ctx, person)
 }
@@ -50,7 +55,9 @@ func (s *Service) createPerson(ctx context.Context, person domain.Person) (domai
 
 // UpdatePerson validates and replaces an existing person, preserving its
 // creation time and expiry (server-managed), and emits an event.
-func (s *Service) UpdatePerson(ctx context.Context, person domain.Person) (domain.Person, error) {
+func (s *Service) UpdatePerson(ctx context.Context, person domain.Person) (out domain.Person, err error) {
+	ctx, end := startSpan(ctx, personType, "update")
+	defer func() { end(err) }()
 	return s.updatePerson(ctx, person, func(existing domain.Person) *time.Time { return existing.ExpiresAt })
 }
 
@@ -109,6 +116,8 @@ func (s *Service) UpsertPersonBySourcedID(ctx context.Context, person domain.Per
 // with the expiry rules of Resource.UpsertWithExpiry. created reports
 // whether a new person was stored.
 func (s *Service) UpsertPersonWithExpiry(ctx context.Context, person domain.Person, expiresAt *time.Time) (out domain.Person, created bool, err error) {
+	ctx, end := startSpan(ctx, personType, "upsert")
+	defer func() { end(err) }()
 	if person.SourcedID == "" {
 		return domain.Person{}, false, &domain.ValidationError{Field: "sourcedId", Msg: domain.MsgRequiredForUpsert}
 	}
@@ -181,7 +190,9 @@ func (s *Service) ListPersonsByRoles(ctx context.Context, roles []domain.Role, p
 }
 
 // DeletePerson removes a person and emits an event.
-func (s *Service) DeletePerson(ctx context.Context, id string) error {
+func (s *Service) DeletePerson(ctx context.Context, id string) (err error) {
+	ctx, end := startSpan(ctx, personType, "delete")
+	defer func() { end(err) }()
 	if err := s.persons.Delete(ctx, id); err != nil {
 		return err
 	}

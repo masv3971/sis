@@ -9,10 +9,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/SUNET/sis/internal/core/domain"
 	"github.com/SUNET/sis/internal/core/port"
 	"github.com/SUNET/sis/pkg/logger"
+	"github.com/SUNET/sis/pkg/trace"
 )
 
 // Clock returns the current time; injected so tests are deterministic.
@@ -34,6 +36,12 @@ func New(persons port.PersonRepository, events port.EventPublisher, clock Clock,
 		clock = time.Now
 	}
 	return &Service{persons: persons, events: events, now: clock, newID: uuid.NewString, log: serviceLog(log)}
+}
+
+// startSpan begins the span of one write use case, e.g. "service person.create".
+// Reads get no span of their own: the HTTP request and SQL spans cover them.
+func startSpan(ctx context.Context, entityType, op string) (context.Context, func(error)) {
+	return trace.Start(ctx, "service "+entityType+"."+op, attribute.String("sis.entity", entityType))
 }
 
 // emit publishes a domain event; a nil publisher is a no-op.

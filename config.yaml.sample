@@ -25,6 +25,20 @@ common:
   log:
     level: info   # debug | info | warn | error
     json: true    # true: one JSON object per line; false: readable text
+  # OpenTelemetry, pushed over OTLP/HTTP to a collector. Off by default.
+  # Spans cover each HTTP request, SQL query and AMQP command; they hold route
+  # templates, status codes and SQL text, never bodies or query strings.
+  # Must be https when common.production is true.
+  tracing:
+    enabled: false
+    endpoint: ""   # collector base URL, e.g. http://otel-collector:4318
+    timeout: 10s   # one export request
+  # Metrics: HTTP server, database pool and AMQP command counts and durations.
+  metrics:
+    enabled: false
+    endpoint: ""   # collector base URL, e.g. http://otel-collector:4318
+    interval: 60s  # between exports
+    timeout: 10s   # one export request
 
 sis:
   # Max time from start to serving: database connect + migrations, file

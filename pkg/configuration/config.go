@@ -157,6 +157,12 @@ func checkProduction(cfg *model.Cfg) error {
 			return fmt.Errorf("%s.audience is required when common.production is true", field)
 		}
 	}
+	if tracing := cfg.Common.Tracing; tracing.Enabled && !helpers.IsHTTPS(tracing.Endpoint) {
+		return errors.New("common.tracing.endpoint must use https when common.production is true")
+	}
+	if metrics := cfg.Common.Metrics; metrics.Enabled && !helpers.IsHTTPS(metrics.Endpoint) {
+		return errors.New("common.metrics.endpoint must use https when common.production is true")
+	}
 	if amqpCfg := cfg.SIS.Adapter.Inbound.AMQPAPI; amqpCfg.Enabled {
 		if parsed, err := url.Parse(amqpCfg.URL); err != nil || !strings.EqualFold(parsed.Scheme, "amqps") {
 			return errors.New("sis.adapter.inbound.amqpapi.url must use amqps when common.production is true")

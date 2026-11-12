@@ -17,6 +17,7 @@ import (
 	"github.com/SUNET/sis/internal/readmodel"
 	"github.com/SUNET/sis/pkg/logger"
 	"github.com/SUNET/sis/pkg/model"
+	"github.com/SUNET/sis/pkg/trace"
 )
 
 // Client runs the write commands against the read-model services. It is a
@@ -60,7 +61,9 @@ func (c *Client) UpdatePerson(ctx context.Context, id string, person domain.Pers
 // event. There is no transaction across the two stores: an enrollment or
 // result created for the person while this runs can survive it, as an
 // orphan that the providers never publish (see readmodel.PublishRefs).
-func (c *Client) DeletePerson(ctx context.Context, id string) error {
+func (c *Client) DeletePerson(ctx context.Context, id string) (err error) {
+	ctx, end := trace.Start(ctx, "command person.delete")
+	defer func() { end(err) }()
 	if _, err := c.catalog.Persons.GetPerson(ctx, id); err != nil {
 		return err
 	}
@@ -106,7 +109,9 @@ func deleteByPerson[T any, PT domain.EntityPtr[T]](ctx context.Context, svc *ser
 
 // Create creates entity. References to other records must be their canonical
 // ids (see readmodel.CheckRefs).
-func Create[T any, PT domain.EntityPtr[T]](ctx context.Context, c *Client, svc *service.Resource[T, PT], entity PT) (PT, error) {
+func Create[T any, PT domain.EntityPtr[T]](ctx context.Context, c *Client, svc *service.Resource[T, PT], entity PT) (out PT, err error) {
+	ctx, end := trace.Start(ctx, "command "+svc.TypeName()+".create")
+	defer func() { end(err) }()
 	if err := c.catalog.CheckRefs(ctx, entity); err != nil {
 		return nil, err
 	}
@@ -115,7 +120,9 @@ func Create[T any, PT domain.EntityPtr[T]](ctx context.Context, c *Client, svc *
 
 // Update replaces the entity id with entity; id wins over entity's own id.
 // References are checked as in Create.
-func Update[T any, PT domain.EntityPtr[T]](ctx context.Context, c *Client, svc *service.Resource[T, PT], id string, entity PT) (PT, error) {
+func Update[T any, PT domain.EntityPtr[T]](ctx context.Context, c *Client, svc *service.Resource[T, PT], id string, entity PT) (out PT, err error) {
+	ctx, end := trace.Start(ctx, "command "+svc.TypeName()+".update")
+	defer func() { end(err) }()
 	entity.SetID(id)
 	if err := c.catalog.CheckRefs(ctx, entity); err != nil {
 		return nil, err
