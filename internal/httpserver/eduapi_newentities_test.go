@@ -188,4 +188,21 @@ func TestEduAPINewEntities(t *testing.T) {
 		status, _, _, _ = get("/educationOfferings/ORPHAN-ht26")
 		assert.Equal(t, http.StatusNotFound, status)
 	})
+
+	// Last, because it adds records the counts above do not expect.
+	t.Run("parent skips a collection offering whose program is gone", func(t *testing.T) {
+		must(catalog.Programs.Create(ctx, &domain.Program{ID: "g-2", SourcedID: "MSc", Title: "MSc"}))
+		must(catalog.CollectionOfferings.Create(ctx, &domain.CollectionOffering{ID: "k-2", SourcedID: "MSc-ht26", ProgramID: "g-2"}))
+		must(catalog.Offerings.Create(ctx, &domain.Offering{ID: "f-2", SourcedID: "DA102-ht26", CourseID: "c-1", CollectionOfferingIDs: []string{"k-1", "k-2"}}))
+
+		_, _, _, one := get("/courseOfferings/DA102-ht26")
+		assert.Equal(t, []any{"BSc-ht26", "MSc-ht26"}, one["parent"])
+
+		require.NoError(t, catalog.Programs.Delete(ctx, "g-2"))
+
+		status, _, _, _ := get("/collectionOfferings/MSc-ht26")
+		require.Equal(t, http.StatusNotFound, status, "the offering is an orphan now")
+		_, _, _, one = get("/courseOfferings/DA102-ht26")
+		assert.Equal(t, []any{"BSc-ht26"}, one["parent"], "parent must not list an offering that answers 404")
+	})
 }

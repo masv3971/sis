@@ -296,12 +296,13 @@ func TestPublishRefsNewEntities(t *testing.T) {
 	create(catalog.Programs.Create(ctx, &domain.Program{ID: "g2", SourcedID: "MSc", Title: "MSc"}))
 	create(catalog.Courses.Create(ctx, &domain.Course{ID: "c", SourcedID: "DA101", Title: "C"}))
 	create(catalog.CollectionOfferings.Create(ctx, &domain.CollectionOffering{ID: "k", SourcedID: "BSc-ht26", ProgramID: "g1"}))
+	create(catalog.CollectionOfferings.Create(ctx, &domain.CollectionOffering{ID: "k-orphan", SourcedID: "MSc-ht26", ProgramID: "g2"}))
 	create(catalog.Offerings.Create(ctx, &domain.Offering{ID: "f", SourcedID: "DA101-ht26", CourseID: "c"}))
 	create(catalog.ComponentTemplates.Create(ctx, &domain.ComponentTemplate{ID: "t", SourcedID: "DA101-lab", Title: "Lab"}))
 	require.NoError(t, catalog.Programs.Delete(ctx, "g2"))
 
 	course := &domain.Course{ProgramIDs: []string{"g1", "g2", "g-never"}}
-	offering := &domain.Offering{CourseID: "c", CollectionOfferingIDs: []string{"k", "k-never"}}
+	offering := &domain.Offering{CourseID: "c", CollectionOfferingIDs: []string{"k", "k-orphan", "k-never"}}
 	affiliation := &domain.Affiliation{PersonID: "p", OrgID: "o"}
 	collection := &domain.CollectionOffering{ProgramID: "g1", AcademicSessionID: "s", OrgID: "o"}
 	componentTemplate := &domain.ComponentTemplate{OrgID: "o", CourseIDs: []string{"c"}}
@@ -316,7 +317,7 @@ func TestPublishRefsNewEntities(t *testing.T) {
 	assert.Equal(t, []bool{true, true, true, true, true, true, false, false, false}, publishable)
 
 	assert.Equal(t, []string{"BSc"}, course.ProgramIDs, "dangling list entries are dropped")
-	assert.Equal(t, []string{"BSc-ht26"}, offering.CollectionOfferingIDs)
+	assert.Equal(t, []string{"BSc-ht26"}, offering.CollectionOfferingIDs, "an entry whose program is gone is dropped like a missing one")
 	assert.Equal(t, "stu", affiliation.PersonID)
 	assert.Equal(t, "uni", affiliation.OrgID)
 	assert.Equal(t, "BSc", collection.ProgramID)
