@@ -16,6 +16,7 @@ import (
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 
 	// Register the generated OpenAPI documents (make swagger).
 	_ "github.com/SUNET/sis/docs/eduapi"
@@ -34,6 +35,7 @@ import (
 	"github.com/SUNET/sis/internal/readmodel"
 	"github.com/SUNET/sis/pkg/logger"
 	"github.com/SUNET/sis/pkg/model"
+	"github.com/SUNET/sis/pkg/trace"
 
 	edudto "github.com/SUNET/sis/pkg/eduapi"
 	oedto "github.com/SUNET/sis/pkg/oeapi"
@@ -118,7 +120,10 @@ func New(ctx context.Context, cfg *model.Cfg, verifier *auth.Verifier, catalog *
 		docTimeout = cfg.SIS.HTTPServer.WriteTimeout
 	}
 	reqLog := log.New("request")
-	engine.Use(requestLogger(reqLog), gin.Recovery(), securityHeaders(cfg.SIS.HTTPServer.TLS.Enabled()),
+	// First, so the span covers every other middleware. Health probes would
+	// only add noise.
+	engine.Use(otelgin.Middleware("sis", otelgin.WithFilter(func(req *http.Request) bool { return req.URL.Path != "/healthz" })),
+		requestLogger(reqLog), gin.Recovery(), securityHeaders(cfg.SIS.HTTPServer.TLS.Enabled()),
 		bodyLimit(maxBodyBytes, map[string]int64{
 			parsePath:    docLimit,
 			populatePath: docLimit,
@@ -276,7 +281,7 @@ func New(ctx context.Context, cfg *model.Cfg, verifier *auth.Verifier, catalog *
 func start(ctx context.Context, httpCfg model.HTTPServer, handler http.Handler, log *logger.Log) (*Service, error) {
 	// Detach from ctx's cancellation: the server outlives New's ctx and is
 	// stopped only by Close.
-	baseCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	baseCtx, cancel := context.WithCancel(trace.WithoutSpan(context.WithoutCancel(ctx)))
 	s := &Service{
 		log:            log,
 		cancelRequests: cancel,

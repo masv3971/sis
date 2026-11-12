@@ -19,6 +19,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	oteltrace "go.opentelemetry.io/otel/trace"
 
 	"github.com/SUNET/sis/internal/adapter/outbound/memory"
 	"github.com/SUNET/sis/internal/auth"
@@ -29,6 +32,7 @@ import (
 	"github.com/SUNET/sis/internal/readmodel"
 	"github.com/SUNET/sis/pkg/logger"
 	"github.com/SUNET/sis/pkg/model"
+	"github.com/SUNET/sis/pkg/trace"
 )
 
 func testCfg(addr string) *model.Cfg {
@@ -410,6 +414,34 @@ func TestNewFailsWhenAddressInUse(t *testing.T) {
 	if srv, err := newTestServer(t, ln.Addr().String()); !assert.Error(t, err, "expected New to fail on a busy address") {
 		_ = srv.Close(t.Context())
 	}
+}
+
+// TestRequestsDoNotInheritTheStartupSpan: start is given the startup span's
+// context, and context.WithoutCancel keeps that span, so every request would
+// hang under it for the life of the process.
+func TestRequestsDoNotInheritTheStartupSpan(t *testing.T) {
+	previous := otel.GetTracerProvider()
+	otel.SetTracerProvider(sdktrace.NewTracerProvider())
+	t.Cleanup(func() { otel.SetTracerProvider(previous) })
+
+	startupCtx, endStartup := trace.Start(t.Context(), "startup")
+	defer endStartup(nil)
+	require.True(t, oteltrace.SpanContextFromContext(startupCtx).IsValid(), "test setup: startup span")
+
+	got := make(chan oteltrace.SpanContext, 1)
+	handler := http.HandlerFunc(func(_ http.ResponseWriter, req *http.Request) {
+		got <- oteltrace.SpanContextFromContext(req.Context())
+	})
+	log := logger.NewWithWriter("test", false, "error", io.Discard)
+	srv, err := start(startupCtx, testCfg("127.0.0.1:0").SIS.HTTPServer, handler, log)
+	require.NoError(t, err, "start")
+	t.Cleanup(func() { _ = srv.Close(context.Background()) })
+
+	resp, err := http.Get("http://" + srv.Addr().String() + "/")
+	require.NoError(t, err)
+	_ = resp.Body.Close()
+
+	assert.False(t, (<-got).IsValid(), "a request starts without a span")
 }
 
 // TestCloseCancelsInFlightRequestsAfterDeadline checks that a handler blocked

@@ -11,8 +11,36 @@ type Cfg struct {
 type Common struct {
 	// Production requires every trusted token issuer (and jwks_url) to use
 	// https and to have an audience.
-	Production bool `yaml:"production"`
-	Log        Log  `yaml:"log"`
+	Production bool    `yaml:"production"`
+	Log        Log     `yaml:"log"`
+	Tracing    Tracing `yaml:"tracing"`
+	Metrics    Metrics `yaml:"metrics"`
+}
+
+// Tracing exports traces over OTLP/HTTP. Disabled, SIS records no spans.
+// Spans carry route templates, status codes and SQL text, never request
+// bodies or query strings; the url.path attribute does hold the ids in it.
+type Tracing struct {
+	Enabled bool `yaml:"enabled"`
+	// Endpoint is the collector's base URL, e.g. http://otel-collector:4318.
+	// Must be https in production.
+	Endpoint string `yaml:"endpoint" validate:"required_if=Enabled true,omitempty,httpurl"`
+	// Timeout bounds one export request, and the flush at shutdown, which
+	// runs after sis.shutdown_timeout has ended.
+	Timeout time.Duration `yaml:"timeout" default:"10s" validate:"gt=0"`
+}
+
+// Metrics exports metrics over OTLP/HTTP. Disabled, SIS records no metrics.
+type Metrics struct {
+	Enabled bool `yaml:"enabled"`
+	// Endpoint is the collector's base URL, e.g. http://otel-collector:4318.
+	// Must be https in production.
+	Endpoint string `yaml:"endpoint" validate:"required_if=Enabled true,omitempty,httpurl"`
+	// Interval between exports.
+	Interval time.Duration `yaml:"interval" default:"60s" validate:"gt=0"`
+	// Timeout bounds one export request, and the flush at shutdown, which
+	// runs after sis.shutdown_timeout has ended.
+	Timeout time.Duration `yaml:"timeout" default:"10s" validate:"gt=0"`
 }
 
 type Log struct {

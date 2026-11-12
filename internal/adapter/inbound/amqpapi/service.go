@@ -24,6 +24,7 @@ import (
 	"github.com/SUNET/sis/pkg/helpers"
 	"github.com/SUNET/sis/pkg/logger"
 	"github.com/SUNET/sis/pkg/model"
+	"github.com/SUNET/sis/pkg/trace"
 )
 
 // Reconnect backoff bounds, how long a link must stay up before the backoff
@@ -57,6 +58,7 @@ type Service struct {
 	stopRecv context.CancelFunc
 	abort    context.CancelFunc
 	done     chan struct{}
+	tel      *telemetry
 	log      *logger.Log
 }
 
@@ -77,11 +79,11 @@ func New(ctx context.Context, cfg *model.Cfg, verifier *auth.Verifier, commands 
 }
 
 func start(ctx context.Context, cfg model.AMQPAPI, verifier tokenVerifier, commands map[string]handlerFunc, dial dialFunc, log *logger.Log) *Service {
-	workCtx, abort := context.WithCancel(context.WithoutCancel(ctx))
+	workCtx, abort := context.WithCancel(trace.WithoutSpan(context.WithoutCancel(ctx)))
 	recvCtx, stopRecv := context.WithCancel(workCtx)
 	s := &Service{
 		cfg: cfg, verifier: verifier, commands: commands, dial: dial,
-		stopRecv: stopRecv, abort: abort, done: make(chan struct{}), log: log,
+		stopRecv: stopRecv, abort: abort, done: make(chan struct{}), tel: newTelemetry(log), log: log,
 	}
 	go s.run(recvCtx, workCtx)
 	return s
@@ -177,6 +179,12 @@ func (s *Service) consume(recvCtx, workCtx context.Context, receiver link) error
 // a failed settlement.
 func (s *Service) process(ctx context.Context, receiver link, msg *amqp.Message) error {
 	began := time.Now()
+	// Only subjects in the command table are labels: a sender picks the rest.
+	subject := "unknown"
+	if _, known := s.commands[subjectOf(msg)]; known {
+		subject = subjectOf(msg)
+	}
+	ctx, end := s.tel.begin(ctx, subject, msg)
 	err := s.runCommand(ctx, msg)
 	apiErr := helpers.NewErrorFromError(err)
 
@@ -196,6 +204,14 @@ func (s *Service) process(ctx context.Context, receiver link, msg *amqp.Message)
 		outcome = "rejected"
 		rejectErr = rejection(apiErr)
 		settleErr = receiver.RejectMessage(settleCtx, msg, rejectErr)
+	}
+
+	// A failed settlement is its own outcome: the command's verdict never
+	// reached the broker.
+	if settleErr != nil {
+		end("settle_failed", settleErr)
+	} else {
+		end(outcome, err)
 	}
 
 	props := msg.Properties

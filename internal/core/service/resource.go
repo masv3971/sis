@@ -44,7 +44,9 @@ func NewResource[T any, PT domain.EntityPtr[T]](repo port.Repository[T, PT], eve
 // Create validates, assigns identity/timestamps, persists, and emits an event.
 // ExpiresAt is server-managed: a value supplied by the caller is dropped, so
 // a record created this way never expires (see UpsertWithExpiry).
-func (s *Resource[T, PT]) Create(ctx context.Context, e PT) (PT, error) {
+func (s *Resource[T, PT]) Create(ctx context.Context, e PT) (out PT, err error) {
+	ctx, end := startSpan(ctx, s.typeName, "create")
+	defer func() { end(err) }()
 	e.SetExpiresAt(nil)
 	return s.create(ctx, e)
 }
@@ -72,7 +74,9 @@ func (s *Resource[T, PT]) create(ctx context.Context, e PT) (PT, error) {
 // Update validates and replaces an existing entity, preserving its creation
 // time and its expiry (ExpiresAt is server-managed; the caller's value is
 // ignored).
-func (s *Resource[T, PT]) Update(ctx context.Context, e PT) (PT, error) {
+func (s *Resource[T, PT]) Update(ctx context.Context, e PT) (out PT, err error) {
+	ctx, end := startSpan(ctx, s.typeName, "update")
+	defer func() { end(err) }()
 	return s.update(ctx, e, func(existing PT) *time.Time { return existing.GetExpiresAt() })
 }
 
@@ -127,6 +131,8 @@ func (s *Resource[T, PT]) UpsertBySourcedID(ctx context.Context, e PT) (PT, erro
 // loading time-limited data never schedules deletion of a record someone
 // else maintains. created reports whether a new record was stored.
 func (s *Resource[T, PT]) UpsertWithExpiry(ctx context.Context, e PT, expiresAt *time.Time) (out PT, created bool, err error) {
+	ctx, end := startSpan(ctx, s.typeName, "upsert")
+	defer func() { end(err) }()
 	if e.GetSourcedID() == "" {
 		return nil, false, &domain.ValidationError{Field: "sourcedId", Msg: domain.MsgRequiredForUpsert}
 	}
@@ -195,7 +201,9 @@ func (s *Resource[T, PT]) ListByRefs(ctx context.Context, field string, ids []st
 }
 
 // Delete removes an entity and emits an event.
-func (s *Resource[T, PT]) Delete(ctx context.Context, id string) error {
+func (s *Resource[T, PT]) Delete(ctx context.Context, id string) (err error) {
+	ctx, end := startSpan(ctx, s.typeName, "delete")
+	defer func() { end(err) }()
 	if err := s.repo.Delete(ctx, id); err != nil {
 		return err
 	}
@@ -205,7 +213,9 @@ func (s *Resource[T, PT]) Delete(ctx context.Context, id string) error {
 
 // DeleteByRef is Delete, but only while the entity's reference field (a
 // constant such as "personId") still equals value; otherwise ErrNotFound.
-func (s *Resource[T, PT]) DeleteByRef(ctx context.Context, id, field, value string) error {
+func (s *Resource[T, PT]) DeleteByRef(ctx context.Context, id, field, value string) (err error) {
+	ctx, end := startSpan(ctx, s.typeName, "delete")
+	defer func() { end(err) }()
 	if err := s.repo.DeleteByRef(ctx, id, field, value); err != nil {
 		return err
 	}

@@ -14,6 +14,7 @@ import (
 	"github.com/SUNET/sis/internal/readmodel"
 	"github.com/SUNET/sis/pkg/logger"
 	"github.com/SUNET/sis/pkg/model"
+	"github.com/SUNET/sis/pkg/trace"
 )
 
 // Service runs the sweep loop.
@@ -43,7 +44,7 @@ func New(ctx context.Context, cfg *model.Cfg, catalog *readmodel.Client, log *lo
 	if interval <= 0 {
 		return nil, errors.New("sweeper: sis.adapter.sweeper.interval must be positive")
 	}
-	loopCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	loopCtx, cancel := context.WithCancel(trace.WithoutSpan(context.WithoutCancel(ctx)))
 	s := &Service{sweeps: sweepsOf(catalog), timeout: cfg.SIS.Adapter.Sweeper.Timeout, cancel: cancel, done: make(chan struct{}), log: log.New("sweeper")}
 	go s.loop(loopCtx, interval)
 	s.log.Info("sweeper started", "interval", interval.String())
@@ -73,6 +74,10 @@ func (s *Service) sweepBounded(ctx context.Context) int {
 		ctx, cancel = context.WithTimeout(ctx, s.timeout)
 		defer cancel()
 	}
+	// The loop has no request to hang a trace on. Without this root span the
+	// SQL of a pass is not traced at all: otelpgx needs a recording parent.
+	ctx, end := trace.Start(ctx, "sweeper sweep")
+	defer end(nil)
 	return s.Sweep(ctx)
 }
 

@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/exaring/otelpgx"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/SUNET/sis/pkg/logger"
@@ -29,9 +30,15 @@ func New(ctx context.Context, cfg *model.Cfg, log *logger.Log) (*Service, error)
 	if err != nil {
 		return nil, err
 	}
+	// A span per query and per pool acquire. No-ops unless tracing is on.
+	poolCfg.ConnConfig.Tracer = newQueryTracer()
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
 		return nil, fmt.Errorf("connect postgres: %w", err)
+	}
+	if err := otelpgx.RecordStats(pool); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("record postgres pool stats: %w", err)
 	}
 	if err := pool.Ping(ctx); err != nil {
 		pool.Close()

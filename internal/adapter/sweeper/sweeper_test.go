@@ -8,6 +8,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	oteltrace "go.opentelemetry.io/otel/trace"
 
 	"github.com/SUNET/sis/internal/adapter/outbound/memory"
 	"github.com/SUNET/sis/internal/core/domain"
@@ -15,6 +19,7 @@ import (
 	"github.com/SUNET/sis/internal/readmodel"
 	"github.com/SUNET/sis/pkg/logger"
 	"github.com/SUNET/sis/pkg/model"
+	"github.com/SUNET/sis/pkg/trace"
 )
 
 // newCatalog is an in-memory catalog on a shared test clock.
@@ -115,6 +120,64 @@ func TestSweepBoundedStopsAtTimeout(t *testing.T) {
 	// Without a limit the same pass deletes it.
 	s.timeout = 0
 	assert.Equal(t, 1, s.sweepBounded(t.Context()))
+}
+
+// TestSweepRunsUnderRootSpan: the SQL of a pass needs a recording parent to
+// be traced (otelpgx), and the loop has none of its own.
+func TestSweepRunsUnderRootSpan(t *testing.T) {
+	spans := tracetest.NewSpanRecorder()
+	previous := otel.GetTracerProvider()
+	otel.SetTracerProvider(sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spans)))
+	t.Cleanup(func() { otel.SetTracerProvider(previous) })
+
+	var recording []bool
+	s := &Service{
+		sweeps: []sweepFunc{{"person", func(ctx context.Context) ([]string, error) {
+			recording = append(recording, oteltrace.SpanFromContext(ctx).IsRecording())
+			return nil, nil
+		}}},
+		log: logger.NewWithWriter("test", false, "error", io.Discard),
+	}
+	s.sweepBounded(t.Context())
+
+	assert.Equal(t, []bool{true}, recording, "a sweep runs under a recording span")
+	ended := spans.Ended()
+	require.Len(t, ended, 1, "spans")
+	assert.Equal(t, "sweeper sweep", ended[0].Name())
+	assert.False(t, ended[0].Parent().IsValid(), "a root span")
+}
+
+// TestSweepDoesNotInheritTheStartupSpan: New is given the startup span's
+// context, and the loop outlives it. A pass must not hang under that span.
+func TestSweepDoesNotInheritTheStartupSpan(t *testing.T) {
+	spans := tracetest.NewSpanRecorder()
+	previous := otel.GetTracerProvider()
+	otel.SetTracerProvider(sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spans)))
+	t.Cleanup(func() { otel.SetTracerProvider(previous) })
+
+	startupCtx, endStartup := trace.Start(t.Context(), "startup")
+	defer endStartup(nil)
+
+	cfg := &model.Cfg{}
+	cfg.SIS.Adapter.Sweeper.Interval = 10 * time.Millisecond
+	log := logger.NewWithWriter("test", false, "error", io.Discard)
+	s, err := New(startupCtx, cfg, newCatalog(time.Now, log), log)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close(context.Background()) })
+
+	require.Eventually(t, func() bool {
+		for _, span := range spans.Ended() {
+			if span.Name() == "sweeper sweep" {
+				return true
+			}
+		}
+		return false
+	}, 5*time.Second, 5*time.Millisecond, "no sweep span")
+	for _, span := range spans.Ended() {
+		if span.Name() == "sweeper sweep" {
+			assert.False(t, span.Parent().IsValid(), "a sweep is a root span, not a child of startup")
+		}
+	}
 }
 
 // TestSweepTimeoutRotatesStart: a type that always uses up the pass timeout

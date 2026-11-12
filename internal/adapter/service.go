@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/SUNET/sis/internal/adapter/inbound/amqpapi"
 	"github.com/SUNET/sis/internal/adapter/outbound/events"
@@ -79,20 +80,23 @@ type Service struct {
 // and the support Clients, then starts the HTTP server. The returned Service
 // is the single lifecycle handle the caller must Close on shutdown.
 //
-// On init failure New returns the error immediately without closing partially
-// acquired resources: today the only such resource is the postgres pool and
-// main always exits on error, so the OS reaps it. If a future sub-adapter
-// acquires a resource that needs graceful release before process exit (e.g.
-// a NATS connection that must drain), add that cleanup here then.
-func New(ctx context.Context, cfg *model.Cfg, log *logger.Log) (*Service, error) {
+// On init failure New closes whatever it had already started (the sweeper and
+// the HTTP listener run before the later steps) and returns the error, so a
+// failed startup does not keep serving or writing while the caller winds down.
+func New(ctx context.Context, cfg *model.Cfg, log *logger.Log) (svc *Service, err error) {
 	s := &Service{log: log.New("adapter")}
+	defer func() {
+		if err != nil {
+			s.abort(ctx)
+			svc = nil
+		}
+	}()
 
 	// Outbound persistence. selectStore builds the port.Store that
 	// downstream consumers use; pg is the raw lifecycle handle owned by
 	// this Service and nil when the in-memory store is in use. docRepo
 	// routes through the same handle to pick postgres vs memory per
 	// entity type.
-	var err error
 	if s.outbound.store, s.outbound.pg, err = selectStore(ctx, cfg, log); err != nil {
 		return nil, err
 	}
@@ -164,7 +168,24 @@ func New(ctx context.Context, cfg *model.Cfg, log *logger.Log) (*Service, error)
 		}
 	}
 
+	// Finished, but after a signal or the deadline: do not serve.
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("startup: %w", err)
+	}
 	return s, nil
+}
+
+// failedStartupCloseTimeout bounds closing a partly built Service. ctx may
+// already be cancelled or past its deadline then, so it cannot bound the close.
+const failedStartupCloseTimeout = 5 * time.Second
+
+// abort closes the parts of a Service that New had built when a step failed.
+func (s *Service) abort(ctx context.Context) {
+	closeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), failedStartupCloseTimeout)
+	defer cancel()
+	if err := s.Close(closeCtx); err != nil {
+		s.log.Warn("closing the partly built adapters failed", "err", err)
+	}
 }
 
 // Close shuts the adapter graph down in dependency order: inbound first (so
