@@ -16,21 +16,21 @@ import (
 	"github.com/SUNET/sis/internal/core/port"
 )
 
-// PersonSearch checks port.PersonRepository.Search. prefix is put in front
-// of every id, sourcedId and name, so runs against a shared database only
-// see their own rows (searches always include it as a term).
-func PersonSearch(t *testing.T, repo port.PersonRepository, prefix string) {
+// PersonSearch checks ListParams.Search on a person repository. prefix is put
+// in front of every id, sourcedId and name, so runs against a shared database
+// only see their own rows (searches always include it as a term).
+func PersonSearch(t *testing.T, repo port.Repository[domain.Person, *domain.Person], prefix string) {
 	ctx := t.Context()
 	now := time.Now().UTC()
 	tag := "zq" + strings.ToLower(prefix) // a term only this run's rows hold
-	person := func(id, given, family string, ids []domain.Identifier, emails []domain.Contact) domain.Person {
-		return domain.Person{
+	person := func(id, given, family string, ids []domain.Identifier, emails []domain.Contact) *domain.Person {
+		return &domain.Person{
 			ID: tag + id, SourcedID: tag + "s-" + id, Status: domain.StatusActive,
 			GivenName: given, FamilyName: family + " " + tag,
 			Identifiers: ids, Emails: emails, CreatedAt: now, UpdatedAt: now,
 		}
 	}
-	persons := []domain.Person{
+	persons := []*domain.Person{
 		person("1", "Anna", "Andersson", []domain.Identifier{{Type: "studentNumber", Value: "LIU-0001"}}, []domain.Contact{{Type: "work", Value: "anna@liu.se"}}),
 		person("2", "Johan", "Berg", nil, []domain.Contact{{Type: "work", Value: "johan@kth.se"}}),
 		person("3", "Anna-Karin", "Ek", nil, nil),
@@ -48,7 +48,7 @@ func PersonSearch(t *testing.T, repo port.PersonRepository, prefix string) {
 
 	search := func(terms ...string) []string {
 		t.Helper()
-		page, err := repo.Search(ctx, append([]string{tag}, terms...), port.ListParams{Limit: 10})
+		page, err := repo.List(ctx, port.ListParams{Limit: 10, Search: append([]string{tag}, terms...)})
 		require.NoError(t, err, "search %v", terms)
 		ids := make([]string, 0, len(page.Items))
 		for _, p := range page.Items {
@@ -69,7 +69,7 @@ func PersonSearch(t *testing.T, repo port.PersonRepository, prefix string) {
 	assert.Equal(t, []string{"4"}, search("_"), "LIKE wildcards match literally")
 	assert.Equal(t, []string{"4"}, search("%"), "LIKE wildcards match literally")
 
-	page, err := repo.Search(ctx, []string{tag}, port.ListParams{Limit: 2, Offset: 1})
+	page, err := repo.List(ctx, port.ListParams{Limit: 2, Offset: 1, Search: []string{tag}})
 	require.NoError(t, err, "paged search")
 	assert.Equal(t, 4, page.Total, "paged search: total")
 	require.Len(t, page.Items, 2, "paged search")

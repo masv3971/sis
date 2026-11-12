@@ -28,7 +28,7 @@ func newTestRouter(t *testing.T) *gin.Engine {
 	gin.EnableJsonDecoderDisallowUnknownFields()
 	log := logger.NewWithWriter("test", false, "error", io.Discard)
 	catalog := &readmodel.Client{
-		Persons:       service.New(memory.NewPersonRepository(), nil, nil, log),
+		Persons:       service.NewResource(memory.NewDocRepo[domain.Person](), nil, nil, log),
 		Organizations: service.NewResource(memory.NewDocRepo[domain.Organization](), nil, nil, log),
 		Courses:       service.NewResource(memory.NewDocRepo[domain.Course](), nil, nil, log),
 	}

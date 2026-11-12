@@ -28,7 +28,7 @@ func TestEduAPIPaging(t *testing.T) {
 	ctx := t.Context()
 	log := logger.NewWithWriter("test", false, "error", io.Discard)
 	catalog := &readmodel.Client{
-		Persons:     service.New(memory.NewPersonRepository(), nil, nil, log),
+		Persons:     service.NewResource(memory.NewDocRepo[domain.Person](), nil, nil, log),
 		Courses:     service.NewResource(memory.NewDocRepo[domain.Course](), nil, nil, log),
 		Offerings:   service.NewResource(memory.NewDocRepo[domain.Offering](), nil, nil, log),
 		Enrollments: service.NewResource(memory.NewDocRepo[domain.Enrollment](), nil, nil, log),
@@ -80,10 +80,10 @@ func TestEduAPIPaging(t *testing.T) {
 func TestEduAPILinks(t *testing.T) {
 	log := logger.NewWithWriter("test", false, "error", io.Discard)
 	catalog := &readmodel.Client{
-		Persons: service.New(memory.NewPersonRepository(), nil, nil, log),
+		Persons: service.NewResource(memory.NewDocRepo[domain.Person](), nil, nil, log),
 	}
 	for i := range 7 {
-		_, err := catalog.Persons.CreatePerson(t.Context(), domain.Person{
+		_, err := catalog.Persons.Create(t.Context(), &domain.Person{
 			ID: fmt.Sprintf("p%d", i), SourcedID: fmt.Sprintf("p%d", i), GivenName: "A", FamilyName: "B", Status: domain.StatusActive,
 		})
 		require.NoError(t, err)
@@ -143,14 +143,14 @@ func TestEduAPISortAndFilter(t *testing.T) {
 	ctx := t.Context()
 	log := logger.NewWithWriter("test", false, "error", io.Discard)
 	catalog := &readmodel.Client{
-		Persons: service.New(memory.NewPersonRepository(), nil, nil, log),
+		Persons: service.NewResource(memory.NewDocRepo[domain.Person](), nil, nil, log),
 	}
-	for _, p := range []domain.Person{
+	for _, p := range []*domain.Person{
 		{ID: "p1", SourcedID: "p1", GivenName: "Zed", FamilyName: "Berg", Status: domain.StatusActive},
 		{ID: "p2", SourcedID: "p2", GivenName: "Amy", FamilyName: "Ahl", Status: domain.StatusActive},
 		{ID: "p3", SourcedID: "p3", GivenName: "Bo", FamilyName: "Cole", Status: domain.StatusActive},
 	} {
-		_, err := catalog.Persons.CreatePerson(ctx, p)
+		_, err := catalog.Persons.Create(ctx, p)
 		require.NoError(t, err)
 	}
 	cfg := testCfg("127.0.0.1:0")

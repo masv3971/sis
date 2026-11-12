@@ -66,7 +66,7 @@ func PersonResourceList[T any, PT domain.EntityPtr[T]](c *Client, svc *service.R
 		}
 		ctx := gc.Request.Context()
 		personID := gc.Param("id")
-		if _, err := c.catalog.Persons.GetPerson(ctx, personID); err != nil {
+		if _, err := c.catalog.Persons.Get(ctx, personID); err != nil {
 			helpers.WriteError(gc, err)
 			return
 		}

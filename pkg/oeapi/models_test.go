@@ -35,12 +35,12 @@ func TestNewPage(t *testing.T) {
 func TestFromPerson(t *testing.T) {
 	cases := []struct {
 		name          string
-		in            domain.Person
+		in            *domain.Person
 		display, mail string
 	}{
-		{"full", domain.Person{GivenName: "Ada", FamilyName: "Lovelace", Emails: []domain.Contact{{Value: "a@x"}, {Value: "b@x"}}}, "Ada Lovelace", "a@x"},
-		{"family only", domain.Person{FamilyName: "Lovelace"}, "Lovelace", ""},
-		{"given only", domain.Person{GivenName: "Ada"}, "Ada", ""},
+		{"full", &domain.Person{GivenName: "Ada", FamilyName: "Lovelace", Emails: []domain.Contact{{Value: "a@x"}, {Value: "b@x"}}}, "Ada Lovelace", "a@x"},
+		{"family only", &domain.Person{FamilyName: "Lovelace"}, "Lovelace", ""},
+		{"given only", &domain.Person{GivenName: "Ada"}, "Ada", ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -69,7 +69,7 @@ func TestMappersUseSourcedIDs(t *testing.T) {
 	assert.Equal(t, string(domain.RoleStudent), association.Role)
 	assert.Equal(t, "active", association.State)
 	out := FromBundle(&domain.Bundle{
-		Persons:       []domain.Person{{SourcedID: "stu"}},
+		Persons:       []*domain.Person{{SourcedID: "stu"}},
 		Organizations: []*domain.Organization{{Base: base("uni"), Name: "U"}},
 	})
 	assert.Len(t, out.Persons, 1)

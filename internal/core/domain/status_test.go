@@ -18,7 +18,7 @@ func TestStatusValid(t *testing.T) {
 }
 
 func TestPersonRejectsUndeclaredStatus(t *testing.T) {
-	person := domain.Person{GivenName: "Ada", FamilyName: "Lovelace", Status: "archived"}
+	person := &domain.Person{GivenName: "Ada", FamilyName: "Lovelace", Status: "archived"}
 	var verr *domain.ValidationError
 	require.ErrorAs(t, person.Validate(), &verr, "expected status validation error")
 	assert.Equal(t, "status", verr.Field)

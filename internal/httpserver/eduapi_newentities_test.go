@@ -52,7 +52,7 @@ func TestEduAPINewEntities(t *testing.T) {
 	ctx := t.Context()
 	log := logger.NewWithWriter("test", false, "error", io.Discard)
 	catalog := &readmodel.Client{
-		Persons:             service.New(memory.NewPersonRepository(), nil, nil, log),
+		Persons:             service.NewResource(memory.NewDocRepo[domain.Person](), nil, nil, log),
 		Organizations:       service.NewResource(memory.NewDocRepo[domain.Organization](), nil, nil, log),
 		AcademicSessions:    service.NewResource(memory.NewDocRepo[domain.AcademicSession](), nil, nil, log),
 		Courses:             spied[domain.Course](log),
@@ -68,7 +68,7 @@ func TestEduAPINewEntities(t *testing.T) {
 		t.Helper()
 		require.NoError(t, err)
 	}
-	must(catalog.Persons.CreatePerson(ctx, domain.Person{ID: "p-1", SourcedID: "ann", GivenName: "A", FamilyName: "A", Status: domain.StatusActive}))
+	must(catalog.Persons.Create(ctx, &domain.Person{ID: "p-1", SourcedID: "ann", GivenName: "A", FamilyName: "A", Status: domain.StatusActive}))
 	must(catalog.Organizations.Create(ctx, &domain.Organization{ID: "o-1", SourcedID: "uni", Name: "U"}))
 	must(catalog.AcademicSessions.Create(ctx, &domain.AcademicSession{ID: "s-1", SourcedID: "ht26", Title: "HT26", StartDate: "2026-08-31", EndDate: "2027-01-15"}))
 	must(catalog.Programs.Create(ctx, &domain.Program{ID: "g-1", SourcedID: "BSc", Title: "BSc Biology"}))

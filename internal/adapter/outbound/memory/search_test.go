@@ -9,7 +9,7 @@ import (
 )
 
 func TestPersonSearch(t *testing.T) {
-	repotest.PersonSearch(t, memory.NewPersonRepository(), "")
+	repotest.PersonSearch(t, memory.NewDocRepo[domain.Person](), "")
 }
 
 func TestListByRef(t *testing.T) {

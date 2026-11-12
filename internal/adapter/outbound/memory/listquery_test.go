@@ -13,5 +13,5 @@ func TestListQueryDocs(t *testing.T) {
 }
 
 func TestListQueryPersons(t *testing.T) {
-	repotest.ListQueryPersons(t, memory.NewPersonRepository())
+	repotest.ListQueryPersons(t, memory.NewDocRepo[domain.Person]())
 }

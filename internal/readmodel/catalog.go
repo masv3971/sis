@@ -13,7 +13,7 @@ import (
 // it is a bundle of already-built per-entity services, assembled once at
 // startup, with nothing to shut down.
 type Client struct {
-	Persons          *service.Service
+	Persons          *service.Resource[domain.Person, *domain.Person]
 	Organizations    *service.Resource[domain.Organization, *domain.Organization]
 	AcademicSessions *service.Resource[domain.AcademicSession, *domain.AcademicSession]
 	Courses          *service.Resource[domain.Course, *domain.Course]

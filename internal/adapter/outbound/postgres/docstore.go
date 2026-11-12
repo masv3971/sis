@@ -9,11 +9,36 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/SUNET/sis/internal/core/domain"
 	"github.com/SUNET/sis/internal/core/port"
 )
+
+const uniqueViolation = "23505"
+
+// maxPrealloc bounds the result-slice capacity reserved up front for a List,
+// so a large caller-supplied limit cannot force a huge allocation (or a
+// negative-cap panic) before any row is scanned. Results beyond this simply
+// grow the slice as rows arrive.
+const maxPrealloc = 256
+
+// preallocCap returns a safe initial capacity for a page of up to limit rows.
+func preallocCap(limit int) int {
+	return min(max(limit, 0), maxPrealloc)
+}
+
+// mapUniqueViolation translates a Postgres unique-key violation into
+// domain.ErrConflict (HTTP 409) so Create and Update report a business-key
+// collision identically; any other error passes through unchanged.
+func mapUniqueViolation(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation {
+		return domain.ErrConflict
+	}
+	return err
+}
 
 // liveFilter restricts a query to records that have not expired (see
 // port.Repository). Kept as one constant so every read applies the same rule
@@ -25,11 +50,20 @@ const liveFilter = `(expires_at IS NULL OR expires_at > now())`
 type DocRepo[T any, PT domain.EntityPtr[T]] struct {
 	pool     *pgxpool.Pool
 	typeName string
+	// spec serves ListParams.Search and the default order; queryable is
+	// false for types without a domain.QuerySpec, which reject a search.
+	spec      domain.QuerySpec
+	queryable bool
 }
 
 // NewDocRepo returns a doc repository for entity type T backed by the service.
 func NewDocRepo[T any, PT domain.EntityPtr[T]](s *Service) *DocRepo[T, PT] {
-	return &DocRepo[T, PT]{pool: s.pool, typeName: PT(new(T)).EntityType()}
+	entity := PT(new(T))
+	r := &DocRepo[T, PT]{pool: s.pool, typeName: entity.EntityType()}
+	if q, ok := any(entity).(domain.Queryable); ok {
+		r.spec, r.queryable = q.QuerySpec(), true
+	}
+	return r
 }
 
 // Create inserts an entity, mapping a unique-key violation with a live
@@ -155,9 +189,10 @@ func (r *DocRepo[T, PT]) GetBySourcedID(ctx context.Context, sourcedID string) (
 	return r.scanOne(ctx, `SELECT data FROM entities WHERE type=$1 AND sourced_id=$2 AND `+liveFilter, sourcedID)
 }
 
-// List returns a page of live entities ordered by sourcedId. The total comes
-// from the same statement as the page, so the two always agree; a page past
-// the end is one row with NULL data that carries only the total.
+// List returns a page of live entities in the type's default order (its
+// QuerySpec, then sourcedId). The total comes from the same statement as the
+// page, so the two always agree; a page past the end is one row with NULL
+// data that carries only the total.
 func (r *DocRepo[T, PT]) List(ctx context.Context, params port.ListParams) (port.Page[PT], error) {
 	return r.list(ctx, "type=$1 AND "+liveFilter, []any{r.typeName}, params)
 }
@@ -208,8 +243,9 @@ func (r *DocRepo[T, PT]) ListByRefs(ctx context.Context, field string, ids []str
 }
 
 // list returns the page of entities matching where (a constant condition,
-// never input, with its values in args as $1..$n) and params.Filter, ordered
-// by params.Sort, then by sourcedId.
+// never input, with its values in args as $1..$n), params.Filter, params.Search
+// and params.AnyOf, ordered by params.Sort, then by the type's default order,
+// then by sourcedId.
 func (r *DocRepo[T, PT]) list(ctx context.Context, where string, args []any, params port.ListParams) (port.Page[PT], error) {
 	var limit any // nil: LIMIT NULL, no limit
 	if params.Limit > 0 {
@@ -222,8 +258,22 @@ func (r *DocRepo[T, PT]) list(ctx context.Context, where string, args []any, par
 	if cond != "" {
 		where += " AND " + cond
 	}
-	// The page exposes the sort key as sort_val so the outer query can order
-	// by it too.
+	if len(params.Search) > 0 {
+		if !r.queryable {
+			return port.Page[PT]{}, fmt.Errorf("postgres: %s is not searchable", r.typeName)
+		}
+		if cond, args, err = searchSQL(r.spec, params.Search, args); err != nil {
+			return port.Page[PT]{}, err
+		}
+		where += " AND " + cond
+	}
+	if cond, args, err = anyOfSQL(params.AnyOf, args); err != nil {
+		return port.Page[PT]{}, err
+	} else if cond != "" {
+		where += " AND " + cond
+	}
+	// The page exposes the sort key and the default-order keys as columns so
+	// the outer query can order by them too.
 	sortExpr, outerSort := "", ""
 	sortVal := "NULL::text"
 	if params.Sort != "" {
@@ -232,13 +282,24 @@ func (r *DocRepo[T, PT]) list(ctx context.Context, where string, args []any, par
 		}
 		sortVal, outerSort = sortExpr, "p.sort_val"
 	}
+	var extraCols, innerTail, outerTail string
+	for i, key := range r.spec.DefaultOrder {
+		expr, err := docKey(key)
+		if err != nil {
+			return port.Page[PT]{}, err
+		}
+		extraCols += fmt.Sprintf(", %s AS ord%d", expr, i)
+		innerTail += fmt.Sprintf(`%s COLLATE "C" NULLS LAST, `, expr)
+		outerTail += fmt.Sprintf(`p.ord%d COLLATE "C" NULLS LAST, `, i)
+	}
 	query := fmt.Sprintf(`SELECT p.data, t.n
 		FROM (SELECT count(*) AS n FROM entities WHERE %[1]s) t
-		LEFT JOIN LATERAL (SELECT data, sourced_id, %[4]s AS sort_val FROM entities WHERE %[1]s
+		LEFT JOIN LATERAL (SELECT data, sourced_id, %[4]s AS sort_val%[7]s FROM entities WHERE %[1]s
 			ORDER BY %[5]s OFFSET $%[2]d LIMIT $%[3]d) p ON true
 		ORDER BY %[6]s`, where, len(args)+1, len(args)+2, sortVal,
-		orderSQL(sortExpr, params.Desc, "sourced_id"),
-		orderSQL(outerSort, params.Desc, "p.sourced_id"))
+		orderSQL(sortExpr, params.Desc, innerTail+"sourced_id"),
+		orderSQL(outerSort, params.Desc, outerTail+"p.sourced_id"),
+		extraCols)
 	rows, err := r.pool.Query(ctx, query, append(args, params.Offset, limit)...)
 	if err != nil {
 		return port.Page[PT]{}, err

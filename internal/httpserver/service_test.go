@@ -182,7 +182,7 @@ func TestTokenIssuingRoutesAreGone(t *testing.T) {
 // API surface, and that write does not include read.
 func TestScopesGateAPIs(t *testing.T) {
 	log := logger.NewWithWriter("test", false, "error", io.Discard)
-	catalog := &readmodel.Client{Persons: service.New(memory.NewPersonRepository(), nil, nil, log)}
+	catalog := &readmodel.Client{Persons: service.NewResource(memory.NewDocRepo[domain.Person](), nil, nil, log)}
 	cfg := testCfg("127.0.0.1:0")
 	cfg.SIS.Adapter.Inbound.RestAdmin.DefaultLimit, cfg.SIS.Adapter.Inbound.RestAdmin.MaxLimit = 10, 10
 	cfg.SIS.Adapter.Inbound.OEAPI.DefaultPageSize, cfg.SIS.Adapter.Inbound.OEAPI.MaxPageSize = 10, 10
@@ -229,7 +229,7 @@ func TestScopesGateAPIs(t *testing.T) {
 // WWW-Authenticate header, while the other APIs keep their own error body.
 func TestEduAPIAuthErrorsUseImsxBody(t *testing.T) {
 	log := logger.NewWithWriter("test", false, "error", io.Discard)
-	catalog := &readmodel.Client{Persons: service.New(memory.NewPersonRepository(), nil, nil, log)}
+	catalog := &readmodel.Client{Persons: service.NewResource(memory.NewDocRepo[domain.Person](), nil, nil, log)}
 	cfg := testCfg("127.0.0.1:0")
 	cfg.SIS.Adapter.Inbound.EduAPI.DefaultLimit, cfg.SIS.Adapter.Inbound.EduAPI.MaxLimit = 10, 10
 	cfg.SIS.Adapter.Inbound.OEAPI.DefaultPageSize, cfg.SIS.Adapter.Inbound.OEAPI.MaxPageSize = 10, 10
@@ -344,7 +344,7 @@ func TestSwaggerServesStandardsSpecs(t *testing.T) {
 func TestIDsWithSlashesRoundTrip(t *testing.T) {
 	log := logger.NewWithWriter("test", false, "error", io.Discard)
 	catalog := &readmodel.Client{
-		Persons:       service.New(memory.NewPersonRepository(), nil, nil, log),
+		Persons:       service.NewResource(memory.NewDocRepo[domain.Person](), nil, nil, log),
 		Organizations: service.NewResource(memory.NewDocRepo[domain.Organization](), nil, nil, log),
 	}
 	cfg := testCfg("127.0.0.1:0")

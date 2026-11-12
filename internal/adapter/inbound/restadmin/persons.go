@@ -43,7 +43,7 @@ func New(_ context.Context, cfg *model.Cfg, catalog *readmodel.Client, commands 
 
 // PersonListReply is the response envelope of GET /api/v1/persons.
 type PersonListReply struct {
-	Persons []domain.Person `json:"persons"`
+	Persons []*domain.Person `json:"persons"`
 	// Total is the number of persons across all pages.
 	Total int `json:"total"`
 	// Limit is the effective page size after defaulting and clamping.
@@ -75,12 +75,11 @@ func (c *Client) ListPersons(gc *gin.Context) {
 		helpers.WriteError(gc, err)
 		return
 	}
-	terms, err := searchTerms(gc.Query("q"))
-	if err != nil {
+	if params.Search, err = searchTerms(gc.Query("q")); err != nil {
 		helpers.WriteError(gc, err)
 		return
 	}
-	page, err := c.catalog.Persons.SearchPersons(gc.Request.Context(), terms, params)
+	page, err := c.catalog.Persons.List(gc.Request.Context(), params)
 	if err != nil {
 		helpers.WriteError(gc, err)
 		return
@@ -112,12 +111,12 @@ func (c *Client) ListPersons(gc *gin.Context) {
 //	@Failure		500		{object}	helpers.ErrorResponse	"Internal Server Error"
 //	@Router			/persons [post]
 func (c *Client) CreatePerson(gc *gin.Context) {
-	var person domain.Person
-	if err := helpers.BindJSON(gc, &person); err != nil {
+	person := &domain.Person{}
+	if err := helpers.BindJSON(gc, person); err != nil {
 		helpers.WriteError(gc, err)
 		return
 	}
-	created, err := c.commands.CreatePerson(gc.Request.Context(), person)
+	created, err := command.Create(gc.Request.Context(), c.commands, c.catalog.Persons, person)
 	if err != nil {
 		helpers.WriteError(gc, err)
 		return
@@ -141,7 +140,7 @@ func (c *Client) CreatePerson(gc *gin.Context) {
 //	@Failure		500	{object}	helpers.ErrorResponse	"Internal Server Error"
 //	@Router			/persons/{id} [get]
 func (c *Client) GetPerson(gc *gin.Context) {
-	person, err := c.catalog.Persons.GetPerson(gc.Request.Context(), gc.Param("id"))
+	person, err := c.catalog.Persons.Get(gc.Request.Context(), gc.Param("id"))
 	if err != nil {
 		helpers.WriteError(gc, err)
 		return
@@ -170,12 +169,12 @@ func (c *Client) GetPerson(gc *gin.Context) {
 //	@Failure		500		{object}	helpers.ErrorResponse	"Internal Server Error"
 //	@Router			/persons/{id} [put]
 func (c *Client) UpdatePerson(gc *gin.Context) {
-	var person domain.Person
-	if err := helpers.BindJSON(gc, &person); err != nil {
+	person := &domain.Person{}
+	if err := helpers.BindJSON(gc, person); err != nil {
 		helpers.WriteError(gc, err)
 		return
 	}
-	updated, err := c.commands.UpdatePerson(gc.Request.Context(), gc.Param("id"), person)
+	updated, err := command.Update(gc.Request.Context(), c.commands, c.catalog.Persons, gc.Param("id"), person)
 	if err != nil {
 		helpers.WriteError(gc, err)
 		return

@@ -6,7 +6,7 @@ package domain
 // sourcedIds: they name records in the same bundle (or already stored ones)
 // by business key, because canonical ids are only assigned on storage.
 type Bundle struct {
-	Persons          []Person
+	Persons          []*Person
 	Organizations    []*Organization
 	AcademicSessions []*AcademicSession
 	Courses          []*Course

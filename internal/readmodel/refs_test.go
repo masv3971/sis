@@ -15,33 +15,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// countingPersons counts GetByIDs and single-record lookups so tests can
-// assert reference resolution is batched.
-type countingPersons struct {
-	*memory.PersonRepository
-	bulk, single int
-}
-
-func (repo *countingPersons) GetByIDs(ctx context.Context, ids []string) ([]domain.Person, error) {
-	repo.bulk++
-	return repo.PersonRepository.GetByIDs(ctx, ids)
-}
-
-func (repo *countingPersons) Get(ctx context.Context, id string) (domain.Person, error) {
-	repo.single++
-	return repo.PersonRepository.Get(ctx, id)
-}
-
-func (repo *countingPersons) GetBySourcedID(ctx context.Context, sid string) (domain.Person, error) {
-	repo.single++
-	return repo.PersonRepository.GetBySourcedID(ctx, sid)
-}
-
-func (repo *countingPersons) GetBySourcedIDs(ctx context.Context, sids []string) ([]domain.Person, error) {
-	repo.bulk++
-	return repo.PersonRepository.GetBySourcedIDs(ctx, sids)
-}
-
 type countingDocs[T any, PT domain.EntityPtr[T]] struct {
 	port.Repository[T, PT]
 	bulk, single int
@@ -69,18 +42,18 @@ func (repo *countingDocs[T, PT]) GetBySourcedIDs(ctx context.Context, sids []str
 
 type fixture struct {
 	catalog  *Client
-	persons  *countingPersons
+	persons  *countingDocs[domain.Person, *domain.Person]
 	offering *countingDocs[domain.Offering, *domain.Offering]
 }
 
 func newFixture(t *testing.T) fixture {
 	t.Helper()
 	log := logger.NewWithWriter("test", false, "error", io.Discard)
-	persons := &countingPersons{PersonRepository: memory.NewPersonRepository()}
+	persons := &countingDocs[domain.Person, *domain.Person]{Repository: memory.NewDocRepo[domain.Person]()}
 	offerings := &countingDocs[domain.Offering, *domain.Offering]{Repository: memory.NewDocRepo[domain.Offering]()}
 	return fixture{
 		catalog: &Client{
-			Persons:          service.New(persons, nil, nil, log),
+			Persons:          service.NewResource(port.Repository[domain.Person, *domain.Person](persons), nil, nil, log),
 			Organizations:    service.NewResource(memory.NewDocRepo[domain.Organization](), nil, nil, log),
 			AcademicSessions: service.NewResource(memory.NewDocRepo[domain.AcademicSession](), nil, nil, log),
 			Courses:          service.NewResource(memory.NewDocRepo[domain.Course](), nil, nil, log),
@@ -105,7 +78,7 @@ func newFixture(t *testing.T) fixture {
 func TestPublishRefsUsesSourcedIDs(t *testing.T) {
 	ctx := t.Context()
 	catalog := newFixture(t).catalog
-	_, err := catalog.Persons.CreatePerson(ctx, domain.Person{ID: "p-id", SourcedID: "student-1", GivenName: "A", FamilyName: "B", Status: domain.StatusActive})
+	_, err := catalog.Persons.Create(ctx, &domain.Person{ID: "p-id", SourcedID: "student-1", GivenName: "A", FamilyName: "B", Status: domain.StatusActive})
 	require.NoError(t, err)
 	_, err = catalog.Organizations.Create(ctx, &domain.Organization{ID: "o-id", SourcedID: "uni", Name: "U"})
 	require.NoError(t, err)
@@ -147,11 +120,11 @@ func TestPublishRefsUsesSourcedIDs(t *testing.T) {
 func TestPublishRefsNeverFallsBackToSourcedID(t *testing.T) {
 	ctx := t.Context()
 	catalog := newFixture(t).catalog
-	_, err := catalog.Persons.CreatePerson(ctx, domain.Person{ID: "p1", SourcedID: "a", GivenName: "A", FamilyName: "A", Status: domain.StatusActive})
+	_, err := catalog.Persons.Create(ctx, &domain.Person{ID: "p1", SourcedID: "a", GivenName: "A", FamilyName: "A", Status: domain.StatusActive})
 	require.NoError(t, err)
-	_, err = catalog.Persons.CreatePerson(ctx, domain.Person{ID: "p2", SourcedID: "p1", GivenName: "B", FamilyName: "B", Status: domain.StatusActive})
+	_, err = catalog.Persons.Create(ctx, &domain.Person{ID: "p2", SourcedID: "p1", GivenName: "B", FamilyName: "B", Status: domain.StatusActive})
 	require.NoError(t, err)
-	require.NoError(t, catalog.Persons.DeletePerson(ctx, "p1"))
+	require.NoError(t, catalog.Persons.Delete(ctx, "p1"))
 
 	enrollment := &domain.Enrollment{PersonID: "p1"}
 	_, err = catalog.PublishRefs(ctx, enrollment)
@@ -172,7 +145,7 @@ func TestPublishRefsBatchesLookups(t *testing.T) {
 	page := make([]domain.Entity, 0, count)
 	for i := range count {
 		pid, fid := "p"+strconv.Itoa(i), "f"+strconv.Itoa(i)
-		_, err := catalog.Persons.CreatePerson(ctx, domain.Person{ID: pid, GivenName: "G", FamilyName: "F", Status: domain.StatusActive})
+		_, err := catalog.Persons.Create(ctx, &domain.Person{ID: pid, GivenName: "G", FamilyName: "F", Status: domain.StatusActive})
 		require.NoError(t, err)
 		_, err = catalog.Offerings.Create(ctx, &domain.Offering{ID: fid, CourseID: "c"})
 		require.NoError(t, err)
@@ -201,9 +174,9 @@ func TestPublishRefsBatchesLookups(t *testing.T) {
 func TestPublishRefsFlagsOrphans(t *testing.T) {
 	ctx := t.Context()
 	catalog := newFixture(t).catalog
-	_, err := catalog.Persons.CreatePerson(ctx, domain.Person{ID: "p", GivenName: "A", FamilyName: "B", Status: domain.StatusActive})
+	_, err := catalog.Persons.Create(ctx, &domain.Person{ID: "p", GivenName: "A", FamilyName: "B", Status: domain.StatusActive})
 	require.NoError(t, err)
-	_, err = catalog.Persons.CreatePerson(ctx, domain.Person{ID: "p-gone", GivenName: "A", FamilyName: "B", Status: domain.StatusActive})
+	_, err = catalog.Persons.Create(ctx, &domain.Person{ID: "p-gone", GivenName: "A", FamilyName: "B", Status: domain.StatusActive})
 	require.NoError(t, err)
 	for _, id := range []string{"c", "c-gone"} {
 		_, err = catalog.Courses.Create(ctx, &domain.Course{ID: id, Title: "C"})
@@ -219,7 +192,7 @@ func TestPublishRefsFlagsOrphans(t *testing.T) {
 		_, err = catalog.Offerings.Create(ctx, offering)
 		require.NoError(t, err)
 	}
-	require.NoError(t, catalog.Persons.DeletePerson(ctx, "p-gone"))
+	require.NoError(t, catalog.Persons.Delete(ctx, "p-gone"))
 	require.NoError(t, catalog.Offerings.Delete(ctx, "f-gone"))
 	require.NoError(t, catalog.Courses.Delete(ctx, "c-gone"))
 	require.NoError(t, catalog.AcademicSessions.Delete(ctx, "s-gone"))
@@ -257,7 +230,7 @@ func TestPublishRefsFlagsOrphans(t *testing.T) {
 func TestPublishRefsProgramsAndResults(t *testing.T) {
 	ctx := t.Context()
 	catalog := newFixture(t).catalog
-	_, err := catalog.Persons.CreatePerson(ctx, domain.Person{ID: "p", SourcedID: "stu", GivenName: "A", FamilyName: "B", Status: domain.StatusActive})
+	_, err := catalog.Persons.Create(ctx, &domain.Person{ID: "p", SourcedID: "stu", GivenName: "A", FamilyName: "B", Status: domain.StatusActive})
 	require.NoError(t, err)
 	_, err = catalog.Organizations.Create(ctx, &domain.Organization{ID: "o", SourcedID: "uni", Name: "U"})
 	require.NoError(t, err)
@@ -289,7 +262,7 @@ func TestPublishRefsNewEntities(t *testing.T) {
 	ctx := t.Context()
 	catalog := newFixture(t).catalog
 	create := func(_ any, err error) { t.Helper(); require.NoError(t, err) }
-	create(catalog.Persons.CreatePerson(ctx, domain.Person{ID: "p", SourcedID: "stu", GivenName: "A", FamilyName: "B", Status: domain.StatusActive}))
+	create(catalog.Persons.Create(ctx, &domain.Person{ID: "p", SourcedID: "stu", GivenName: "A", FamilyName: "B", Status: domain.StatusActive}))
 	create(catalog.Organizations.Create(ctx, &domain.Organization{ID: "o", SourcedID: "uni", Name: "U"}))
 	create(catalog.AcademicSessions.Create(ctx, &domain.AcademicSession{ID: "s", SourcedID: "ht26", Title: "S"}))
 	create(catalog.Programs.Create(ctx, &domain.Program{ID: "g1", SourcedID: "BSc", Title: "BSc"}))
@@ -365,7 +338,7 @@ func TestUnknownRefTypeIsAnError(t *testing.T) {
 func TestCheckRefsRequiresCanonicalIDs(t *testing.T) {
 	ctx := t.Context()
 	catalog := newFixture(t).catalog
-	_, err := catalog.Persons.CreatePerson(ctx, domain.Person{ID: "p-id", SourcedID: "student-1", GivenName: "A", FamilyName: "B", Status: domain.StatusActive})
+	_, err := catalog.Persons.Create(ctx, &domain.Person{ID: "p-id", SourcedID: "student-1", GivenName: "A", FamilyName: "B", Status: domain.StatusActive})
 	require.NoError(t, err)
 	_, err = catalog.Courses.Create(ctx, &domain.Course{ID: "c-id", SourcedID: "DA101", Title: "C"})
 	require.NoError(t, err)

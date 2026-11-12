@@ -24,7 +24,7 @@ func TestEduAPINestedRoutes(t *testing.T) {
 	ctx := t.Context()
 	log := logger.NewWithWriter("test", false, "error", io.Discard)
 	catalog := &readmodel.Client{
-		Persons:          service.New(memory.NewPersonRepository(), nil, nil, log),
+		Persons:          service.NewResource(memory.NewDocRepo[domain.Person](), nil, nil, log),
 		AcademicSessions: service.NewResource(memory.NewDocRepo[domain.AcademicSession](), nil, nil, log),
 		Courses:          service.NewResource(memory.NewDocRepo[domain.Course](), nil, nil, log),
 		Offerings:        service.NewResource(memory.NewDocRepo[domain.Offering](), nil, nil, log),
@@ -35,7 +35,7 @@ func TestEduAPINestedRoutes(t *testing.T) {
 		require.NoError(t, err)
 	}
 	person := func(id string, roles ...domain.Role) {
-		must(catalog.Persons.CreatePerson(ctx, domain.Person{ID: "p-" + id, SourcedID: id, GivenName: id, FamilyName: id, Roles: roles, Status: domain.StatusActive}))
+		must(catalog.Persons.Create(ctx, &domain.Person{ID: "p-" + id, SourcedID: id, GivenName: id, FamilyName: id, Roles: roles, Status: domain.StatusActive}))
 	}
 	person("ann", domain.RoleStudent)
 	person("bob", domain.RoleStudent)

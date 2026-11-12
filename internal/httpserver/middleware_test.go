@@ -202,7 +202,7 @@ func TestRequestTimeoutStopsSlowBody(t *testing.T) {
 			assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode, string(answer))
 			assert.Less(t, time.Since(began), 2*time.Second, "must not wait for read_timeout")
 
-			page, err := catalog.Persons.ListPersons(t.Context(), port.ListParams{})
+			page, err := catalog.Persons.List(t.Context(), port.ListParams{})
 			require.NoError(t, err)
 			assert.Zero(t, page.Total, "no person may be stored after the deadline")
 		})

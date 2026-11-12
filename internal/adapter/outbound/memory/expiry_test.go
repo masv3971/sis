@@ -60,9 +60,9 @@ func TestDocRepoExpiry(t *testing.T) {
 func TestPersonRepoExpiry(t *testing.T) {
 	ctx := t.Context()
 	clk := &clock{t: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
-	repo := NewPersonRepository().WithClock(clk.now)
-	require.NoError(t, repo.Create(ctx, domain.Person{ID: "1", SourcedID: "a", ExpiresAt: new(clk.t.Add(time.Hour))}))
-	require.NoError(t, repo.Create(ctx, domain.Person{ID: "2", SourcedID: "b"}))
+	repo := NewDocRepo[domain.Person]().WithClock(clk.now)
+	require.NoError(t, repo.Create(ctx, &domain.Person{ID: "1", SourcedID: "a", ExpiresAt: new(clk.t.Add(time.Hour))}))
+	require.NoError(t, repo.Create(ctx, &domain.Person{ID: "2", SourcedID: "b"}))
 
 	clk.t = clk.t.Add(2 * time.Hour)
 	_, err := repo.Get(ctx, "1")
@@ -73,7 +73,7 @@ func TestPersonRepoExpiry(t *testing.T) {
 	assert.Len(t, persons, 1, "GetByIDs must skip expired")
 	page, _ := repo.List(ctx, port.ListParams{})
 	assert.Equal(t, 1, page.Total, "List must skip expired")
-	require.NoError(t, repo.Create(ctx, domain.Person{ID: "3", SourcedID: "a"}))
+	require.NoError(t, repo.Create(ctx, &domain.Person{ID: "3", SourcedID: "a"}))
 	got, err := repo.GetBySourcedID(ctx, "a")
 	require.NoError(t, err, "replacement")
 	assert.Equal(t, "3", got.ID, "replacement")
@@ -122,13 +122,13 @@ func TestUpdateIsConditionalOnExpiry(t *testing.T) {
 	assert.Nil(t, gotDoc.ExpiresAt, "doc: stale update was applied")
 	require.NoError(t, docs.Update(ctx, &domain.Course{ID: "1", SourcedID: "a", Title: "B"}, nil))
 
-	persons := NewPersonRepository().WithClock(clk.now)
-	require.NoError(t, persons.Create(ctx, domain.Person{ID: "1", SourcedID: "a", ExpiresAt: &exp}))
-	assert.ErrorIs(t, persons.Update(ctx, domain.Person{ID: "1", SourcedID: "a", GivenName: "B"}, nil), domain.ErrStale, "person")
+	persons := NewDocRepo[domain.Person]().WithClock(clk.now)
+	require.NoError(t, persons.Create(ctx, &domain.Person{ID: "1", SourcedID: "a", ExpiresAt: &exp}))
+	assert.ErrorIs(t, persons.Update(ctx, &domain.Person{ID: "1", SourcedID: "a", GivenName: "B"}, nil), domain.ErrStale, "person")
 	gotPerson, _ := persons.Get(ctx, "1")
 	assert.Empty(t, gotPerson.GivenName, "person: stale update was applied")
 	assert.NotNil(t, gotPerson.ExpiresAt, "person: stale update was applied")
-	require.NoError(t, persons.Update(ctx, domain.Person{ID: "1", SourcedID: "a", GivenName: "B"}, new(exp)))
+	require.NoError(t, persons.Update(ctx, &domain.Person{ID: "1", SourcedID: "a", GivenName: "B"}, new(exp)))
 }
 
 func assertGone(ctx context.Context, t *testing.T, repo *DocRepo[domain.Course, *domain.Course], id, sid string) {

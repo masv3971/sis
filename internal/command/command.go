@@ -42,17 +42,6 @@ func New(ctx context.Context, cfg *model.Cfg, catalog *readmodel.Client, log *lo
 	return &Client{catalog: catalog, converter: converter, now: time.Now, log: log.New("command")}, nil
 }
 
-// CreatePerson creates person.
-func (c *Client) CreatePerson(ctx context.Context, person domain.Person) (domain.Person, error) {
-	return c.catalog.Persons.CreatePerson(ctx, person)
-}
-
-// UpdatePerson replaces the person id with person; id wins over person.ID.
-func (c *Client) UpdatePerson(ctx context.Context, id string, person domain.Person) (domain.Person, error) {
-	person.ID = id
-	return c.catalog.Persons.UpdatePerson(ctx, person)
-}
-
 // DeletePerson deletes the person id together with their enrollments and
 // results, which mean nothing without the person.
 //
@@ -64,7 +53,7 @@ func (c *Client) UpdatePerson(ctx context.Context, id string, person domain.Pers
 func (c *Client) DeletePerson(ctx context.Context, id string) (err error) {
 	ctx, end := trace.Start(ctx, "command person.delete")
 	defer func() { end(err) }()
-	if _, err := c.catalog.Persons.GetPerson(ctx, id); err != nil {
+	if _, err := c.catalog.Persons.Get(ctx, id); err != nil {
 		return err
 	}
 	if err := deleteByPerson(ctx, c.catalog.Enrollments, id); err != nil {
@@ -73,7 +62,7 @@ func (c *Client) DeletePerson(ctx context.Context, id string) (err error) {
 	if err := deleteByPerson(ctx, c.catalog.Results, id); err != nil {
 		return fmt.Errorf("delete results of person %s: %w", id, err)
 	}
-	return c.catalog.Persons.DeletePerson(ctx, id)
+	return c.catalog.Persons.Delete(ctx, id)
 }
 
 // cascadeBatch is how many dependants DeletePerson reads per round.

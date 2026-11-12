@@ -23,7 +23,7 @@ const fakeStudents = "../../testdata/fake_students.json"
 func newCatalog() *readmodel.Client {
 	log := logger.NewWithWriter("test", false, "error", io.Discard)
 	return &readmodel.Client{
-		Persons:          service.New(memory.NewPersonRepository(), nil, nil, log),
+		Persons:          service.NewResource(memory.NewDocRepo[domain.Person](), nil, nil, log),
 		Organizations:    service.NewResource(memory.NewDocRepo[domain.Organization](), nil, nil, log),
 		AcademicSessions: service.NewResource(memory.NewDocRepo[domain.AcademicSession](), nil, nil, log),
 		Courses:          service.NewResource(memory.NewDocRepo[domain.Course](), nil, nil, log),
@@ -51,10 +51,10 @@ func TestFakeStudentsImport(t *testing.T) {
 	// 10 persons, 9 enrollments, 8 results.
 	require.Equal(t, 45, count, "records")
 
-	persons, err := catalog.Persons.ListPersons(ctx, port.ListParams{})
+	persons, err := catalog.Persons.List(ctx, port.ListParams{})
 	require.NoError(t, err)
 	require.Equal(t, 10, persons.Total, "persons")
-	anna, err := catalog.Persons.GetPersonBySourcedID(ctx, "liu:anna.andersson")
+	anna, err := catalog.Persons.GetBySourcedID(ctx, "liu:anna.andersson")
 	require.NoError(t, err)
 	require.NotEmpty(t, anna.ID, "anna id")
 	require.NotEqual(t, anna.SourcedID, anna.ID, "anna id must differ from sourcedId")
@@ -80,9 +80,9 @@ func TestFakeStudentsImport(t *testing.T) {
 	// Importing again converges on the same records.
 	_, err = Import(ctx, catalog, fakeStudents)
 	require.NoError(t, err, "second Import")
-	again, _ := catalog.Persons.GetPersonBySourcedID(ctx, "liu:anna.andersson")
+	again, _ := catalog.Persons.GetBySourcedID(ctx, "liu:anna.andersson")
 	assert.Equal(t, anna.ID, again.ID, "id changed on re-import")
-	persons, _ = catalog.Persons.ListPersons(ctx, port.ListParams{})
+	persons, _ = catalog.Persons.List(ctx, port.ListParams{})
 	assert.Equal(t, 10, persons.Total, "persons after re-import")
 }
 
@@ -166,7 +166,7 @@ func TestImportStoresNothingOnBadReference(t *testing.T) {
 	catalog := newCatalog()
 	_, err := Import(ctx, catalog, path)
 	require.ErrorContains(t, err, "nowhere", "expected an unknown-reference error")
-	page, _ := catalog.Persons.ListPersons(ctx, port.ListParams{})
+	page, _ := catalog.Persons.List(ctx, port.ListParams{})
 	assert.Zero(t, page.Total, "stored persons from a rejected file")
 }
 
@@ -178,7 +178,7 @@ func TestImportStopsOnCancel(t *testing.T) {
 	cancel()
 	_, err := Import(ctx, catalog, fakeStudents)
 	require.ErrorIs(t, err, context.Canceled)
-	page, err := catalog.Persons.ListPersons(t.Context(), port.ListParams{})
+	page, err := catalog.Persons.List(t.Context(), port.ListParams{})
 	require.NoError(t, err)
 	assert.Zero(t, page.Total, "stored persons after cancel")
 }

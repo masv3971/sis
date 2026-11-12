@@ -23,9 +23,9 @@ func (failingPublisher) Publish(context.Context, domain.Event) error {
 func TestPublishFailureIsLogged(t *testing.T) {
 	var buf bytes.Buffer
 	log := logger.NewWithWriter("sis", false, "info", &buf)
-	svc := service.New(memory.NewPersonRepository(), failingPublisher{}, nil, log)
+	svc := service.NewResource(memory.NewDocRepo[domain.Person](), failingPublisher{}, nil, log)
 
-	person, err := svc.CreatePerson(t.Context(), domain.Person{
+	person, err := svc.Create(t.Context(), &domain.Person{
 		GivenName: "Ada", FamilyName: "Lovelace", Status: domain.StatusActive,
 	})
 	require.NoError(t, err, "committed write must still succeed")

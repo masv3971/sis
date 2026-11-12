@@ -35,32 +35,6 @@ type idBody struct {
 // /api/v1 request bodies; update carries its id in the body.
 func newCommandTable(commands *command.Client, catalog *readmodel.Client) map[string]handlerFunc {
 	table := map[string]handlerFunc{
-		"person.create": func(ctx context.Context, body []byte) error {
-			var person domain.Person
-			if err := helpers.DecodeJSON(body, &person); err != nil {
-				return err
-			}
-			_, err := commands.CreatePerson(ctx, person)
-			return err
-		},
-		"person.update": func(ctx context.Context, body []byte) error {
-			var person domain.Person
-			if err := helpers.DecodeJSON(body, &person); err != nil {
-				return err
-			}
-			if person.ID == "" {
-				return errIDRequired
-			}
-			_, err := commands.UpdatePerson(ctx, person.ID, person)
-			return err
-		},
-		"person.delete": func(ctx context.Context, body []byte) error {
-			var target idBody
-			if err := helpers.DecodeJSON(body, &target); err != nil {
-				return err
-			}
-			return commands.DeletePerson(ctx, target.ID)
-		},
 		"populate": func(ctx context.Context, body []byte) error {
 			var req command.PopulateRequest
 			if err := helpers.DecodeJSON(body, &req); err != nil {
@@ -69,6 +43,16 @@ func newCommandTable(commands *command.Client, catalog *readmodel.Client) map[st
 			_, err := commands.Populate(ctx, req)
 			return err
 		},
+	}
+	register(table, commands, catalog.Persons)
+	// A person delete cascades to their enrollments and results, so it does
+	// not go through the generic delete.
+	table["person.delete"] = func(ctx context.Context, body []byte) error {
+		var target idBody
+		if err := helpers.DecodeJSON(body, &target); err != nil {
+			return err
+		}
+		return commands.DeletePerson(ctx, target.ID)
 	}
 	register(table, commands, catalog.Organizations)
 	register(table, commands, catalog.AcademicSessions)

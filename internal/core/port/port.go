@@ -7,7 +7,6 @@ import (
 	"context"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/SUNET/sis/internal/core/domain"
 )
@@ -32,6 +31,20 @@ type ListParams struct {
 	Desc bool
 	// Filter keeps only the records it matches; nil keeps all of them.
 	Filter *Filter
+	// Search keeps only the records matching every term: a term matches
+	// when it occurs, ignoring case, in one of the searched properties of
+	// the type (domain.QuerySpec). A type without a QuerySpec rejects it.
+	Search []string
+	// AnyOf keeps only the records matching it; nil keeps all of them.
+	AnyOf *AnyOf
+}
+
+// AnyOf matches the records whose array property Field holds at least one of
+// Values. Field is a stored key chosen by the inbound adapter, never request
+// input; only arrays of strings can be matched.
+type AnyOf struct {
+	Field  string
+	Values []string
 }
 
 // FilterOp is how a FilterTerm compares a stored value with its Value.
@@ -112,34 +125,6 @@ func (t FilterTerm) match(get func(field string) (string, bool)) bool {
 type Page[T any] struct {
 	Items []T
 	Total int
-}
-
-// PersonRepository is the persistence port for Person aggregates. Expired
-// persons behave as described on Repository.
-type PersonRepository interface {
-	Create(ctx context.Context, p domain.Person) error
-	// Update is conditional on the stored expiry, as Repository.Update.
-	Update(ctx context.Context, p domain.Person, prevExpiresAt *time.Time) error
-	Get(ctx context.Context, id string) (domain.Person, error)
-	// GetByIDs returns the persons whose id is in ids, in no particular
-	// order. Ids that match nothing are skipped, not an error.
-	GetByIDs(ctx context.Context, ids []string) ([]domain.Person, error)
-	GetBySourcedID(ctx context.Context, sourcedID string) (domain.Person, error)
-	// GetBySourcedIDs is GetByIDs by sourcedId.
-	GetBySourcedIDs(ctx context.Context, sourcedIDs []string) ([]domain.Person, error)
-	List(ctx context.Context, params ListParams) (Page[domain.Person], error)
-	// Search is List restricted to the persons matching every term: a term
-	// matches when it occurs, case-insensitively, in the given, middle or
-	// family name, the id, the sourcedId, or the value of any identifier or
-	// email. terms must not be empty.
-	Search(ctx context.Context, terms []string, params ListParams) (Page[domain.Person], error)
-	// ListByRoles is List restricted to the persons holding at least one of
-	// roles. The order is List's.
-	ListByRoles(ctx context.Context, roles []domain.Role, params ListParams) (Page[domain.Person], error)
-	Delete(ctx context.Context, id string) error
-	// DeleteExpired removes every person expired at now and returns their
-	// ids, in no particular order.
-	DeleteExpired(ctx context.Context, now time.Time) ([]string, error)
 }
 
 // EventPublisher is the port for emitting domain events to the outside world.

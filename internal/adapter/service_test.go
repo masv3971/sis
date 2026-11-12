@@ -32,7 +32,7 @@ func TestNewMemorySmoke(t *testing.T) {
 	require.NoError(t, err, "New")
 	require.Nil(t, svc.outbound.pg, "empty connection_string must select the memory store")
 
-	page, err := svc.inbound.readmodel.Persons.ListPersons(ctx, port.ListParams{Limit: 1})
+	page, err := svc.inbound.readmodel.Persons.List(ctx, port.ListParams{Limit: 1})
 	require.NoError(t, err, "imported persons")
 	require.NotZero(t, page.Total, "want the file import in the catalog")
 

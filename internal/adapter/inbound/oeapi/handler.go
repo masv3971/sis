@@ -46,7 +46,7 @@ func (c *Client) ListPersons(gc *gin.Context) {
 		helpers.WriteError(gc, err)
 		return
 	}
-	page, err := c.catalog.Persons.ListPersons(gc.Request.Context(), params)
+	page, err := c.catalog.Persons.List(gc.Request.Context(), params)
 	if err != nil {
 		helpers.WriteError(gc, err)
 		return
@@ -60,7 +60,7 @@ func (c *Client) ListPersons(gc *gin.Context) {
 
 // GetPerson publishes a single person by sourcedId in OEAPI shape.
 func (c *Client) GetPerson(gc *gin.Context) {
-	person, err := c.catalog.Persons.GetPersonBySourcedID(gc.Request.Context(), gc.Param("id"))
+	person, err := c.catalog.Persons.GetBySourcedID(gc.Request.Context(), gc.Param("id"))
 	if err != nil {
 		helpers.WriteError(gc, err)
 		return

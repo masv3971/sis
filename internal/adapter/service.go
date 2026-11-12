@@ -26,7 +26,6 @@ import (
 	"github.com/SUNET/sis/internal/auth"
 	"github.com/SUNET/sis/internal/command"
 	"github.com/SUNET/sis/internal/core/domain"
-	"github.com/SUNET/sis/internal/core/port"
 	"github.com/SUNET/sis/internal/core/service"
 	"github.com/SUNET/sis/internal/fileimport"
 	"github.com/SUNET/sis/internal/httpserver"
@@ -37,11 +36,10 @@ import (
 
 // Outbound bundles the driven adapters: everything the application calls out
 // to. pg is the lifecycle handle for the pgx pool (nil when the in-memory
-// store is in use); store is the port.Store built from the chosen backend;
-// events is the domain-event publisher (log-only today, NATS later).
+// store is in use); events is the domain-event publisher (log-only today,
+// NATS later).
 type Outbound struct {
 	pg     *postgres.Service
-	store  *port.Store
 	events *events.Client
 }
 
@@ -92,12 +90,10 @@ func New(ctx context.Context, cfg *model.Cfg, log *logger.Log) (svc *Service, er
 		}
 	}()
 
-	// Outbound persistence. selectStore builds the port.Store that
-	// downstream consumers use; pg is the raw lifecycle handle owned by
-	// this Service and nil when the in-memory store is in use. docRepo
-	// routes through the same handle to pick postgres vs memory per
-	// entity type.
-	if s.outbound.store, s.outbound.pg, err = selectStore(ctx, cfg, log); err != nil {
+	// Outbound persistence. pg is the raw lifecycle handle owned by this
+	// Service and nil when the in-memory store is in use. docRepo routes
+	// through the same handle to pick postgres vs memory per entity type.
+	if s.outbound.pg, err = selectStore(ctx, cfg, log); err != nil {
 		return nil, err
 	}
 
@@ -110,9 +106,9 @@ func New(ctx context.Context, cfg *model.Cfg, log *logger.Log) (svc *Service, er
 	// used by both /api/v1 and the standards (OEAPI/Edu-API) providers.
 	// Built inline here because the generic doc-repo helper must stay in
 	// this package (see docrepo.go); readmodel is now a pure bundle type.
-	store, pg, events := s.outbound.store, s.outbound.pg, s.outbound.events
+	pg, events := s.outbound.pg, s.outbound.events
 	s.inbound.readmodel = &readmodel.Client{
-		Persons:          service.New(store.Persons, events, nil, log),
+		Persons:          service.NewResource(docRepo[domain.Person](pg), events, nil, log),
 		Organizations:    service.NewResource(docRepo[domain.Organization](pg), events, nil, log),
 		AcademicSessions: service.NewResource(docRepo[domain.AcademicSession](pg), events, nil, log),
 		Courses:          service.NewResource(docRepo[domain.Course](pg), events, nil, log),

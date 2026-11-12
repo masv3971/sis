@@ -17,8 +17,8 @@ func TestPersonDateOfBirth(t *testing.T) {
 		"14/03/2001", "2001-3-14", "20010314", "2001-03-14T00:00:00Z",
 		"2001-02-29", "2001-13-01", "2001-04-31", " 2001-03-14", "yesterday",
 	}
-	person := func(dob string) domain.Person {
-		return domain.Person{GivenName: "Ada", FamilyName: "Lovelace", Status: domain.StatusActive, DateOfBirth: dob}
+	person := func(dob string) *domain.Person {
+		return &domain.Person{GivenName: "Ada", FamilyName: "Lovelace", Status: domain.StatusActive, DateOfBirth: dob}
 	}
 	for _, dob := range valid {
 		assert.NoError(t, person(dob).Validate(), "%q", dob)

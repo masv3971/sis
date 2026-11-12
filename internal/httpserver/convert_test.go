@@ -28,7 +28,7 @@ func (clock *skewClock) now() time.Time { return time.Now().Add(time.Duration(cl
 
 func memCatalog(clock func() time.Time, log *logger.Log) *readmodel.Client {
 	return &readmodel.Client{
-		Persons:          service.New(memory.NewPersonRepository().WithClock(clock), nil, clock, log),
+		Persons:          service.NewResource(memory.NewDocRepo[domain.Person]().WithClock(clock), nil, clock, log),
 		Organizations:    service.NewResource(memory.NewDocRepo[domain.Organization]().WithClock(clock), nil, clock, log),
 		AcademicSessions: service.NewResource(memory.NewDocRepo[domain.AcademicSession]().WithClock(clock), nil, clock, log),
 		Courses:          service.NewResource(memory.NewDocRepo[domain.Course]().WithClock(clock), nil, clock, log),

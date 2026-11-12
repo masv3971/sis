@@ -25,7 +25,7 @@ func TestPersonCentricAPI(t *testing.T) {
 	ctx := t.Context()
 	log := logger.NewWithWriter("test", false, "error", io.Discard)
 	catalog := &readmodel.Client{
-		Persons:     service.New(memory.NewPersonRepository(), nil, nil, log),
+		Persons:     service.NewResource(memory.NewDocRepo[domain.Person](), nil, nil, log),
 		Courses:     service.NewResource(memory.NewDocRepo[domain.Course](), nil, nil, log),
 		Offerings:   service.NewResource(memory.NewDocRepo[domain.Offering](), nil, nil, log),
 		Enrollments: service.NewResource(memory.NewDocRepo[domain.Enrollment](), nil, nil, log),
@@ -36,9 +36,9 @@ func TestPersonCentricAPI(t *testing.T) {
 		t.Helper()
 		require.NoError(t, err)
 	}
-	must(catalog.Persons.CreatePerson(ctx, domain.Person{ID: "anna", SourcedID: "liu-1", GivenName: "Anna", FamilyName: "Andersson", Status: domain.StatusActive,
+	must(catalog.Persons.Create(ctx, &domain.Person{ID: "anna", SourcedID: "liu-1", GivenName: "Anna", FamilyName: "Andersson", Status: domain.StatusActive,
 		Identifiers: []domain.Identifier{{Type: "studentNumber", Value: "S-0001"}}}))
-	must(catalog.Persons.CreatePerson(ctx, domain.Person{ID: "johan", SourcedID: "liu-2", GivenName: "Johan", FamilyName: "Berg", Status: domain.StatusActive}))
+	must(catalog.Persons.Create(ctx, &domain.Person{ID: "johan", SourcedID: "liu-2", GivenName: "Johan", FamilyName: "Berg", Status: domain.StatusActive}))
 	must(catalog.Courses.Create(ctx, &domain.Course{ID: "c", Title: "C"}))
 	must(catalog.Offerings.Create(ctx, &domain.Offering{ID: "o", CourseID: "c"}))
 	must(catalog.Enrollments.Create(ctx, &domain.Enrollment{Base: domain.Base{ID: "e-anna"}, PersonID: "anna", OfferingID: "o"}))

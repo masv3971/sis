@@ -24,7 +24,7 @@ func TestProvidersPublishReferencesAsSourcedIDs(t *testing.T) {
 	ctx := t.Context()
 	log := logger.NewWithWriter("test", false, "error", io.Discard)
 	catalog := &readmodel.Client{
-		Persons:          service.New(memory.NewPersonRepository(), nil, nil, log),
+		Persons:          service.NewResource(memory.NewDocRepo[domain.Person](), nil, nil, log),
 		Organizations:    service.NewResource(memory.NewDocRepo[domain.Organization](), nil, nil, log),
 		AcademicSessions: service.NewResource(memory.NewDocRepo[domain.AcademicSession](), nil, nil, log),
 		Courses:          service.NewResource(memory.NewDocRepo[domain.Course](), nil, nil, log),
@@ -36,7 +36,7 @@ func TestProvidersPublishReferencesAsSourcedIDs(t *testing.T) {
 		t.Helper()
 		require.NoError(t, err)
 	}
-	must(catalog.Persons.CreatePerson(ctx, domain.Person{ID: "p-internal", SourcedID: "p-external", GivenName: "A", FamilyName: "B", Status: domain.StatusActive}))
+	must(catalog.Persons.Create(ctx, &domain.Person{ID: "p-internal", SourcedID: "p-external", GivenName: "A", FamilyName: "B", Status: domain.StatusActive}))
 	must(catalog.Organizations.Create(ctx, &domain.Organization{ID: "o-root", SourcedID: "uni", Name: "U"}))
 	must(catalog.Organizations.Create(ctx, &domain.Organization{ID: "o-dept", SourcedID: "dept", Name: "D", ParentID: "o-root"}))
 	must(catalog.AcademicSessions.Create(ctx, &domain.AcademicSession{ID: "s-internal", SourcedID: "ht26", Title: "HT26"}))
@@ -151,11 +151,11 @@ func TestProvidersPublishReferencesAsSourcedIDs(t *testing.T) {
 			t.Helper()
 			require.NoError(t, err)
 		}
-		must(catalog.Persons.CreatePerson(ctx, domain.Person{ID: "p-gone", SourcedID: "p-gone", GivenName: "A", FamilyName: "B", Status: domain.StatusActive}))
+		must(catalog.Persons.Create(ctx, &domain.Person{ID: "p-gone", SourcedID: "p-gone", GivenName: "A", FamilyName: "B", Status: domain.StatusActive}))
 		must(catalog.Offerings.Create(ctx, &domain.Offering{ID: "f-gone", SourcedID: "f-gone", CourseID: "c-internal"}))
 		must(catalog.Enrollments.Create(ctx, &domain.Enrollment{ID: "e-person", SourcedID: "enr-person-gone", PersonID: "p-gone", OfferingID: "f-internal"}))
 		must(catalog.Enrollments.Create(ctx, &domain.Enrollment{ID: "e-offering", SourcedID: "enr-offering-gone", PersonID: "p-internal", OfferingID: "f-gone"}))
-		require.NoError(t, catalog.Persons.DeletePerson(ctx, "p-gone"))
+		require.NoError(t, catalog.Persons.Delete(ctx, "p-gone"))
 		require.NoError(t, catalog.Offerings.Delete(ctx, "f-gone"))
 
 		status := func(t *testing.T, path string) int {

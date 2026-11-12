@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -29,11 +30,19 @@ type DocRepo[T any, PT domain.EntityPtr[T]] struct {
 	byID        map[string]doc
 	sourcedToID map[string]string
 	now         func() time.Time
+	// spec serves ListParams.Search and the default order; queryable is
+	// false for types without a domain.QuerySpec, which reject a search.
+	spec      domain.QuerySpec
+	queryable bool
 }
 
 // NewDocRepo returns an empty in-memory doc repository.
 func NewDocRepo[T any, PT domain.EntityPtr[T]]() *DocRepo[T, PT] {
-	return &DocRepo[T, PT]{byID: map[string]doc{}, sourcedToID: map[string]string{}, now: time.Now}
+	r := &DocRepo[T, PT]{byID: map[string]doc{}, sourcedToID: map[string]string{}, now: time.Now}
+	if q, ok := any(PT(new(T))).(domain.Queryable); ok {
+		r.spec, r.queryable = q.QuerySpec(), true
+	}
+	return r
 }
 
 // WithClock replaces the clock the expiry filter reads (tests only) and
@@ -224,7 +233,8 @@ func (r *DocRepo[T, PT]) GetBySourcedIDs(_ context.Context, sourcedIDs []string)
 	return items, nil
 }
 
-// List returns a page of live entities ordered by sourcedId.
+// List returns a page of live entities in the type's default order (its
+// QuerySpec, then sourcedId).
 func (r *DocRepo[T, PT]) List(_ context.Context, params port.ListParams) (port.Page[PT], error) {
 	return r.list(nil, params)
 }
@@ -258,11 +268,14 @@ func stringProp(fields map[string]json.RawMessage, field string) (value string, 
 	return value, true
 }
 
-// checkListKeys rejects a sort or filter key that is not shaped like a stored
-// key, as the Postgres repositories do before splicing it into SQL.
+// checkListKeys rejects a sort, filter or any-of key that is not shaped like
+// a stored key, as the Postgres repositories do before splicing it into SQL.
 func checkListKeys(params port.ListParams) error {
 	if params.Sort != "" && !port.ValidKey(params.Sort) {
 		return fmt.Errorf("memory: invalid sort key %q", params.Sort)
+	}
+	if params.AnyOf != nil && !port.ValidKey(params.AnyOf.Field) {
+		return fmt.Errorf("memory: invalid key %q", params.AnyOf.Field)
 	}
 	if params.Filter != nil {
 		for _, term := range params.Filter.Terms {
@@ -287,24 +300,92 @@ func (r *DocRepo[T, PT]) ListByRefs(_ context.Context, field string, ids []strin
 	return page.Items, err
 }
 
-// listed is one live entity with the value it sorts by.
+// listed is one live entity with the value it sorts by and its values for
+// the type's default order.
 type listed[PT any] struct {
 	e       PT
 	sortVal string
 	hasSort bool
+	defVals []string
+	defHas  []bool
+}
+
+// searchMatches reports whether every lower-case term occurs in one of the
+// searched properties of spec in fields.
+func searchMatches(spec domain.QuerySpec, fields map[string]json.RawMessage, terms []string) bool {
+	var haystack []string
+	for _, key := range spec.SearchFields {
+		if value, ok := stringProp(fields, key); ok {
+			haystack = append(haystack, strings.ToLower(value))
+		}
+	}
+	for _, key := range spec.SearchValueArrays {
+		var objects []map[string]json.RawMessage
+		if json.Unmarshal(fields[key], &objects) != nil {
+			continue
+		}
+		for _, object := range objects {
+			if value, ok := stringProp(object, "value"); ok {
+				haystack = append(haystack, strings.ToLower(value))
+			}
+		}
+	}
+	for _, term := range terms {
+		found := false
+		for _, text := range haystack {
+			if strings.Contains(text, term) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
+// holdsAny reports whether the array property of fields named by a holds a
+// string equal to one of a.Values; other elements are ignored.
+func holdsAny(fields map[string]json.RawMessage, a *port.AnyOf) bool {
+	var elements []json.RawMessage
+	if json.Unmarshal(fields[a.Field], &elements) != nil {
+		return false
+	}
+	for _, element := range elements {
+		var value string
+		if json.Unmarshal(element, &value) != nil {
+			continue
+		}
+		for _, want := range a.Values {
+			if value == want {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // list returns the page of live entities whose stored JSON keep accepts
-// (all of them when keep is nil) and params.Filter matches, ordered by
-// params.Sort, then by sourcedId.
+// (all of them when keep is nil) and params.Filter, params.Search and
+// params.AnyOf match, ordered by params.Sort, then by the type's default
+// order, then by sourcedId.
 func (r *DocRepo[T, PT]) list(keep func(data []byte) (bool, error), params port.ListParams) (port.Page[PT], error) {
 	if err := checkListKeys(params); err != nil {
 		return port.Page[PT]{}, err
 	}
+	if len(params.Search) > 0 && !r.queryable {
+		return port.Page[PT]{}, fmt.Errorf("memory: %s is not searchable", PT(new(T)).EntityType())
+	}
+	terms := make([]string, len(params.Search))
+	for i, term := range params.Search {
+		terms[i] = strings.ToLower(term)
+	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	now := r.now()
-	needFields := params.Sort != "" || (params.Filter != nil && len(params.Filter.Terms) > 0)
+	needFields := params.Sort != "" || (params.Filter != nil && len(params.Filter.Terms) > 0) ||
+		len(terms) > 0 || params.AnyOf != nil || len(r.spec.DefaultOrder) > 0
 	items := make([]listed[PT], 0, len(r.byID))
 	for _, stored := range r.byID {
 		if domain.Expired(stored.expiresAt, now) {
@@ -328,8 +409,19 @@ func (r *DocRepo[T, PT]) list(keep func(data []byte) (bool, error), params port.
 			if !params.Filter.Match(func(field string) (string, bool) { return stringProp(fields, field) }) {
 				continue
 			}
+			if len(terms) > 0 && !searchMatches(r.spec, fields, terms) {
+				continue
+			}
+			if params.AnyOf != nil && !holdsAny(fields, params.AnyOf) {
+				continue
+			}
 			if params.Sort != "" {
 				entry.sortVal, entry.hasSort = stringProp(fields, params.Sort)
+			}
+			entry.defVals = make([]string, len(r.spec.DefaultOrder))
+			entry.defHas = make([]bool, len(r.spec.DefaultOrder))
+			for i, key := range r.spec.DefaultOrder {
+				entry.defVals[i], entry.defHas[i] = stringProp(fields, key)
 			}
 		}
 		e, err := unmarshalDoc[T, PT](stored.data)
@@ -352,6 +444,14 @@ func (r *DocRepo[T, PT]) list(keep func(data []byte) (bool, error), params port.
 				return a.sortVal < b.sortVal
 			}
 		}
+		for k := range a.defVals {
+			if a.defHas[k] != b.defHas[k] {
+				return a.defHas[k]
+			}
+			if a.defVals[k] != b.defVals[k] {
+				return a.defVals[k] < b.defVals[k]
+			}
+		}
 		return a.e.GetSourcedID() < b.e.GetSourcedID()
 	})
 
@@ -361,6 +461,19 @@ func (r *DocRepo[T, PT]) list(keep func(data []byte) (bool, error), params port.
 		page = append(page, entry.e)
 	}
 	return port.Page[PT]{Items: page, Total: len(items)}, nil
+}
+
+// pageBounds returns the [lo:hi) slice bounds for a page of a total-length
+// result. It never adds offset and limit together, so attacker-chosen values
+// near MaxInt cannot overflow into a negative bound. A non-positive limit
+// means "no limit" (the inbound adapters are responsible for capping it).
+func pageBounds(total, offset, limit int) (lo, hi int) {
+	lo = min(max(offset, 0), total)
+	hi = total
+	if limit > 0 && limit < total-lo {
+		hi = lo + limit
+	}
+	return lo, hi
 }
 
 // Delete removes a live entity by id.
