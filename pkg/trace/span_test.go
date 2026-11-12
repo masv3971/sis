@@ -13,6 +13,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	oteltrace "go.opentelemetry.io/otel/trace"
 
 	"github.com/SUNET/sis/internal/core/domain"
 	"github.com/SUNET/sis/pkg/trace"
@@ -50,6 +51,22 @@ func TestStartMarksOnlyServerFailuresAsErrors(t *testing.T) {
 			assert.Equal(t, tc.want, ended[0].Status().Code)
 		})
 	}
+}
+
+func TestWithoutSpanStartsNewTraces(t *testing.T) {
+	spans := recordSpans(t)
+	ctx, endStartup := trace.Start(t.Context(), "startup")
+	clean := trace.WithoutSpan(ctx)
+	assert.False(t, oteltrace.SpanContextFromContext(clean).IsValid(), "the span context is gone")
+
+	_, end := trace.Start(clean, "request")
+	end(nil)
+	endStartup(nil)
+
+	ended := spans.Ended()
+	require.Len(t, ended, 2)
+	assert.False(t, ended[0].Parent().IsValid(), "a root span")
+	assert.NotEqual(t, ended[1].SpanContext().TraceID(), ended[0].SpanContext().TraceID(), "its own trace")
 }
 
 func TestStartNestsUnderParent(t *testing.T) {

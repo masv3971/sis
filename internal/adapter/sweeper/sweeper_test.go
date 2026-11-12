@@ -19,6 +19,7 @@ import (
 	"github.com/SUNET/sis/internal/readmodel"
 	"github.com/SUNET/sis/pkg/logger"
 	"github.com/SUNET/sis/pkg/model"
+	"github.com/SUNET/sis/pkg/trace"
 )
 
 // newCatalog is an in-memory catalog on a shared test clock.
@@ -144,6 +145,39 @@ func TestSweepRunsUnderRootSpan(t *testing.T) {
 	require.Len(t, ended, 1, "spans")
 	assert.Equal(t, "sweeper sweep", ended[0].Name())
 	assert.False(t, ended[0].Parent().IsValid(), "a root span")
+}
+
+// TestSweepDoesNotInheritTheStartupSpan: New is given the startup span's
+// context, and the loop outlives it. A pass must not hang under that span.
+func TestSweepDoesNotInheritTheStartupSpan(t *testing.T) {
+	spans := tracetest.NewSpanRecorder()
+	previous := otel.GetTracerProvider()
+	otel.SetTracerProvider(sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spans)))
+	t.Cleanup(func() { otel.SetTracerProvider(previous) })
+
+	startupCtx, endStartup := trace.Start(t.Context(), "startup")
+	defer endStartup(nil)
+
+	cfg := &model.Cfg{}
+	cfg.SIS.Adapter.Sweeper.Interval = 10 * time.Millisecond
+	log := logger.NewWithWriter("test", false, "error", io.Discard)
+	s, err := New(startupCtx, cfg, newCatalog(time.Now, log), log)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close(context.Background()) })
+
+	require.Eventually(t, func() bool {
+		for _, span := range spans.Ended() {
+			if span.Name() == "sweeper sweep" {
+				return true
+			}
+		}
+		return false
+	}, 5*time.Second, 5*time.Millisecond, "no sweep span")
+	for _, span := range spans.Ended() {
+		if span.Name() == "sweeper sweep" {
+			assert.False(t, span.Parent().IsValid(), "a sweep is a root span, not a child of startup")
+		}
+	}
 }
 
 // TestSweepTimeoutRotatesStart: a type that always uses up the pass timeout

@@ -50,6 +50,16 @@ func telemetryTimeout(cfg *model.Cfg) time.Duration {
 	return timeout
 }
 
+// closeTelemetry flushes the tracer and meter on their own deadline, so a
+// slow drain cannot cost the last spans and a stalled exporter cannot cost
+// the drain. It runs past sis.shutdown_timeout by at most the longest export
+// timeout.
+func closeTelemetry(ctx context.Context, cfg *model.Cfg, log *logger.Log, telemetry []namedService) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), telemetryTimeout(cfg))
+	defer cancel()
+	closeConcurrently(ctx, log, telemetry)
+}
+
 // closeConcurrently closes every service at once and logs each failure. The
 // services are independent, so a stuck one cannot use up the others' time.
 func closeConcurrently(ctx context.Context, log *logger.Log, services []namedService) {
@@ -122,7 +132,10 @@ func main() {
 	cancelStartup()
 	if err != nil {
 		mainLog.Error("adapter init failed", "err", err)
-		os.Exit(1) //nolint:gocritic // nothing to close yet; the OS reaps the rest
+		// os.Exit skips the batcher's flush, and the startup span is what
+		// explains this failure.
+		closeTelemetry(ctx, cfg, mainLog, telemetry)
+		os.Exit(1) //nolint:gocritic // the adapter built nothing to close; the OS reaps the rest
 	}
 	services = append(services, namedService{"adapter", adapterSvc})
 
@@ -141,11 +154,6 @@ func main() {
 		}
 	}
 
-	// The flush gets its own deadline, so a slow drain cannot cost the last
-	// spans and a stalled exporter cannot cost the drain. It runs past
-	// sis.shutdown_timeout by at most the longest export timeout.
-	telemetryCtx, cancelTelemetry := context.WithTimeout(context.WithoutCancel(ctx), telemetryTimeout(cfg))
-	defer cancelTelemetry()
-	closeConcurrently(telemetryCtx, mainLog, telemetry)
+	closeTelemetry(ctx, cfg, mainLog, telemetry)
 	mainLog.Info("sis stopped")
 }

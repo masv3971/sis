@@ -16,6 +16,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
+	"github.com/SUNET/sis/pkg/helpers"
 	"github.com/SUNET/sis/pkg/logger"
 	"github.com/SUNET/sis/pkg/model"
 )
@@ -42,10 +43,15 @@ func New(ctx context.Context, cfg *model.Cfg, serviceName string, log *logger.Lo
 	if err != nil {
 		return nil, fmt.Errorf("common.tracing.endpoint: %w", err)
 	}
-	exporter, err := otlptracehttp.New(ctx,
+	opts := []otlptracehttp.Option{
 		otlptracehttp.WithEndpointURL(endpoint),
 		otlptracehttp.WithTimeout(tracing.Timeout),
-	)
+	}
+	if cfg.Common.Production {
+		// The default client follows a 307 or 308 to http and replays the spans there.
+		opts = append(opts, otlptracehttp.WithHTTPClient(helpers.HTTPSOnlyClient(tracing.Timeout)))
+	}
+	exporter, err := otlptracehttp.New(ctx, opts...)
 	if err != nil {
 		return nil, err
 	}

@@ -15,6 +15,7 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 
+	"github.com/SUNET/sis/pkg/helpers"
 	"github.com/SUNET/sis/pkg/logger"
 	"github.com/SUNET/sis/pkg/model"
 )
@@ -41,10 +42,15 @@ func New(ctx context.Context, cfg *model.Cfg, serviceName string, log *logger.Lo
 	if err != nil {
 		return nil, fmt.Errorf("common.metrics.endpoint: %w", err)
 	}
-	exporter, err := otlpmetrichttp.New(ctx,
+	opts := []otlpmetrichttp.Option{
 		otlpmetrichttp.WithEndpointURL(endpoint),
 		otlpmetrichttp.WithTimeout(metrics.Timeout),
-	)
+	}
+	if cfg.Common.Production {
+		// The default client follows a 307 or 308 to http and replays the metrics there.
+		opts = append(opts, otlpmetrichttp.WithHTTPClient(helpers.HTTPSOnlyClient(metrics.Timeout)))
+	}
+	exporter, err := otlpmetrichttp.New(ctx, opts...)
 	if err != nil {
 		return nil, err
 	}

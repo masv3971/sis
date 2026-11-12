@@ -123,15 +123,7 @@ func New(_ context.Context, cfg *model.Cfg, log *logger.Log) (*Verifier, error) 
 func newHTTPClient(caFiles []string, httpsOnly bool) (*http.Client, error) {
 	httpClient := &http.Client{Timeout: httpTimeout}
 	if httpsOnly {
-		httpClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-			if !strings.EqualFold(req.URL.Scheme, "https") {
-				return fmt.Errorf("redirect to %s: https is required in production", req.URL.Redacted())
-			}
-			if len(via) >= 10 {
-				return errors.New("stopped after 10 redirects")
-			}
-			return nil
-		}
+		httpClient.CheckRedirect = helpers.RequireHTTPSRedirect
 	}
 	if len(caFiles) == 0 {
 		return httpClient, nil

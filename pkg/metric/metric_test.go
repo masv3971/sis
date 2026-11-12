@@ -1,6 +1,7 @@
 package metric_test
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -25,6 +26,42 @@ func TestDisabledLeavesGlobalsAlone(t *testing.T) {
 	require.NoError(t, err)
 	assert.Same(t, before, otel.GetMeterProvider(), "global meter provider")
 	assert.NoError(t, meter.Close(t.Context()))
+}
+
+// TestProductionExporterRefusesPlaintextRedirect: the collector's endpoint is
+// checked for https at startup, but its redirects are not, and a 307 replays
+// the metrics at the new address. (Both servers are http here: the first
+// request is the operator's choice, the redirect is what is refused.)
+func TestProductionExporterRefusesPlaintextRedirect(t *testing.T) {
+	for _, tc := range []struct {
+		production bool
+		wantLeaked int32
+	}{{false, 1}, {true, 0}} {
+		t.Run(fmt.Sprintf("production=%v", tc.production), func(t *testing.T) {
+			var leaked atomic.Int32
+			target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { leaked.Add(1) }))
+			defer target.Close()
+			collector := httptest.NewServer(http.RedirectHandler(target.URL+"/v1/metrics", http.StatusTemporaryRedirect))
+			defer collector.Close()
+
+			previous := otel.GetMeterProvider()
+			t.Cleanup(func() { otel.SetMeterProvider(previous) })
+			otel.SetErrorHandler(otel.ErrorHandlerFunc(func(error) {}))
+
+			cfg := &model.Cfg{Common: model.Common{
+				Production: tc.production,
+				Metrics:    model.Metrics{Enabled: true, Endpoint: collector.URL, Interval: time.Hour, Timeout: 5 * time.Second},
+			}}
+			meter, err := metric.New(t.Context(), cfg, "sis", quietLog())
+			require.NoError(t, err)
+			counter, err := otel.Meter("test").Int64Counter("test.count")
+			require.NoError(t, err)
+			counter.Add(t.Context(), 1)
+			_ = meter.Close(t.Context())
+
+			assert.Equal(t, tc.wantLeaked, leaked.Load(), "requests that reached the redirect target")
+		})
+	}
 }
 
 func TestEnabledExportsMetricsOnClose(t *testing.T) {

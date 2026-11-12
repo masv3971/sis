@@ -14,6 +14,17 @@ import (
 
 const instrumentationName = "github.com/SUNET/sis"
 
+// WithoutSpan returns ctx without its current span, so spans started from
+// the result begin new traces. Use it for a context that outlives the work
+// it was derived from, e.g. a server's base context: context.WithoutCancel
+// keeps the span of the startup code, and every request would hang under it.
+func WithoutSpan(ctx context.Context) context.Context {
+	return oteltrace.ContextWithSpanContext(oteltrace.ContextWithSpan(ctx, noopSpan), oteltrace.SpanContext{})
+}
+
+// noopSpan is what oteltrace.SpanFromContext returns for a context with none.
+var noopSpan = oteltrace.SpanFromContext(context.Background())
+
 // Start begins a span under the global tracer provider, a no-op unless
 // common.tracing is enabled. Call the returned func once with the operation's
 // error. Only a server-side failure (HTTP status 500 or above, as

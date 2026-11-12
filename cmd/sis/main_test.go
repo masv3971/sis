@@ -72,6 +72,44 @@ func TestCloseConcurrentlyStalledServiceDoesNotStarveTheOther(t *testing.T) {
 	require.NoError(t, otherCtxErr, "the other service started with its deadline intact")
 }
 
+// TestCloseTelemetryHasItsOwnDeadline: the flush must not inherit a spent
+// shutdown budget or a cancelled context (a signal during startup), and must
+// be bounded by the export timeout, so a stalled collector cannot hang exit.
+func TestCloseTelemetryHasItsOwnDeadline(t *testing.T) {
+	log := logger.NewWithWriter("test", false, "error", io.Discard)
+	cfg := &model.Cfg{Common: model.Common{Tracing: model.Tracing{Enabled: true, Timeout: 100 * time.Millisecond}}}
+
+	cancelled, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	var flushCtxErr error
+	var deadline time.Time
+	var hasDeadline bool
+	closed := closeFunc(func(ctx context.Context) error {
+		flushCtxErr = ctx.Err()
+		deadline, hasDeadline = ctx.Deadline()
+		return nil
+	})
+	begin := time.Now()
+	closeTelemetry(cancelled, cfg, log, []namedService{{"tracer", closed}})
+
+	require.NoError(t, flushCtxErr, "the flush starts live, although its parent was cancelled")
+	require.True(t, hasDeadline, "the flush is bounded")
+	assert.WithinDuration(t, begin.Add(100*time.Millisecond), deadline, 50*time.Millisecond, "by the export timeout")
+}
+
+func TestCloseTelemetryStalledExporterIsBounded(t *testing.T) {
+	log := logger.NewWithWriter("test", false, "error", io.Discard)
+	cfg := &model.Cfg{Common: model.Common{Metrics: model.Metrics{Enabled: true, Timeout: 50 * time.Millisecond}}}
+	stalled := closeFunc(func(ctx context.Context) error {
+		<-ctx.Done()
+		return ctx.Err()
+	})
+	begin := time.Now()
+	closeTelemetry(t.Context(), cfg, log, []namedService{{"meter", stalled}})
+	assert.Less(t, time.Since(begin), time.Second, "a stalled exporter cannot hang the exit")
+}
+
 func TestCloseConcurrentlyClosesEveryServiceDespiteErrors(t *testing.T) {
 	log := logger.NewWithWriter("test", false, "error", io.Discard)
 	closed := make(chan string, 2)

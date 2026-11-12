@@ -44,7 +44,7 @@ func New(ctx context.Context, cfg *model.Cfg, catalog *readmodel.Client, log *lo
 	if interval <= 0 {
 		return nil, errors.New("sweeper: sis.adapter.sweeper.interval must be positive")
 	}
-	loopCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	loopCtx, cancel := context.WithCancel(trace.WithoutSpan(context.WithoutCancel(ctx)))
 	s := &Service{sweeps: sweepsOf(catalog), timeout: cfg.SIS.Adapter.Sweeper.Timeout, cancel: cancel, done: make(chan struct{}), log: log.New("sweeper")}
 	go s.loop(loopCtx, interval)
 	s.log.Info("sweeper started", "interval", interval.String())

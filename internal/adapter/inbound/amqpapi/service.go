@@ -24,6 +24,7 @@ import (
 	"github.com/SUNET/sis/pkg/helpers"
 	"github.com/SUNET/sis/pkg/logger"
 	"github.com/SUNET/sis/pkg/model"
+	"github.com/SUNET/sis/pkg/trace"
 )
 
 // Reconnect backoff bounds, how long a link must stay up before the backoff
@@ -78,7 +79,7 @@ func New(ctx context.Context, cfg *model.Cfg, verifier *auth.Verifier, commands 
 }
 
 func start(ctx context.Context, cfg model.AMQPAPI, verifier tokenVerifier, commands map[string]handlerFunc, dial dialFunc, log *logger.Log) *Service {
-	workCtx, abort := context.WithCancel(context.WithoutCancel(ctx))
+	workCtx, abort := context.WithCancel(trace.WithoutSpan(context.WithoutCancel(ctx)))
 	recvCtx, stopRecv := context.WithCancel(workCtx)
 	s := &Service{
 		cfg: cfg, verifier: verifier, commands: commands, dial: dial,

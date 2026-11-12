@@ -35,6 +35,7 @@ import (
 	"github.com/SUNET/sis/internal/readmodel"
 	"github.com/SUNET/sis/pkg/logger"
 	"github.com/SUNET/sis/pkg/model"
+	"github.com/SUNET/sis/pkg/trace"
 
 	edudto "github.com/SUNET/sis/pkg/eduapi"
 	oedto "github.com/SUNET/sis/pkg/oeapi"
@@ -280,7 +281,7 @@ func New(ctx context.Context, cfg *model.Cfg, verifier *auth.Verifier, catalog *
 func start(ctx context.Context, httpCfg model.HTTPServer, handler http.Handler, log *logger.Log) (*Service, error) {
 	// Detach from ctx's cancellation: the server outlives New's ctx and is
 	// stopped only by Close.
-	baseCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	baseCtx, cancel := context.WithCancel(trace.WithoutSpan(context.WithoutCancel(ctx)))
 	s := &Service{
 		log:            log,
 		cancelRequests: cancel,
