@@ -32,13 +32,13 @@ common:
   tracing:
     enabled: false
     endpoint: ""   # collector base URL, e.g. http://otel-collector:4318
-    timeout: 10s   # one export request
+    timeout: 10s   # one export request, and the flush at shutdown
   # Metrics: HTTP server, database pool and AMQP command counts and durations.
   metrics:
     enabled: false
     endpoint: ""   # collector base URL, e.g. http://otel-collector:4318
     interval: 60s  # between exports
-    timeout: 10s   # one export request
+    timeout: 10s   # one export request, and the flush at shutdown
 
 sis:
   # Max time from start to serving: database connect + migrations, file

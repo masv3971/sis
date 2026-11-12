@@ -205,7 +205,13 @@ func (s *Service) process(ctx context.Context, receiver link, msg *amqp.Message)
 		settleErr = receiver.RejectMessage(settleCtx, msg, rejectErr)
 	}
 
-	end(outcome, err)
+	// A failed settlement is its own outcome: the command's verdict never
+	// reached the broker.
+	if settleErr != nil {
+		end("settle_failed", settleErr)
+	} else {
+		end(outcome, err)
+	}
 
 	props := msg.Properties
 	if props == nil {

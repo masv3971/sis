@@ -31,7 +31,7 @@ func New(ctx context.Context, cfg *model.Cfg, log *logger.Log) (*Service, error)
 		return nil, err
 	}
 	// A span per query and per pool acquire. No-ops unless tracing is on.
-	poolCfg.ConnConfig.Tracer = otelpgx.NewTracer()
+	poolCfg.ConnConfig.Tracer = newQueryTracer()
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
 		return nil, fmt.Errorf("connect postgres: %w", err)

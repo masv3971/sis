@@ -1,7 +1,9 @@
 package amqpapi
 
 import (
+	"context"
 	"errors"
+	"io"
 	"testing"
 
 	"github.com/Azure/go-amqp"
@@ -13,6 +15,10 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+
+	"github.com/SUNET/sis/internal/auth"
+	"github.com/SUNET/sis/pkg/logger"
+	"github.com/SUNET/sis/pkg/model"
 )
 
 func TestCommandSpanJoinsPublishersTrace(t *testing.T) {
@@ -50,6 +56,44 @@ func TestCommandSpanJoinsPublishersTrace(t *testing.T) {
 			assert.False(t, span.Parent().IsValid(), "a root span, not a child")
 		})
 	}
+}
+
+func TestFailedSettlementIsReportedAsSuch(t *testing.T) {
+	spans := tracetest.NewSpanRecorder()
+	reader := metric.NewManualReader()
+	tel, err := buildTelemetry(metric.NewMeterProvider(metric.WithReader(reader)).Meter("test"))
+	require.NoError(t, err)
+	tel.tracer = sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spans)).Tracer("test")
+
+	fake := newFakeLink()
+	fake.acceptErr <- context.DeadlineExceeded
+	svc := &Service{
+		commands: map[string]handlerFunc{"person.create": func(context.Context, []byte) error { return nil }},
+		cfg:      model.AMQPAPI{MaxMessageBytes: 1 << 20, Scopes: []string{auth.ScopeWrite}},
+		tel:      tel,
+		log:      logger.NewWithWriter("test", false, "error", io.Discard),
+	}
+	err = svc.process(t.Context(), fake, message("person.create", "", `{}`))
+	require.ErrorIs(t, err, context.DeadlineExceeded, "process reports the failed settlement")
+
+	ended := spans.Ended()
+	require.Len(t, ended, 1, "spans")
+	assert.Equal(t, codes.Error, ended[0].Status().Code, "a failed settlement fails the span")
+
+	var got metricdata.ResourceMetrics
+	require.NoError(t, reader.Collect(t.Context(), &got))
+	var outcomes []string
+	for _, scope := range got.ScopeMetrics {
+		for _, m := range scope.Metrics {
+			if sum, ok := m.Data.(metricdata.Sum[int64]); ok && m.Name == "sis.amqp.commands" {
+				for _, point := range sum.DataPoints {
+					outcome, _ := point.Attributes.Value("outcome")
+					outcomes = append(outcomes, outcome.AsString())
+				}
+			}
+		}
+	}
+	assert.Equal(t, []string{"settle_failed"}, outcomes, "sis.amqp.commands outcomes")
 }
 
 func TestTelemetryRecordsSpanAndMetrics(t *testing.T) {

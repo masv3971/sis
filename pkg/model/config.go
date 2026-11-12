@@ -25,7 +25,8 @@ type Tracing struct {
 	// Endpoint is the collector's base URL, e.g. http://otel-collector:4318.
 	// Must be https in production.
 	Endpoint string `yaml:"endpoint" validate:"required_if=Enabled true,omitempty,httpurl"`
-	// Timeout bounds one export request.
+	// Timeout bounds one export request, and the flush at shutdown, which
+	// runs after sis.shutdown_timeout has ended.
 	Timeout time.Duration `yaml:"timeout" default:"10s" validate:"gt=0"`
 }
 
@@ -37,7 +38,8 @@ type Metrics struct {
 	Endpoint string `yaml:"endpoint" validate:"required_if=Enabled true,omitempty,httpurl"`
 	// Interval between exports.
 	Interval time.Duration `yaml:"interval" default:"60s" validate:"gt=0"`
-	// Timeout bounds one export request.
+	// Timeout bounds one export request, and the flush at shutdown, which
+	// runs after sis.shutdown_timeout has ended.
 	Timeout time.Duration `yaml:"timeout" default:"10s" validate:"gt=0"`
 }
 

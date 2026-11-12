@@ -14,6 +14,7 @@ import (
 	"github.com/SUNET/sis/internal/readmodel"
 	"github.com/SUNET/sis/pkg/logger"
 	"github.com/SUNET/sis/pkg/model"
+	"github.com/SUNET/sis/pkg/trace"
 )
 
 // Service runs the sweep loop.
@@ -73,6 +74,10 @@ func (s *Service) sweepBounded(ctx context.Context) int {
 		ctx, cancel = context.WithTimeout(ctx, s.timeout)
 		defer cancel()
 	}
+	// The loop has no request to hang a trace on. Without this root span the
+	// SQL of a pass is not traced at all: otelpgx needs a recording parent.
+	ctx, end := trace.Start(ctx, "sweeper sweep")
+	defer end(nil)
 	return s.Sweep(ctx)
 }
 

@@ -8,6 +8,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	oteltrace "go.opentelemetry.io/otel/trace"
 
 	"github.com/SUNET/sis/internal/adapter/outbound/memory"
 	"github.com/SUNET/sis/internal/core/domain"
@@ -115,6 +119,31 @@ func TestSweepBoundedStopsAtTimeout(t *testing.T) {
 	// Without a limit the same pass deletes it.
 	s.timeout = 0
 	assert.Equal(t, 1, s.sweepBounded(t.Context()))
+}
+
+// TestSweepRunsUnderRootSpan: the SQL of a pass needs a recording parent to
+// be traced (otelpgx), and the loop has none of its own.
+func TestSweepRunsUnderRootSpan(t *testing.T) {
+	spans := tracetest.NewSpanRecorder()
+	previous := otel.GetTracerProvider()
+	otel.SetTracerProvider(sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spans)))
+	t.Cleanup(func() { otel.SetTracerProvider(previous) })
+
+	var recording []bool
+	s := &Service{
+		sweeps: []sweepFunc{{"person", func(ctx context.Context) ([]string, error) {
+			recording = append(recording, oteltrace.SpanFromContext(ctx).IsRecording())
+			return nil, nil
+		}}},
+		log: logger.NewWithWriter("test", false, "error", io.Discard),
+	}
+	s.sweepBounded(t.Context())
+
+	assert.Equal(t, []bool{true}, recording, "a sweep runs under a recording span")
+	ended := spans.Ended()
+	require.Len(t, ended, 1, "spans")
+	assert.Equal(t, "sweeper sweep", ended[0].Name())
+	assert.False(t, ended[0].Parent().IsValid(), "a root span")
 }
 
 // TestSweepTimeoutRotatesStart: a type that always uses up the pass timeout
