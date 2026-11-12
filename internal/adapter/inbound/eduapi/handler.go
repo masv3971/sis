@@ -564,9 +564,11 @@ func viaView[PT, D, E any](toDTOs func(context.Context, []PT) ([]D, error), view
 // by the sourcedId key picks. Each kind is read up to offset+limit records,
 // which is enough to find the requested page of the whole, and only that page
 // is published and mapped, so the work follows the page and how deep it is,
-// not the catalog. A sourcedId shared by two kinds lists the earlier source
-// first. X-Total-Count is the sum of the stored totals; orphans are left out
-// of the page, which can then be short. It takes no sort or filter.
+// not the catalog. An offset at or past the stored total reads one record per
+// kind and answers an empty page. A sourcedId shared by two kinds lists the
+// earlier source first. X-Total-Count is the sum of the stored totals;
+// orphans are left out of the page, which can then be short. It takes no sort
+// or filter.
 func listUnion[D any](c *Client, gc *gin.Context, key func(D) string, sources ...unionSource[D]) {
 	params, err := c.listParams(gc, nil)
 	if err != nil {
@@ -574,6 +576,23 @@ func listUnion[D any](c *Client, gc *gin.Context, key func(D) string, sources ..
 		return
 	}
 	ctx := gc.Request.Context()
+	if params.Offset > 0 {
+		// The probe keeps an offset past the end from reading whole kinds.
+		stored := 0
+		for _, source := range sources {
+			head, err := source.head(ctx, 1)
+			if err != nil {
+				writeError(gc, err)
+				return
+			}
+			stored += head.total
+		}
+		if params.Offset >= stored {
+			pageHeaders(gc, params, stored)
+			gc.JSON(http.StatusOK, []D{})
+			return
+		}
+	}
 	// Never add offset and limit blindly: a huge offset must not overflow.
 	n := params.Limit
 	if params.Offset > math.MaxInt-n {

@@ -20,16 +20,23 @@ import (
 	"github.com/SUNET/sis/pkg/logger"
 )
 
-// unboundedLists counts List calls made without a limit.
-var unboundedLists atomic.Int64
+var (
+	// unboundedLists counts List calls made without a limit.
+	unboundedLists atomic.Int64
+	// largestLimit is the biggest limit a List call asked for.
+	largestLimit atomic.Int64
+)
 
-// limitSpy is a repository that counts the List calls with no limit, which
-// read the whole kind.
+// limitSpy is a repository that records the limits List is called with: no
+// limit reads the whole kind, and a limit as big as the offset reads that
+// much of it.
 type limitSpy[T any, PT domain.EntityPtr[T]] struct{ port.Repository[T, PT] }
 
 func (s limitSpy[T, PT]) List(ctx context.Context, params port.ListParams) (port.Page[PT], error) {
 	if params.Limit <= 0 {
 		unboundedLists.Add(1)
+	}
+	for seen := largestLimit.Load(); int64(params.Limit) > seen && !largestLimit.CompareAndSwap(seen, int64(params.Limit)); seen = largestLimit.Load() {
 	}
 	return s.Repository.List(ctx, params)
 }
@@ -222,6 +229,20 @@ func TestEduAPINewEntities(t *testing.T) {
 		assert.Equal(t, []any{"DA101-ht26", "DA101-lab-ht26"}, ids(page))
 		_, _, page, _ = get("/educationOfferings?offset=9223372036854775807&limit=10")
 		assert.Empty(t, page, "a huge offset must not overflow")
+	})
+
+	// An offset past the end must not read the kinds: the probe takes one row each.
+	t.Run("offset past the end reads one row per kind", func(t *testing.T) {
+		for _, path := range []string{"/educationOfferings", "/educationTemplates"} {
+			for _, offset := range []string{"1000", "9223372036854775807"} {
+				largestLimit.Store(0)
+				status, total, page, _ := get(path + "?limit=1&offset=" + offset)
+				require.Equal(t, http.StatusOK, status, "%s offset %s", path, offset)
+				assert.Empty(t, page, "%s offset %s", path, offset)
+				assert.Positive(t, total, "%s offset %s: X-Total-Count still counts the stored records", path, offset)
+				assert.EqualValues(t, 1, largestLimit.Load(), "%s offset %s: no kind may be read beyond the probe", path, offset)
+			}
+		}
 	})
 
 	// Last, because it adds records the counts above do not expect.
