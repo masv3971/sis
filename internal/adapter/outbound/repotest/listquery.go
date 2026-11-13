@@ -124,6 +124,10 @@ func ListQueryDocs(t *testing.T, repo port.Repository[domain.Course, *domain.Cou
 		_, err = repo.List(ctx, port.ListParams{Filter: &port.Filter{Terms: []port.FilterTerm{term("title') OR 1=1 --", port.FilterEquals, "x")}}})
 		assert.Error(t, err)
 	})
+	t.Run("a search on a type without a query spec is refused", func(t *testing.T) {
+		_, err := repo.List(ctx, port.ListParams{Search: []string{"alpha"}})
+		assert.Error(t, err)
+	})
 	t.Run("filter applies to ListByRef too", func(t *testing.T) {
 		page, err := repo.ListByRef(ctx, "orgId", "none", port.ListParams{Filter: &port.Filter{Terms: []port.FilterTerm{mine}}})
 		require.NoError(t, err)
@@ -220,6 +224,40 @@ func ListQueryPersons(t *testing.T, repo port.Repository[domain.Person, *domain.
 		page, err := repo.List(ctx, port.ListParams{AnyOf: staffOrGuest, Filter: &port.Filter{Terms: []port.FilterTerm{mine}}})
 		require.NoError(t, err)
 		assert.Equal(t, []string{"Bo"}, given(page.Items))
+	})
+	t.Run("any-of with no values matches nobody", func(t *testing.T) {
+		page, err := repo.List(ctx, port.ListParams{AnyOf: &port.AnyOf{Field: "roles"}, Filter: &port.Filter{Terms: []port.FilterTerm{mine}}})
+		require.NoError(t, err)
+		assert.Empty(t, page.Items)
+		assert.Zero(t, page.Total)
+	})
+	t.Run("same name falls back to sourcedId by bytes", func(t *testing.T) {
+		// Uppercase sorts before lowercase bytewise, the reverse of a linguistic collation.
+		twins := []*domain.Person{person("a", "Twin", "Twin"), person("B", "Twin", "Twin")}
+		t.Cleanup(func() {
+			cleanup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			for _, p := range twins {
+				assert.NoError(t, repo.Delete(cleanup, p.ID))
+			}
+		})
+		for _, p := range twins {
+			require.NoError(t, repo.Create(ctx, p))
+		}
+		twin := &port.Filter{Terms: []port.FilterTerm{{Field: "familyName", Op: port.FilterContains, Value: "Twin" + mark}}}
+		ids := func(params port.ListParams) []string {
+			params.Filter = twin
+			page, err := repo.List(ctx, params)
+			require.NoError(t, err)
+			var out []string
+			for _, p := range page.Items {
+				out = append(out, p.ID)
+			}
+			return out
+		}
+		assert.Equal(t, []string{"B" + mark, "a" + mark}, ids(port.ListParams{}), "whole list")
+		assert.Equal(t, []string{"B" + mark}, ids(port.ListParams{Limit: 1}), "first page")
+		assert.Equal(t, []string{"a" + mark}, ids(port.ListParams{Limit: 1, Offset: 1}), "second page")
 	})
 	t.Run("a key that could alter the SQL is refused", func(t *testing.T) {
 		_, err := repo.List(ctx, port.ListParams{Filter: &port.Filter{Terms: []port.FilterTerm{{Field: "givenName') OR 1=1 --", Op: port.FilterEquals, Value: "x"}}}})

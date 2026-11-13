@@ -1,3 +1,5 @@
+// Package memory provides in-memory implementations of the outbound ports for
+// development and tests. The Postgres adapter replaces it in production.
 package memory
 
 import (

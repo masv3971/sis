@@ -297,8 +297,8 @@ func (r *DocRepo[T, PT]) list(ctx context.Context, where string, args []any, par
 		LEFT JOIN LATERAL (SELECT data, sourced_id, %[4]s AS sort_val%[7]s FROM entities WHERE %[1]s
 			ORDER BY %[5]s OFFSET $%[2]d LIMIT $%[3]d) p ON true
 		ORDER BY %[6]s`, where, len(args)+1, len(args)+2, sortVal,
-		orderSQL(sortExpr, params.Desc, innerTail+"sourced_id"),
-		orderSQL(outerSort, params.Desc, outerTail+"p.sourced_id"),
+		orderSQL(sortExpr, params.Desc, innerTail+`sourced_id COLLATE "C"`),
+		orderSQL(outerSort, params.Desc, outerTail+`p.sourced_id COLLATE "C"`),
 		extraCols)
 	rows, err := r.pool.Query(ctx, query, append(args, params.Offset, limit)...)
 	if err != nil {

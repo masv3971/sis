@@ -7,5 +7,5 @@ DROP TABLE IF EXISTS persons;
 CREATE INDEX IF NOT EXISTS entities_person_name_idx ON entities (
     (CASE WHEN jsonb_typeof(data->'familyName') = 'string' THEN data->>'familyName' END) COLLATE "C",
     (CASE WHEN jsonb_typeof(data->'givenName') = 'string' THEN data->>'givenName' END) COLLATE "C",
-    sourced_id
+    sourced_id COLLATE "C"
 ) WHERE type = 'person';
