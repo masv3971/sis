@@ -223,15 +223,7 @@ func (c *Client) resolve(ctx context.Context, refs []ref) (map[refKey]string, er
 func (c *Client) sourcedIDs(ctx context.Context, typ string, ids []string) (map[string]string, error) {
 	switch typ {
 	case "person":
-		persons, err := c.Persons.GetPersons(ctx, ids)
-		if err != nil {
-			return nil, err
-		}
-		out := make(map[string]string, len(persons))
-		for _, person := range persons {
-			out[person.ID] = person.SourcedID
-		}
-		return out, nil
+		return entitySourcedIDs(ctx, c.Persons, ids)
 	case "organization":
 		return entitySourcedIDs(ctx, c.Organizations, ids)
 	case "academicSession":

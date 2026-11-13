@@ -73,19 +73,7 @@ func (c *Client) Populate(ctx context.Context, b *domain.Bundle, expiresAt *time
 		func() error { return upsertAll(ctx, p, c.CollectionOfferings, b.CollectionOfferings, add) },
 		func() error { return upsertAll(ctx, p, c.Offerings, b.Offerings, add) },
 		func() error { return upsertAll(ctx, p, c.ComponentOfferings, b.ComponentOfferings, add) },
-		func() error {
-			for _, person := range b.Persons {
-				if err := ctx.Err(); err != nil {
-					return fmt.Errorf("populate person %s: %w", person.SourcedID, err)
-				}
-				out, created, err := c.Persons.UpsertPersonWithExpiry(ctx, person, expiresAt)
-				if err != nil {
-					return fmt.Errorf("populate person %s: %w", person.SourcedID, err)
-				}
-				add("person", out.SourcedID, out.ID, created)
-			}
-			return nil
-		},
+		func() error { return upsertAll(ctx, p, c.Persons, b.Persons, add) },
 		func() error { return upsertAll(ctx, p, c.Affiliations, b.Affiliations, add) },
 		func() error { return upsertAll(ctx, p, c.Enrollments, b.Enrollments, add) },
 		func() error { return upsertAll(ctx, p, c.Results, b.Results, add) },
@@ -113,11 +101,6 @@ type populator struct {
 // parents-first.
 func (p *populator) plan(ctx context.Context, b *domain.Bundle) ([]*domain.Organization, error) {
 	var all []domain.Entity
-	for _, person := range b.Persons {
-		if err := p.member("person", person.SourcedID, person.Validate()); err != nil {
-			return nil, err
-		}
-	}
 	collect := func(records ...domain.Entity) error {
 		for _, e := range records {
 			if err := p.member(e.EntityType(), e.GetSourcedID(), e.Validate()); err != nil {
@@ -128,6 +111,7 @@ func (p *populator) plan(ctx context.Context, b *domain.Bundle) ([]*domain.Organ
 		return nil
 	}
 	for _, err := range []error{
+		collect(entities(b.Persons)...),
 		collect(entities(b.Organizations)...), collect(entities(b.AcademicSessions)...),
 		collect(entities(b.Courses)...), collect(entities(b.Programs)...),
 		collect(entities(b.Offerings)...), collect(entities(b.Enrollments)...),
@@ -215,15 +199,7 @@ func (p *populator) resolveStored(ctx context.Context, records []domain.Entity) 
 func (c *Client) storedIDs(ctx context.Context, typ string, sourcedIDs []string) (map[string]string, error) {
 	switch typ {
 	case "person":
-		persons, err := c.Persons.GetPersonsBySourcedIDs(ctx, sourcedIDs)
-		if err != nil {
-			return nil, err
-		}
-		out := make(map[string]string, len(persons))
-		for _, person := range persons {
-			out[person.SourcedID] = person.ID
-		}
-		return out, nil
+		return entityIDs(ctx, c.Persons, sourcedIDs)
 	case "organization":
 		return entityIDs(ctx, c.Organizations, sourcedIDs)
 	case "academicSession":

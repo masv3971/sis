@@ -91,7 +91,7 @@ func sweepsOf(catalog *readmodel.Client) []sweepFunc {
 		{"result", catalog.Results.DeleteExpired},
 		{"enrollment", catalog.Enrollments.DeleteExpired},
 		{"affiliation", catalog.Affiliations.DeleteExpired},
-		{"person", catalog.Persons.DeleteExpiredPersons},
+		{"person", catalog.Persons.DeleteExpired},
 		{"componentOffering", catalog.ComponentOfferings.DeleteExpired},
 		{"offering", catalog.Offerings.DeleteExpired},
 		{"collectionOffering", catalog.CollectionOfferings.DeleteExpired},

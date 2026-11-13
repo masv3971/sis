@@ -50,8 +50,8 @@ func TestExpiry(t *testing.T) {
 	require.NoError(t, err, "DeleteExpired")
 	assert.Contains(t, ids, expiring.ID, "DeleteExpired")
 
-	persons := svc.Persons()
-	person := domain.Person{ID: "xp-" + suffix, SourcedID: "xps-" + suffix, Status: domain.StatusActive, GivenName: "A", FamilyName: "B", CreatedAt: now, UpdatedAt: now, ExpiresAt: &past}
+	persons := postgres.NewDocRepo[domain.Person](svc)
+	person := &domain.Person{ID: "xp-" + suffix, SourcedID: "xps-" + suffix, Status: domain.StatusActive, GivenName: "A", FamilyName: "B", CreatedAt: now, UpdatedAt: now, ExpiresAt: &past}
 	t.Cleanup(func() { _, _ = persons.DeleteExpired(context.Background(), time.Now().Add(time.Hour)) })
 	require.NoError(t, persons.Create(ctx, person), "create person")
 	_, err = persons.GetBySourcedID(ctx, person.SourcedID)
@@ -84,12 +84,12 @@ func TestUpdateIsConditionalOnExpiry(t *testing.T) {
 	missing := &domain.Course{ID: "cc-missing-" + suffix, SourcedID: "ccm-" + suffix, Title: "M"}
 	assert.ErrorIs(t, courses.Update(ctx, missing, nil), domain.ErrNotFound, "doc: missing row")
 
-	persons := svc.Persons()
-	person := domain.Person{ID: "cp-" + suffix, SourcedID: "cps-" + suffix, Status: domain.StatusActive, GivenName: "A", FamilyName: "B", CreatedAt: now, UpdatedAt: now}
+	persons := postgres.NewDocRepo[domain.Person](svc)
+	person := &domain.Person{ID: "cp-" + suffix, SourcedID: "cps-" + suffix, Status: domain.StatusActive, GivenName: "A", FamilyName: "B", CreatedAt: now, UpdatedAt: now}
 	t.Cleanup(func() { _ = persons.Delete(context.Background(), person.ID) })
 	require.NoError(t, persons.Create(ctx, person))
 	person.GivenName, person.ExpiresAt = "C", &exp
 	assert.ErrorIs(t, persons.Update(ctx, person, &exp), domain.ErrStale, "person")
 	assert.NoError(t, persons.Update(ctx, person, nil), "person: matching precondition")
-	assert.ErrorIs(t, persons.Update(ctx, domain.Person{ID: "cp-missing-" + suffix, SourcedID: "x"}, nil), domain.ErrNotFound, "person: missing row")
+	assert.ErrorIs(t, persons.Update(ctx, &domain.Person{ID: "cp-missing-" + suffix, SourcedID: "x"}, nil), domain.ErrNotFound, "person: missing row")
 }

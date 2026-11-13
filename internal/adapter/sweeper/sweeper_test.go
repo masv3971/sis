@@ -25,7 +25,7 @@ import (
 // newCatalog is an in-memory catalog on a shared test clock.
 func newCatalog(clock func() time.Time, log *logger.Log) *readmodel.Client {
 	return &readmodel.Client{
-		Persons:          service.New(memory.NewPersonRepository().WithClock(clock), nil, clock, log),
+		Persons:          service.NewResource(memory.NewDocRepo[domain.Person]().WithClock(clock), nil, clock, log),
 		Organizations:    service.NewResource(memory.NewDocRepo[domain.Organization]().WithClock(clock), nil, clock, log),
 		AcademicSessions: service.NewResource(memory.NewDocRepo[domain.AcademicSession]().WithClock(clock), nil, clock, log),
 		Courses:          service.NewResource(memory.NewDocRepo[domain.Course]().WithClock(clock), nil, clock, log),
@@ -49,7 +49,7 @@ func TestSweepDeletesExpired(t *testing.T) {
 	catalog := newCatalog(func() time.Time { return now }, log)
 	expiry := now.Add(time.Minute)
 	_, err := catalog.Populate(ctx, &domain.Bundle{
-		Persons: []domain.Person{{SourcedID: "p", Status: domain.StatusActive, GivenName: "A", FamilyName: "B"}},
+		Persons: []*domain.Person{{SourcedID: "p", Status: domain.StatusActive, GivenName: "A", FamilyName: "B"}},
 		Courses: []*domain.Course{{SourcedID: "c", Title: "C"}},
 		Results: []*domain.Result{{SourcedID: "r", PersonID: "p", CourseID: "c"}},
 	}, &expiry)
@@ -78,7 +78,7 @@ func TestSweepDeletesNewEntities(t *testing.T) {
 	catalog := newCatalog(func() time.Time { return now }, log)
 	expiry := now.Add(time.Minute)
 	_, err := catalog.Populate(ctx, &domain.Bundle{
-		Persons:             []domain.Person{{SourcedID: "p", Status: domain.StatusActive, GivenName: "A", FamilyName: "B"}},
+		Persons:             []*domain.Person{{SourcedID: "p", Status: domain.StatusActive, GivenName: "A", FamilyName: "B"}},
 		Organizations:       []*domain.Organization{{SourcedID: "o", Name: "O"}},
 		Programs:            []*domain.Program{{SourcedID: "g", Title: "G"}},
 		Courses:             []*domain.Course{{SourcedID: "c", Title: "C", ProgramIDs: []string{"g"}}},

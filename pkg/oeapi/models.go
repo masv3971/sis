@@ -111,7 +111,7 @@ type Result struct {
 }
 
 // FromPerson maps a canonical person to the OEAPI shape.
-func FromPerson(person domain.Person) Person {
+func FromPerson(person *domain.Person) Person {
 	var mail string
 	if len(person.Emails) > 0 {
 		mail = person.Emails[0].Value

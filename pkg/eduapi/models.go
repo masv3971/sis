@@ -335,7 +335,7 @@ var (
 )
 
 // Person maps a canonical person.
-func (m Mapper) Person(person domain.Person) Person {
+func (m Mapper) Person(person *domain.Person) Person {
 	out := Person{
 		SourcedID: person.SourcedID, RecordLanguage: m.lang, DateOfBirth: person.DateOfBirth,
 		DateLastModified: rfc3339(person.UpdatedAt), RecordStatus: recordStatus(person.Status),

@@ -23,7 +23,7 @@ import (
 func TestNewEntitiesREST(t *testing.T) {
 	log := logger.NewWithWriter("test", false, "error", io.Discard)
 	catalog := &readmodel.Client{
-		Persons:             service.New(memory.NewPersonRepository(), nil, nil, log),
+		Persons:             service.NewResource(memory.NewDocRepo[domain.Person](), nil, nil, log),
 		Organizations:       service.NewResource(memory.NewDocRepo[domain.Organization](), nil, nil, log),
 		AcademicSessions:    service.NewResource(memory.NewDocRepo[domain.AcademicSession](), nil, nil, log),
 		Courses:             service.NewResource(memory.NewDocRepo[domain.Course](), nil, nil, log),

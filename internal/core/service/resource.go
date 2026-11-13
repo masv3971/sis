@@ -13,9 +13,26 @@ import (
 	"github.com/SUNET/sis/pkg/logger"
 )
 
-// Resource is the generic application/use-case layer for any entity type. It
-// mirrors the bespoke person service (validation, identity, timestamps, event
-// emission) over the generic repository, so every entity behaves identically.
+// MergeExpiry returns the expiry a record gets when data with expiry
+// incoming is upserted onto a stored record whose expiry is stored: a
+// permanent record (stored == nil) stays permanent, otherwise the incoming
+// expiry wins (refreshing it, or making the record permanent when nil).
+func MergeExpiry(stored, incoming *time.Time) *time.Time {
+	if stored == nil {
+		return nil
+	}
+	return incoming
+}
+
+// maxStaleRetries bounds how often an update re-reads and retries after its
+// conditional write lost to a concurrent expiry change. Each retry needs a
+// fresh concurrent writer to fail again, so a handful is plenty; past it the
+// caller gets domain.ErrStale (a 409 conflict).
+const maxStaleRetries = 5
+
+// Resource is the generic application/use-case layer for any entity type
+// (validation, identity, timestamps, event emission) over the generic
+// repository, so every entity behaves identically.
 type Resource[T any, PT domain.EntityPtr[T]] struct {
 	repo     port.Repository[T, PT]
 	events   port.EventPublisher
@@ -119,7 +136,7 @@ func (s *Resource[T, PT]) update(ctx context.Context, e PT, expiry func(existing
 
 // UpsertBySourcedID creates or updates by business key (idempotent ingress).
 // The result never expires. Concurrent deliveries of the same sourcedId
-// converge on one entity: see Service.UpsertPersonBySourcedID.
+// converge on one entity: the loser of a create race updates the winner.
 func (s *Resource[T, PT]) UpsertBySourcedID(ctx context.Context, e PT) (PT, error) {
 	out, _, err := s.UpsertWithExpiry(ctx, e, nil)
 	return out, err

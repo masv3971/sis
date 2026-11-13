@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/SUNET/sis/internal/core/domain"
 	"github.com/SUNET/sis/internal/core/port"
 )
 
@@ -42,6 +43,57 @@ func filterSQL(f *port.Filter, column func(key string) (string, error), args []a
 	return "(" + strings.Join(conds, join) + ")", args, nil
 }
 
+// searchSQL is the condition that every term occurs in one of the searched
+// properties of spec, with each term's pattern appended to args. Each term is
+// one ILIKE pattern, so its LIKE wildcards are escaped and match literally.
+// It scans the live records of the type; add a pg_trgm index if that
+// outgrows it.
+func searchSQL(spec domain.QuerySpec, terms []string, args []any) (string, []any, error) {
+	conds := make([]string, 0, len(terms))
+	for _, term := range terms {
+		args = append(args, "%"+escapeLike(term)+"%")
+		n := len(args)
+		matches := make([]string, 0, len(spec.SearchFields)+len(spec.SearchValueArrays))
+		for _, key := range spec.SearchFields {
+			expr, err := docKey(key)
+			if err != nil {
+				return "", nil, err
+			}
+			matches = append(matches, fmt.Sprintf("%s ILIKE $%d", expr, n))
+		}
+		// An array property may be absent or JSON null, which
+		// jsonb_array_elements rejects, hence the CASE.
+		for _, key := range spec.SearchValueArrays {
+			if !port.ValidKey(key) {
+				return "", nil, fmt.Errorf("postgres: invalid key %q", key)
+			}
+			matches = append(matches, fmt.Sprintf(`EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(data->'%[1]s') = 'array' THEN data->'%[1]s' ELSE '[]' END) x
+				WHERE x->>'value' ILIKE $%[2]d)`, key, n))
+		}
+		conds = append(conds, "("+strings.Join(matches, " OR ")+")")
+	}
+	return strings.Join(conds, " AND "), args, nil
+}
+
+// escapeLike makes s match literally inside a LIKE pattern (backslash is
+// the default escape character).
+func escapeLike(s string) string {
+	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
+}
+
+// anyOfSQL is the condition that a's array property holds one of its values,
+// or "" when a is nil. The key is spliced into the SQL, so it is checked.
+func anyOfSQL(a *port.AnyOf, args []any) (string, []any, error) {
+	if a == nil {
+		return "", args, nil
+	}
+	if !port.ValidKey(a.Field) {
+		return "", nil, fmt.Errorf("postgres: invalid key %q", a.Field)
+	}
+	args = append(args, a.Values)
+	return fmt.Sprintf(`(jsonb_typeof(data->'%[1]s') = 'array' AND data->'%[1]s' ?| $%[2]d::text[])`, a.Field, len(args)), args, nil
+}
+
 // orderSQL is an ORDER BY list: sortExpr first when it is not empty, then
 // tail. A record without the sort key goes last in both directions, and the
 // key compares byte by byte, as the in-memory repositories do.
@@ -64,27 +116,4 @@ func docKey(key string) (string, error) {
 		return "", fmt.Errorf("postgres: invalid key %q", key)
 	}
 	return fmt.Sprintf(`(CASE WHEN jsonb_typeof(data->'%[1]s') = 'string' THEN data->>'%[1]s' END)`, key), nil
-}
-
-// personColumn maps a stored person key to the SQL expression for its column,
-// with prefix before the column name. Only scalar columns can be sorted or
-// filtered on. An empty optional column is NULL, as the key is absent.
-func personColumn(prefix string) func(key string) (string, error) {
-	return func(key string) (string, error) {
-		switch key {
-		case "sourcedId":
-			return prefix + "sourced_id", nil
-		case "status":
-			return prefix + "status", nil
-		case "givenName":
-			return prefix + "given_name", nil
-		case "familyName":
-			return prefix + "family_name", nil
-		case "middleName":
-			return "NULLIF(" + prefix + "middle_name, '')", nil
-		case "dateOfBirth":
-			return "NULLIF(" + prefix + "date_of_birth, '')", nil
-		}
-		return "", fmt.Errorf("postgres: unknown person key %q", key)
-	}
 }

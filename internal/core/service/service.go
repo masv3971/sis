@@ -8,7 +8,6 @@ import (
 	"io"
 	"time"
 
-	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/SUNET/sis/internal/core/domain"
@@ -20,40 +19,10 @@ import (
 // Clock returns the current time; injected so tests are deterministic.
 type Clock func() time.Time
 
-// Service implements the use cases over the injected ports.
-type Service struct {
-	persons port.PersonRepository
-	events  port.EventPublisher
-	now     Clock
-	newID   func() string
-	log     *logger.Log
-}
-
-// New builds a Service. If clock is nil, time.Now is used; if log is nil,
-// log output is discarded.
-func New(persons port.PersonRepository, events port.EventPublisher, clock Clock, log *logger.Log) *Service {
-	if clock == nil {
-		clock = time.Now
-	}
-	return &Service{persons: persons, events: events, now: clock, newID: uuid.NewString, log: serviceLog(log)}
-}
-
 // startSpan begins the span of one write use case, e.g. "service person.create".
 // Reads get no span of their own: the HTTP request and SQL spans cover them.
 func startSpan(ctx context.Context, entityType, op string) (context.Context, func(error)) {
 	return trace.Start(ctx, "service "+entityType+"."+op, attribute.String("sis.entity", entityType))
-}
-
-// emit publishes a domain event; a nil publisher is a no-op.
-func (s *Service) emit(ctx context.Context, eventType, aggType, aggID string, payload any) {
-	publish(ctx, s.events, s.log, domain.Event{
-		ID:            s.newID(),
-		Type:          eventType,
-		AggregateType: aggType,
-		AggregateID:   aggID,
-		OccurredAt:    s.now().UTC(),
-		Payload:       payload,
-	})
 }
 
 // publish hands event to the publisher. The write it describes is already

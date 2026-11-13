@@ -14,20 +14,20 @@ import (
 
 func TestPersonUpdateRejectsForeignSourcedID(t *testing.T) {
 	ctx := t.Context()
-	repo := NewPersonRepository()
-	_ = repo.Create(ctx, domain.Person{ID: "1", SourcedID: "a"})
-	_ = repo.Create(ctx, domain.Person{ID: "2", SourcedID: "b"})
+	repo := NewDocRepo[domain.Person]()
+	_ = repo.Create(ctx, &domain.Person{ID: "1", SourcedID: "a"})
+	_ = repo.Create(ctx, &domain.Person{ID: "2", SourcedID: "b"})
 
-	require.ErrorIs(t, repo.Update(ctx, domain.Person{ID: "2", SourcedID: "a"}, nil), domain.ErrConflict)
+	require.ErrorIs(t, repo.Update(ctx, &domain.Person{ID: "2", SourcedID: "a"}, nil), domain.ErrConflict)
 	// Keeping its own sourcedId is fine.
-	assert.NoError(t, repo.Update(ctx, domain.Person{ID: "2", SourcedID: "b", GivenName: "x"}, nil), "self update")
+	assert.NoError(t, repo.Update(ctx, &domain.Person{ID: "2", SourcedID: "b", GivenName: "x"}, nil), "self update")
 }
 
-// TestPersonListByRoles checks the role filter, its total and its paging.
-func TestPersonListByRoles(t *testing.T) {
+// TestPersonListAnyOfRoles checks the role match, its total and its paging.
+func TestPersonListAnyOfRoles(t *testing.T) {
 	ctx := t.Context()
-	repo := NewPersonRepository()
-	for _, p := range []domain.Person{
+	repo := NewDocRepo[domain.Person]()
+	for _, p := range []*domain.Person{
 		{ID: "1", SourcedID: "a", FamilyName: "A", Roles: []domain.Role{domain.RoleStudent}},
 		{ID: "2", SourcedID: "b", FamilyName: "B", Roles: []domain.Role{domain.RoleStaff, domain.RoleStudent}},
 		{ID: "3", SourcedID: "c", FamilyName: "C", Roles: []domain.Role{domain.RoleFaculty}},
@@ -35,17 +35,17 @@ func TestPersonListByRoles(t *testing.T) {
 	} {
 		require.NoError(t, repo.Create(ctx, p))
 	}
-	page, err := repo.ListByRoles(ctx, []domain.Role{domain.RoleStudent}, port.ListParams{Limit: 1})
+	page, err := repo.List(ctx, port.ListParams{Limit: 1, AnyOf: &port.AnyOf{Field: "roles", Values: []string{"student"}}})
 	require.NoError(t, err)
 	assert.Equal(t, 2, page.Total)
 	require.Len(t, page.Items, 1)
 	assert.Equal(t, "1", page.Items[0].ID, "ordered by name")
 
-	page, err = repo.ListByRoles(ctx, []domain.Role{domain.RoleStaff, domain.RoleFaculty}, port.ListParams{})
+	page, err = repo.List(ctx, port.ListParams{AnyOf: &port.AnyOf{Field: "roles", Values: []string{"staff", "faculty"}}})
 	require.NoError(t, err)
 	assert.Equal(t, 2, page.Total, "any of the roles matches")
 
-	page, err = repo.ListByRoles(ctx, nil, port.ListParams{})
+	page, err = repo.List(ctx, port.ListParams{AnyOf: &port.AnyOf{Field: "roles"}})
 	require.NoError(t, err)
 	assert.Zero(t, page.Total, "no roles match nobody")
 }
@@ -95,20 +95,20 @@ func TestDocRepoListByRefs(t *testing.T) {
 // reused.
 func TestPersonSourcedIDIndex(t *testing.T) {
 	ctx := t.Context()
-	repo := NewPersonRepository()
-	require.NoError(t, repo.Create(ctx, domain.Person{ID: "1", SourcedID: "a"}))
-	require.NoError(t, repo.Update(ctx, domain.Person{ID: "1", SourcedID: "b"}, nil))
+	repo := NewDocRepo[domain.Person]()
+	require.NoError(t, repo.Create(ctx, &domain.Person{ID: "1", SourcedID: "a"}))
+	require.NoError(t, repo.Update(ctx, &domain.Person{ID: "1", SourcedID: "b"}, nil))
 	_, err := repo.GetBySourcedID(ctx, "a")
 	require.ErrorIs(t, err, domain.ErrNotFound, "old sourcedId after rename")
 	persons, _ := repo.GetBySourcedIDs(ctx, []string{"a", "b"})
 	require.Len(t, persons, 1, "GetBySourcedIDs")
 	require.Equal(t, "1", persons[0].ID, "GetBySourcedIDs")
-	require.NoError(t, repo.Create(ctx, domain.Person{ID: "2", SourcedID: "a"}))
+	require.NoError(t, repo.Create(ctx, &domain.Person{ID: "2", SourcedID: "a"}))
 
 	require.NoError(t, repo.Delete(ctx, "1"))
 	require.NotContains(t, repo.sourcedToID, "b", "Delete must clean the index")
 	exp := time.Now().Add(-time.Minute)
-	require.NoError(t, repo.Update(ctx, domain.Person{ID: "2", SourcedID: "a", ExpiresAt: &exp}, nil))
+	require.NoError(t, repo.Update(ctx, &domain.Person{ID: "2", SourcedID: "a", ExpiresAt: &exp}, nil))
 	_, err = repo.DeleteExpired(ctx, time.Now())
 	require.NoError(t, err)
 	assert.Empty(t, repo.sourcedToID, "DeleteExpired must clean the index")
@@ -117,9 +117,9 @@ func TestPersonSourcedIDIndex(t *testing.T) {
 
 func TestPersonListLimitDoesNotOverflow(t *testing.T) {
 	ctx := t.Context()
-	repo := NewPersonRepository()
-	_ = repo.Create(ctx, domain.Person{ID: "1", SourcedID: "a"})
-	_ = repo.Create(ctx, domain.Person{ID: "2", SourcedID: "b"})
+	repo := NewDocRepo[domain.Person]()
+	_ = repo.Create(ctx, &domain.Person{ID: "1", SourcedID: "a"})
+	_ = repo.Create(ctx, &domain.Person{ID: "2", SourcedID: "b"})
 
 	page, err := repo.List(ctx, port.ListParams{Offset: 1, Limit: math.MaxInt})
 	require.NoError(t, err, "List")
@@ -129,9 +129,9 @@ func TestPersonListLimitDoesNotOverflow(t *testing.T) {
 
 func TestPersonListStableForSameName(t *testing.T) {
 	ctx := t.Context()
-	repo := NewPersonRepository()
+	repo := NewDocRepo[domain.Person]()
 	for _, id := range []string{"c", "a", "b"} {
-		_ = repo.Create(ctx, domain.Person{ID: id, SourcedID: id, GivenName: "Ada", FamilyName: "Lovelace"})
+		_ = repo.Create(ctx, &domain.Person{ID: id, SourcedID: id, GivenName: "Ada", FamilyName: "Lovelace"})
 	}
 	for range 20 {
 		page, _ := repo.List(ctx, port.ListParams{})
@@ -198,8 +198,8 @@ func TestPageBounds(t *testing.T) {
 // repository, so mutating them cannot change stored data.
 func TestPersonRepositoryIsolatesSlices(t *testing.T) {
 	ctx := t.Context()
-	repo := NewPersonRepository()
-	person := domain.Person{
+	repo := NewDocRepo[domain.Person]()
+	person := &domain.Person{
 		ID: "1", SourcedID: "a",
 		Roles:       []domain.Role{domain.RoleStudent},
 		Identifiers: []domain.Identifier{{Type: "nin", Value: "x"}},
@@ -220,7 +220,7 @@ func TestPersonRepositoryIsolatesSlices(t *testing.T) {
 	}
 	check("after mutating Create argument")
 
-	mutate := func(q domain.Person) {
+	mutate := func(q *domain.Person) {
 		q.Roles[0], q.Identifiers[0].Value, q.Emails[0].Value, q.Phones[0].Value = domain.RoleGuest, "z", "c@x", "3"
 	}
 	got, _ := repo.Get(ctx, "1")

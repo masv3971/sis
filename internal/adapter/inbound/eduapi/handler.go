@@ -69,12 +69,12 @@ var (
 
 // ListPersons publishes persons in Edu-API shape.
 func (c *Client) ListPersons(gc *gin.Context) {
-	c.listPersonsWith(gc, personFields, c.catalog.Persons.ListPersons)
+	c.listPersonsWith(gc, personFields, c.catalog.Persons.List)
 }
 
 // listPersonsWith answers a person list request with the page fetch returns.
 // fields are the names sort and filter accept; nil rejects both.
-func (c *Client) listPersonsWith(gc *gin.Context, fields helpers.ListFields, fetch func(context.Context, port.ListParams) (port.Page[domain.Person], error)) {
+func (c *Client) listPersonsWith(gc *gin.Context, fields helpers.ListFields, fetch func(context.Context, port.ListParams) (port.Page[*domain.Person], error)) {
 	params, err := c.listParams(gc, fields)
 	if err != nil {
 		writeError(gc, err)
@@ -88,7 +88,7 @@ func (c *Client) listPersonsWith(gc *gin.Context, fields helpers.ListFields, fet
 	c.writePersons(gc, params, page)
 }
 
-func (c *Client) writePersons(gc *gin.Context, params port.ListParams, page port.Page[domain.Person]) {
+func (c *Client) writePersons(gc *gin.Context, params port.ListParams, page port.Page[*domain.Person]) {
 	out := make([]dto.Person, 0, len(page.Items))
 	for _, person := range page.Items {
 		out = append(out, c.mapper.Person(person))
@@ -99,7 +99,7 @@ func (c *Client) writePersons(gc *gin.Context, params port.ListParams, page port
 
 // GetPerson publishes a single person by sourcedId in Edu-API shape.
 func (c *Client) GetPerson(gc *gin.Context) {
-	person, err := c.catalog.Persons.GetPersonBySourcedID(gc.Request.Context(), gc.Param("id"))
+	person, err := c.catalog.Persons.GetBySourcedID(gc.Request.Context(), gc.Param("id"))
 	if err != nil {
 		writeError(gc, err)
 		return
@@ -114,18 +114,26 @@ var (
 	staffRoles   = []domain.Role{domain.RoleStaff, domain.RoleFaculty}
 )
 
+// listByRoles lists the persons holding at least one of roles.
+func (c *Client) listByRoles(roles []domain.Role) func(context.Context, port.ListParams) (port.Page[*domain.Person], error) {
+	names := make([]string, len(roles))
+	for i, role := range roles {
+		names[i] = string(role)
+	}
+	return func(ctx context.Context, params port.ListParams) (port.Page[*domain.Person], error) {
+		params.AnyOf = &port.AnyOf{Field: "roles", Values: names}
+		return c.catalog.Persons.List(ctx, params)
+	}
+}
+
 // ListStudents publishes the persons with the student role.
 func (c *Client) ListStudents(gc *gin.Context) {
-	c.listPersonsWith(gc, personFields, func(ctx context.Context, params port.ListParams) (port.Page[domain.Person], error) {
-		return c.catalog.Persons.ListPersonsByRoles(ctx, studentRoles, params)
-	})
+	c.listPersonsWith(gc, personFields, c.listByRoles(studentRoles))
 }
 
 // ListStaff publishes the persons with the staff or faculty role.
 func (c *Client) ListStaff(gc *gin.Context) {
-	c.listPersonsWith(gc, personFields, func(ctx context.Context, params port.ListParams) (port.Page[domain.Person], error) {
-		return c.catalog.Persons.ListPersonsByRoles(ctx, staffRoles, params)
-	})
+	c.listPersonsWith(gc, personFields, c.listByRoles(staffRoles))
 }
 
 // ListOfferingEnrollments publishes the enrollments on one course offering.
@@ -153,10 +161,10 @@ func (c *Client) listOfferingPersons(gc *gin.Context, roles []domain.Role) {
 	if !ok {
 		return
 	}
-	c.listPersonsWith(gc, nil, func(ctx context.Context, params port.ListParams) (port.Page[domain.Person], error) {
+	c.listPersonsWith(gc, nil, func(ctx context.Context, params port.ListParams) (port.Page[*domain.Person], error) {
 		enrollments, err := c.catalog.Enrollments.ListByRefs(ctx, "offeringId", []string{offering.ID})
 		if err != nil {
-			return port.Page[domain.Person]{}, err
+			return port.Page[*domain.Person]{}, err
 		}
 		var personIDs []string
 		seen := map[string]bool{}
@@ -166,9 +174,9 @@ func (c *Client) listOfferingPersons(gc *gin.Context, roles []domain.Role) {
 				personIDs = append(personIDs, enrollment.PersonID)
 			}
 		}
-		persons, err := c.catalog.Persons.GetPersons(ctx, personIDs)
+		persons, err := c.catalog.Persons.GetByIDs(ctx, personIDs)
 		if err != nil {
-			return port.Page[domain.Person]{}, err
+			return port.Page[*domain.Person]{}, err
 		}
 		sort.Slice(persons, func(i, j int) bool {
 			a, b := persons[i], persons[j]

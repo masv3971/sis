@@ -51,7 +51,7 @@ type File struct {
 	Courses          []*domain.Course          `json:"courses"`
 	Programs         []*domain.Program         `json:"programs"`
 	Offerings        []*domain.Offering        `json:"offerings"`
-	Persons          []domain.Person           `json:"persons"`
+	Persons          []*domain.Person          `json:"persons"`
 	Enrollments      []*domain.Enrollment      `json:"enrollments"`
 	Results          []*domain.Result          `json:"results"`
 	Entitlements     []*domain.Entitlement     `json:"entitlements"`
@@ -116,6 +116,7 @@ func Decode(data []byte) (*domain.Bundle, error) {
 		noNulls("courses", f.Courses),
 		noNulls("programs", f.Programs),
 		noNulls("offerings", f.Offerings),
+		noNulls("persons", f.Persons),
 		noNulls("enrollments", f.Enrollments),
 		noNulls("results", f.Results),
 		noNulls("entitlements", f.Entitlements),
@@ -125,11 +126,6 @@ func Decode(data []byte) (*domain.Bundle, error) {
 		noNulls("componentOfferings", f.ComponentOfferings),
 	); err != nil {
 		return nil, err
-	}
-	// Ids are SIS's to assign; a file cannot pin them. (Populate already
-	// clears entity ids, and the services set timestamps and expiry.)
-	for i := range f.Persons {
-		f.Persons[i].ID = ""
 	}
 	return &domain.Bundle{
 		Persons:          f.Persons,

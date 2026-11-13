@@ -112,7 +112,7 @@ func newFixture(t *testing.T, scopes ...string) *fixture {
 	t.Helper()
 	log := logger.NewWithWriter("test", false, "error", io.Discard)
 	catalog := &readmodel.Client{
-		Persons:          service.New(memory.NewPersonRepository(), nil, nil, log),
+		Persons:          service.NewResource(memory.NewDocRepo[domain.Person](), nil, nil, log),
 		Organizations:    service.NewResource(memory.NewDocRepo[domain.Organization](), nil, nil, log),
 		AcademicSessions: service.NewResource(memory.NewDocRepo[domain.AcademicSession](), nil, nil, log),
 		Courses:          service.NewResource(memory.NewDocRepo[domain.Course](), nil, nil, log),
@@ -185,7 +185,7 @@ func TestCommandsRunLikeREST(t *testing.T) {
 
 	fx.expect(t, message("person.create", token, `{"id":"p1","sourcedId":"s1","givenName":"A","familyName":"B","status":"active"}`), "accepted")
 	fx.expect(t, message("person.update", token, `{"id":"p1","givenName":"Ann","familyName":"B","status":"active"}`), "accepted")
-	person, err := fx.catalog.Persons.GetPerson(ctx, "p1")
+	person, err := fx.catalog.Persons.Get(ctx, "p1")
 	require.NoError(t, err, "person after update")
 	assert.Equal(t, "Ann", person.GivenName, "person after update")
 	assert.Equal(t, "s1", person.SourcedID, "person after update")
@@ -504,7 +504,7 @@ func TestLateCreateIsAcceptedOnce(t *testing.T) {
 	t.Cleanup(func() { _ = svc.Close(context.Background()) })
 
 	(&fixture{link: fake}).expect(t, message("person.create", "", `{"givenName":"A","familyName":"B","status":"active"}`), "accepted")
-	page, err := fx.catalog.Persons.ListPersons(t.Context(), port.ListParams{})
+	page, err := fx.catalog.Persons.List(t.Context(), port.ListParams{})
 	require.NoError(t, err)
 	assert.Equal(t, 1, page.Total, "one delivery, one record")
 }

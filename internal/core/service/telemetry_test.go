@@ -22,7 +22,7 @@ func TestWritesGetOneSpanEach(t *testing.T) {
 	t.Cleanup(func() { otel.SetTracerProvider(previous) })
 
 	orgs := newOrgResource()
-	persons := service.New(memory.NewPersonRepository(), nil, nil, nil)
+	persons := service.NewResource(memory.NewDocRepo[domain.Person](), nil, nil, nil)
 	ctx := t.Context()
 
 	org, err := orgs.Create(ctx, &domain.Organization{Name: "Uni"})
@@ -36,10 +36,10 @@ func TestWritesGetOneSpanEach(t *testing.T) {
 	_, err = orgs.Get(ctx, org.GetID())
 	require.ErrorIs(t, err, domain.ErrNotFound)
 
-	person, err := persons.CreatePerson(ctx, domain.Person{GivenName: "A", FamilyName: "B", Status: "active"})
+	person, err := persons.Create(ctx, &domain.Person{GivenName: "A", FamilyName: "B", Status: "active"})
 	require.NoError(t, err)
-	require.NoError(t, persons.DeletePerson(ctx, person.ID))
-	assert.ErrorIs(t, persons.DeletePerson(ctx, person.ID), domain.ErrNotFound)
+	require.NoError(t, persons.Delete(ctx, person.ID))
+	assert.ErrorIs(t, persons.Delete(ctx, person.ID), domain.ErrNotFound)
 
 	var names []string
 	for _, span := range spans.Ended() {

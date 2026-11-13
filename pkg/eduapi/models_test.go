@@ -23,7 +23,7 @@ func toMap(t *testing.T, v any) map[string]any {
 }
 
 func TestPerson(t *testing.T) {
-	person := mapper.Person(domain.Person{
+	person := mapper.Person(&domain.Person{
 		SourcedID: "stu", Status: domain.StatusActive, GivenName: "Ada", MiddleName: "King", FamilyName: "Lovelace",
 		Roles:       []domain.Role{domain.RoleStudent},
 		Identifiers: []domain.Identifier{{Type: "nin", Value: "1"}, {Type: "systemId", Value: "2"}},
@@ -53,7 +53,7 @@ func TestPerson(t *testing.T) {
 }
 
 func TestEmptyValuesAreOmitted(t *testing.T) {
-	got := toMap(t, mapper.Person(domain.Person{SourcedID: "x"}))
+	got := toMap(t, mapper.Person(&domain.Person{SourcedID: "x"}))
 	for _, key := range []string{"otherIdentifiers", "primaryEmail", "otherEmails", "primaryPhone", "dateOfBirth", "dateLastModified"} {
 		assert.NotContains(t, got, key)
 	}
@@ -258,7 +258,7 @@ func TestEnrollment(t *testing.T) {
 
 func TestBundle(t *testing.T) {
 	out := mapper.Bundle(&domain.Bundle{
-		Persons:          []domain.Person{{SourcedID: "stu"}},
+		Persons:          []*domain.Person{{SourcedID: "stu"}},
 		AcademicSessions: []*domain.AcademicSession{{Base: domain.Base{SourcedID: "ht26"}, StartDate: "2026-08-31"}},
 		Courses:          []*domain.Course{{Base: domain.Base{SourcedID: "c"}, Title: "Biology"}},
 		Offerings:        []*domain.Offering{{Base: domain.Base{SourcedID: "o"}, CourseID: "c", AcademicSessionID: "ht26"}},
@@ -303,7 +303,7 @@ func TestRequiredFields(t *testing.T) {
 		record   any
 		required []string
 	}{
-		{"person", mapper.Person(domain.Person{SourcedID: "p", GivenName: "A", FamilyName: "B"}), []string{"sourcedId", "recordLanguage", "recordStatus"}},
+		{"person", mapper.Person(&domain.Person{SourcedID: "p", GivenName: "A", FamilyName: "B"}), []string{"sourcedId", "recordLanguage", "recordStatus"}},
 		{"organization", mapper.Organization(&domain.Organization{Base: domain.Base{SourcedID: "o"}, Name: "O"}),
 			[]string{"sourcedId", "recordLanguage", "name", "organizationType", "recordStatus"}},
 		{"academicSession", mapper.AcademicSession(session), []string{"sourcedId", "recordLanguage", "recordStatus"}},

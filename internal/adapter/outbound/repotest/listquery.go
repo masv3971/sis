@@ -124,6 +124,10 @@ func ListQueryDocs(t *testing.T, repo port.Repository[domain.Course, *domain.Cou
 		_, err = repo.List(ctx, port.ListParams{Filter: &port.Filter{Terms: []port.FilterTerm{term("title') OR 1=1 --", port.FilterEquals, "x")}}})
 		assert.Error(t, err)
 	})
+	t.Run("a search on a type without a query spec is refused", func(t *testing.T) {
+		_, err := repo.List(ctx, port.ListParams{Search: []string{"alpha"}})
+		assert.Error(t, err)
+	})
 	t.Run("filter applies to ListByRef too", func(t *testing.T) {
 		page, err := repo.ListByRef(ctx, "orgId", "none", port.ListParams{Filter: &port.Filter{Terms: []port.FilterTerm{mine}}})
 		require.NoError(t, err)
@@ -131,21 +135,21 @@ func ListQueryDocs(t *testing.T, repo port.Repository[domain.Course, *domain.Cou
 	})
 }
 
-// ListQueryPersons checks sort and filter on a person repository. The
-// database may hold other persons, so every query first narrows to this run's
-// records with a family-name filter.
-func ListQueryPersons(t *testing.T, repo port.PersonRepository) {
+// ListQueryPersons checks sort, filter and role matching on a person
+// repository. The database may hold other persons, so every query first
+// narrows to this run's records with a family-name filter.
+func ListQueryPersons(t *testing.T, repo port.Repository[domain.Person, *domain.Person]) {
 	t.Helper()
 	ctx := t.Context()
 	mark := fmt.Sprintf("-%d", time.Now().UnixNano())
 	now := time.Now().UTC()
-	person := func(id, given, family string, roles ...domain.Role) domain.Person {
-		return domain.Person{
+	person := func(id, given, family string, roles ...domain.Role) *domain.Person {
+		return &domain.Person{
 			ID: id + mark, SourcedID: id + mark, Status: domain.StatusActive,
 			GivenName: given, FamilyName: family + mark, Roles: roles, CreatedAt: now, UpdatedAt: now,
 		}
 	}
-	records := []domain.Person{
+	records := []*domain.Person{
 		person("p1", "Zed", "Berg", domain.RoleStudent),
 		person("p2", "amy", "Ahl", domain.RoleStudent),
 		person("p3", "Bo", "Cole", domain.RoleStaff),
@@ -163,7 +167,7 @@ func ListQueryPersons(t *testing.T, repo port.PersonRepository) {
 		require.NoError(t, repo.Create(ctx, p))
 	}
 	mine := port.FilterTerm{Field: "familyName", Op: port.FilterContains, Value: mark}
-	given := func(items []domain.Person) []string {
+	given := func(items []*domain.Person) []string {
 		var out []string
 		for _, p := range items {
 			out = append(out, p.GivenName)
@@ -197,7 +201,7 @@ func ListQueryPersons(t *testing.T, repo port.PersonRepository) {
 		assert.Equal(t, 3, page.Total)
 	})
 	t.Run("filter and sort apply with a role filter", func(t *testing.T) {
-		page, err := repo.ListByRoles(ctx, []domain.Role{domain.RoleStudent}, port.ListParams{Sort: "givenName", Filter: &port.Filter{Terms: []port.FilterTerm{mine}}})
+		page, err := repo.List(ctx, port.ListParams{Sort: "givenName", AnyOf: &port.AnyOf{Field: "roles", Values: []string{string(domain.RoleStudent)}}, Filter: &port.Filter{Terms: []port.FilterTerm{mine}}})
 		require.NoError(t, err)
 		assert.Equal(t, []string{"Zed", "amy"}, given(page.Items))
 		assert.Equal(t, 2, page.Total)
@@ -215,10 +219,50 @@ func ListQueryPersons(t *testing.T, repo port.PersonRepository) {
 		require.NoError(t, err)
 		assert.Equal(t, []string{"amy", "Zed"}, given(page.Items))
 	})
-	t.Run("a key that is not a person column is refused", func(t *testing.T) {
-		_, err := repo.List(ctx, port.ListParams{Sort: "roles"})
+	t.Run("any-of matches an array holding one of the values", func(t *testing.T) {
+		staffOrGuest := &port.AnyOf{Field: "roles", Values: []string{string(domain.RoleStaff), string(domain.RoleGuest)}}
+		page, err := repo.List(ctx, port.ListParams{AnyOf: staffOrGuest, Filter: &port.Filter{Terms: []port.FilterTerm{mine}}})
+		require.NoError(t, err)
+		assert.Equal(t, []string{"Bo"}, given(page.Items))
+	})
+	t.Run("any-of with no values matches nobody", func(t *testing.T) {
+		page, err := repo.List(ctx, port.ListParams{AnyOf: &port.AnyOf{Field: "roles"}, Filter: &port.Filter{Terms: []port.FilterTerm{mine}}})
+		require.NoError(t, err)
+		assert.Empty(t, page.Items)
+		assert.Zero(t, page.Total)
+	})
+	t.Run("same name falls back to sourcedId by bytes", func(t *testing.T) {
+		// Uppercase sorts before lowercase bytewise, the reverse of a linguistic collation.
+		twins := []*domain.Person{person("a", "Twin", "Twin"), person("B", "Twin", "Twin")}
+		t.Cleanup(func() {
+			cleanup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			for _, p := range twins {
+				assert.NoError(t, repo.Delete(cleanup, p.ID))
+			}
+		})
+		for _, p := range twins {
+			require.NoError(t, repo.Create(ctx, p))
+		}
+		twin := &port.Filter{Terms: []port.FilterTerm{{Field: "familyName", Op: port.FilterContains, Value: "Twin" + mark}}}
+		ids := func(params port.ListParams) []string {
+			params.Filter = twin
+			page, err := repo.List(ctx, params)
+			require.NoError(t, err)
+			var out []string
+			for _, p := range page.Items {
+				out = append(out, p.ID)
+			}
+			return out
+		}
+		assert.Equal(t, []string{"B" + mark, "a" + mark}, ids(port.ListParams{}), "whole list")
+		assert.Equal(t, []string{"B" + mark}, ids(port.ListParams{Limit: 1}), "first page")
+		assert.Equal(t, []string{"a" + mark}, ids(port.ListParams{Limit: 1, Offset: 1}), "second page")
+	})
+	t.Run("a key that could alter the SQL is refused", func(t *testing.T) {
+		_, err := repo.List(ctx, port.ListParams{Filter: &port.Filter{Terms: []port.FilterTerm{{Field: "givenName') OR 1=1 --", Op: port.FilterEquals, Value: "x"}}}})
 		assert.Error(t, err)
-		_, err = repo.List(ctx, port.ListParams{Filter: &port.Filter{Terms: []port.FilterTerm{{Field: "givenName') OR 1=1 --", Op: port.FilterEquals, Value: "x"}}}})
+		_, err = repo.List(ctx, port.ListParams{AnyOf: &port.AnyOf{Field: "roles') OR 1=1 --", Values: []string{"x"}}})
 		assert.Error(t, err)
 	})
 }

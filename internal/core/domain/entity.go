@@ -26,6 +26,25 @@ type EntityPtr[T any] interface {
 	Entity
 }
 
+// QuerySpec tells a document repository how to serve free-text search and
+// the default list order for one entity type.
+type QuerySpec struct {
+	// SearchFields are the string properties a search term is looked for in.
+	SearchFields []string
+	// SearchValueArrays are properties holding arrays of objects; a search
+	// term is also looked for in each object's "value" string.
+	SearchValueArrays []string
+	// DefaultOrder are the string properties lists are ordered by, before
+	// sourcedId, when no sort is given.
+	DefaultOrder []string
+}
+
+// Queryable is implemented by entities that can be searched or that list in
+// an order other than by sourcedId.
+type Queryable interface {
+	QuerySpec() QuerySpec
+}
+
 // Base provides the common identity/timestamp fields and accessors for entities
 // to embed. EntityType and Validate are supplied by each concrete entity.
 type Base struct {

@@ -46,9 +46,9 @@ func newStore(t *testing.T) *postgres.Service {
 func TestPersonRepository_CRUD(t *testing.T) {
 	ctx := t.Context()
 	svc := newStore(t)
-	repo := svc.Persons()
+	repo := postgres.NewDocRepo[domain.Person](svc)
 
-	person := domain.Person{
+	person := &domain.Person{
 		ID: "test-" + time.Now().Format("150405.000000"), SourcedID: "src-" + time.Now().Format("150405.000000"),
 		Status: domain.StatusActive, GivenName: "Ada", FamilyName: "Lovelace",
 		Roles: []domain.Role{domain.RoleStudent}, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
@@ -93,14 +93,14 @@ func TestPersonRepository_CRUD(t *testing.T) {
 	assert.ErrorIs(t, err, domain.ErrNotFound, "get after delete")
 }
 
-func TestPersonRepository_ListByRoles(t *testing.T) {
+func TestPersonRepository_AnyOfRoles(t *testing.T) {
 	ctx := t.Context()
-	repo := newStore(t).Persons()
+	repo := postgres.NewDocRepo[domain.Person](newStore(t))
 	suffix := time.Now().Format("150405.000000")
 	now := time.Now().UTC()
 
-	student := domain.Person{ID: "rs-" + suffix, SourcedID: "rs-" + suffix, Status: domain.StatusActive, GivenName: "S", FamilyName: "S", Roles: []domain.Role{domain.RoleStudent}, CreatedAt: now, UpdatedAt: now}
-	staff := domain.Person{ID: "rt-" + suffix, SourcedID: "rt-" + suffix, Status: domain.StatusActive, GivenName: "T", FamilyName: "T", Roles: []domain.Role{domain.RoleStaff}, CreatedAt: now, UpdatedAt: now}
+	student := &domain.Person{ID: "rs-" + suffix, SourcedID: "rs-" + suffix, Status: domain.StatusActive, GivenName: "S", FamilyName: "S", Roles: []domain.Role{domain.RoleStudent}, CreatedAt: now, UpdatedAt: now}
+	staff := &domain.Person{ID: "rt-" + suffix, SourcedID: "rt-" + suffix, Status: domain.StatusActive, GivenName: "T", FamilyName: "T", Roles: []domain.Role{domain.RoleStaff}, CreatedAt: now, UpdatedAt: now}
 	t.Cleanup(func() {
 		_ = repo.Delete(context.Background(), student.ID)
 		_ = repo.Delete(context.Background(), staff.ID)
@@ -108,7 +108,7 @@ func TestPersonRepository_ListByRoles(t *testing.T) {
 	require.NoError(t, repo.Create(ctx, student))
 	require.NoError(t, repo.Create(ctx, staff))
 
-	page, err := repo.ListByRoles(ctx, []domain.Role{domain.RoleStudent}, port.ListParams{Limit: 1000})
+	page, err := repo.List(ctx, port.ListParams{Limit: 1000, AnyOf: &port.AnyOf{Field: "roles", Values: []string{"student"}}})
 	require.NoError(t, err)
 	ids := make([]string, 0, len(page.Items))
 	for _, p := range page.Items {
@@ -117,7 +117,7 @@ func TestPersonRepository_ListByRoles(t *testing.T) {
 	assert.Contains(t, ids, student.ID)
 	assert.NotContains(t, ids, staff.ID)
 
-	past, err := repo.ListByRoles(ctx, []domain.Role{domain.RoleStudent}, port.ListParams{Offset: page.Total, Limit: 10})
+	past, err := repo.List(ctx, port.ListParams{Offset: page.Total, Limit: 10, AnyOf: &port.AnyOf{Field: "roles", Values: []string{"student"}}})
 	require.NoError(t, err, "past the end")
 	assert.Empty(t, past.Items)
 	assert.Equal(t, page.Total, past.Total, "total survives an empty page")
@@ -129,9 +129,9 @@ func TestUpdateSourcedIDCollisionIsConflict(t *testing.T) {
 	suffix := time.Now().Format("150405.000000")
 	now := time.Now().UTC()
 
-	persons := svc.Persons()
-	a := domain.Person{ID: "pa-" + suffix, SourcedID: "sa-" + suffix, Status: domain.StatusActive, GivenName: "A", FamilyName: "A", CreatedAt: now, UpdatedAt: now}
-	b := domain.Person{ID: "pb-" + suffix, SourcedID: "sb-" + suffix, Status: domain.StatusActive, GivenName: "B", FamilyName: "B", CreatedAt: now, UpdatedAt: now}
+	persons := postgres.NewDocRepo[domain.Person](svc)
+	a := &domain.Person{ID: "pa-" + suffix, SourcedID: "sa-" + suffix, Status: domain.StatusActive, GivenName: "A", FamilyName: "A", CreatedAt: now, UpdatedAt: now}
+	b := &domain.Person{ID: "pb-" + suffix, SourcedID: "sb-" + suffix, Status: domain.StatusActive, GivenName: "B", FamilyName: "B", CreatedAt: now, UpdatedAt: now}
 	t.Cleanup(func() {
 		_ = persons.Delete(context.Background(), a.ID)
 		_ = persons.Delete(context.Background(), b.ID)
@@ -163,14 +163,14 @@ func TestGetByIDs(t *testing.T) {
 	suffix := time.Now().Format("150405.000000")
 	now := time.Now().UTC()
 
-	persons := svc.Persons()
-	a := domain.Person{ID: "ga-" + suffix, SourcedID: "gsa-" + suffix, Status: domain.StatusActive, GivenName: "A", FamilyName: "A", CreatedAt: now, UpdatedAt: now}
-	b := domain.Person{ID: "gb-" + suffix, SourcedID: "gsb-" + suffix, Status: domain.StatusActive, GivenName: "B", FamilyName: "B", CreatedAt: now, UpdatedAt: now}
+	persons := postgres.NewDocRepo[domain.Person](svc)
+	a := &domain.Person{ID: "ga-" + suffix, SourcedID: "gsa-" + suffix, Status: domain.StatusActive, GivenName: "A", FamilyName: "A", CreatedAt: now, UpdatedAt: now}
+	b := &domain.Person{ID: "gb-" + suffix, SourcedID: "gsb-" + suffix, Status: domain.StatusActive, GivenName: "B", FamilyName: "B", CreatedAt: now, UpdatedAt: now}
 	t.Cleanup(func() {
 		_ = persons.Delete(context.Background(), a.ID)
 		_ = persons.Delete(context.Background(), b.ID)
 	})
-	for _, person := range []domain.Person{a, b} {
+	for _, person := range []*domain.Person{a, b} {
 		require.NoError(t, persons.Create(ctx, person), "create %s", person.ID)
 	}
 	got, err := persons.GetByIDs(ctx, []string{a.ID, b.ID, "missing", b.SourcedID})
@@ -205,7 +205,7 @@ func TestListTotalMatchesPageUnderInserts(t *testing.T) {
 	ctx := t.Context()
 	svc := newStore(t)
 	suffix := time.Now().Format("150405.000000")
-	persons := svc.Persons()
+	persons := postgres.NewDocRepo[domain.Person](svc)
 	courses := postgres.NewDocRepo[domain.Course](svc)
 
 	const inserts = 100
@@ -215,7 +215,7 @@ func TestListTotalMatchesPageUnderInserts(t *testing.T) {
 		for i := range inserts {
 			now := time.Now().UTC()
 			id := fmt.Sprintf("lt-%s-%03d", suffix, i)
-			person := domain.Person{ID: id, SourcedID: "s" + id, Status: domain.StatusActive, GivenName: "L", FamilyName: "L", CreatedAt: now, UpdatedAt: now}
+			person := &domain.Person{ID: id, SourcedID: "s" + id, Status: domain.StatusActive, GivenName: "L", FamilyName: "L", CreatedAt: now, UpdatedAt: now}
 			course := &domain.Course{ID: id, SourcedID: "s" + id, CreatedAt: now, UpdatedAt: now, Title: "L"}
 			_ = persons.Create(ctx, person)
 			_ = courses.Create(ctx, course)

@@ -68,8 +68,35 @@ type Person struct {
 	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
 }
 
+// EntityType returns the stable type tag.
+func (*Person) EntityType() string { return "person" }
+
+// QuerySpec makes persons searchable by name, id, sourcedId and identifier
+// and email values, and lists them by name.
+func (*Person) QuerySpec() QuerySpec {
+	return QuerySpec{
+		SearchFields:      []string{"givenName", "middleName", "familyName", "id", "sourcedId"},
+		SearchValueArrays: []string{"identifiers", "emails"},
+		DefaultOrder:      []string{"familyName", "givenName"},
+	}
+}
+
+// Person does not embed Base: its status is required, not optional.
+
+func (p *Person) GetID() string            { return p.ID }
+func (p *Person) SetID(s string)           { p.ID = s }
+func (p *Person) GetSourcedID() string     { return p.SourcedID }
+func (p *Person) SetSourcedID(s string)    { p.SourcedID = s }
+func (p *Person) GetCreatedAt() time.Time  { return p.CreatedAt }
+func (p *Person) SetCreatedAt(t time.Time) { p.CreatedAt = t }
+func (p *Person) GetUpdatedAt() time.Time  { return p.UpdatedAt }
+func (p *Person) SetUpdatedAt(t time.Time) { p.UpdatedAt = t }
+
+func (p *Person) GetExpiresAt() *time.Time  { return p.ExpiresAt }
+func (p *Person) SetExpiresAt(t *time.Time) { p.ExpiresAt = t }
+
 // Validate checks required invariants for a Person.
-func (p Person) Validate() error {
+func (p *Person) Validate() error {
 	if p.GivenName == "" {
 		return Required("givenName")
 	}

@@ -180,7 +180,7 @@ func (b *elmBuilder) person(subject *elm.Node) (string, error) {
 	if given == "" && family == "" {
 		given, family = splitName(subject.Text("fullName"))
 	}
-	person := domain.Person{
+	person := &domain.Person{
 		SourcedID: sid, Status: domain.StatusActive,
 		GivenName: given, FamilyName: family,
 		Roles:       []domain.Role{domain.RoleStudent},

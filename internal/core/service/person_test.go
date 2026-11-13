@@ -22,20 +22,20 @@ func (pub *countingPublisher) Publish(_ context.Context, event domain.Event) err
 	return nil
 }
 
-func newSvc() (*service.Service, *countingPublisher) {
+func newSvc() (*service.Resource[domain.Person, *domain.Person], *countingPublisher) {
 	pub := &countingPublisher{}
-	return service.New(memory.NewPersonRepository(), pub, nil, nil), pub
+	return service.NewResource(memory.NewDocRepo[domain.Person](), pub, nil, nil), pub
 }
 
 func TestCreatePerson_Validation(t *testing.T) {
 	svc, _ := newSvc()
-	_, err := svc.CreatePerson(t.Context(), domain.Person{})
+	_, err := svc.Create(t.Context(), &domain.Person{})
 	assert.Error(t, err, "expected validation error for empty person")
 }
 
 func TestCreatePerson_Success(t *testing.T) {
 	svc, pub := newSvc()
-	person, err := svc.CreatePerson(t.Context(), domain.Person{
+	person, err := svc.Create(t.Context(), &domain.Person{
 		GivenName: "Ada", FamilyName: "Lovelace", Status: domain.StatusActive,
 	})
 	require.NoError(t, err)
@@ -51,17 +51,17 @@ func TestUpsert_CreatesThenUpdates(t *testing.T) {
 	svc, _ := newSvc()
 	ctx := t.Context()
 
-	first, err := svc.UpsertPersonBySourcedID(ctx, domain.Person{
+	first, err := svc.UpsertBySourcedID(ctx, &domain.Person{
 		SourcedID: "stu-1", GivenName: "Grace", FamilyName: "Hopper", Status: domain.StatusActive,
 	})
 	require.NoError(t, err, "first upsert")
-	second, err := svc.UpsertPersonBySourcedID(ctx, domain.Person{
+	second, err := svc.UpsertBySourcedID(ctx, &domain.Person{
 		SourcedID: "stu-1", GivenName: "Grace B.", FamilyName: "Hopper", Status: domain.StatusActive,
 	})
 	require.NoError(t, err, "second upsert")
 	assert.Equal(t, first.ID, second.ID, "upsert must reuse id")
 
-	page, err := svc.ListPersons(ctx, port.ListParams{Limit: 10})
+	page, err := svc.List(ctx, port.ListParams{Limit: 10})
 	require.NoError(t, err, "list")
 	assert.Equal(t, 1, page.Total, "expected 1 person after repeated upsert")
 	require.NotEmpty(t, page.Items)
@@ -72,13 +72,13 @@ func TestUpsert_CreatesThenUpdates(t *testing.T) {
 // arrived, so every concurrent upsert misses the lookup and tries to create.
 // Later calls (the losers' re-read) pass straight through.
 type racyPersons struct {
-	*memory.PersonRepository
+	*memory.DocRepo[domain.Person, *domain.Person]
 	gate    *sync.WaitGroup
 	pending *atomic.Int32
 }
 
-func (repo racyPersons) GetBySourcedID(ctx context.Context, sid string) (domain.Person, error) {
-	person, err := repo.PersonRepository.GetBySourcedID(ctx, sid)
+func (repo racyPersons) GetBySourcedID(ctx context.Context, sid string) (*domain.Person, error) {
+	person, err := repo.DocRepo.GetBySourcedID(ctx, sid)
 	if repo.pending.Add(-1) >= 0 {
 		repo.gate.Done()
 		repo.gate.Wait()
@@ -89,16 +89,16 @@ func (repo racyPersons) GetBySourcedID(ctx context.Context, sid string) (domain.
 // interleavedPersons runs before once, just ahead of the first Update, to
 // simulate a concurrent writer landing between update's read and write.
 type interleavedPersons struct {
-	*memory.PersonRepository
+	*memory.DocRepo[domain.Person, *domain.Person]
 	before func()
 }
 
-func (repo *interleavedPersons) Update(ctx context.Context, person domain.Person, prev *time.Time) error {
+func (repo *interleavedPersons) Update(ctx context.Context, person *domain.Person, prev *time.Time) error {
 	if before := repo.before; before != nil {
 		repo.before = nil
 		before()
 	}
-	return repo.PersonRepository.Update(ctx, person, prev)
+	return repo.DocRepo.Update(ctx, person, prev)
 }
 
 // TestUpsertPersonWithExpiryRace: a TTL upsert that loses a race to a no-TTL
@@ -107,23 +107,23 @@ func TestUpsertPersonWithExpiryRace(t *testing.T) {
 	ctx := t.Context()
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	clock := func() time.Time { return now }
-	repo := &interleavedPersons{PersonRepository: memory.NewPersonRepository().WithClock(clock)}
-	svc := service.New(repo, nil, clock, nil)
-	person := func(given string) domain.Person {
-		return domain.Person{SourcedID: "s", GivenName: given, FamilyName: "F", Status: domain.StatusActive}
+	repo := &interleavedPersons{DocRepo: memory.NewDocRepo[domain.Person]().WithClock(clock)}
+	svc := service.NewResource[domain.Person](repo, nil, clock, nil)
+	person := func(given string) *domain.Person {
+		return &domain.Person{SourcedID: "s", GivenName: given, FamilyName: "F", Status: domain.StatusActive}
 	}
 
 	exp := now.Add(time.Hour)
-	_, _, err := svc.UpsertPersonWithExpiry(ctx, person("A"), &exp)
+	_, _, err := svc.UpsertWithExpiry(ctx, person("A"), &exp)
 	require.NoError(t, err)
 	repo.before = func() {
-		_, err := svc.UpsertPersonBySourcedID(ctx, person("Permanent"))
+		_, err := svc.UpsertBySourcedID(ctx, person("Permanent"))
 		assert.NoError(t, err, "concurrent permanent upsert")
 	}
 	later := now.Add(2 * time.Hour)
-	_, _, err = svc.UpsertPersonWithExpiry(ctx, person("Late"), &later)
+	_, _, err = svc.UpsertWithExpiry(ctx, person("Late"), &later)
 	require.NoError(t, err)
-	stored, err := svc.GetPersonBySourcedID(ctx, "s")
+	stored, err := svc.GetBySourcedID(ctx, "s")
 	require.NoError(t, err)
 	assert.Nil(t, stored.ExpiresAt, "want permanent")
 	assert.Equal(t, "Late", stored.GivenName, "want the late data")
@@ -135,15 +135,15 @@ func TestUpsert_ConcurrentDeliveriesConverge(t *testing.T) {
 	gate.Add(count)
 	var pending atomic.Int32
 	pending.Store(count)
-	repo := memory.NewPersonRepository()
-	svc := service.New(racyPersons{repo, &gate, &pending}, nil, nil, nil)
+	repo := memory.NewDocRepo[domain.Person]()
+	svc := service.NewResource[domain.Person](racyPersons{repo, &gate, &pending}, nil, nil, nil)
 
 	ids := make(chan string, count)
 	errs := make(chan error, count)
 	var wg sync.WaitGroup
 	for range count {
 		wg.Go(func() {
-			person, err := svc.UpsertPersonBySourcedID(t.Context(), domain.Person{
+			person, err := svc.UpsertBySourcedID(t.Context(), &domain.Person{
 				SourcedID: "stu-race", GivenName: "Ada", FamilyName: "Lovelace", Status: domain.StatusActive,
 			})
 			if err != nil {

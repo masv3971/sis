@@ -15,7 +15,7 @@ import (
 func sampleBundle() *domain.Bundle {
 	base := func(sid string) domain.Base { return domain.Base{SourcedID: sid, Status: domain.StatusActive} }
 	return &domain.Bundle{
-		Persons: []domain.Person{{SourcedID: "stu", Status: domain.StatusActive, GivenName: "A", FamilyName: "B"}},
+		Persons: []*domain.Person{{SourcedID: "stu", Status: domain.StatusActive, GivenName: "A", FamilyName: "B"}},
 		// Child listed before its parent: Populate must reorder.
 		Organizations: []*domain.Organization{
 			{Base: base("dept"), Name: "D", ParentID: "uni"},
@@ -85,7 +85,7 @@ func TestPopulateNewEntities(t *testing.T) {
 	catalog := newFixture(t).catalog
 	base := func(sid string) domain.Base { return domain.Base{SourcedID: sid, Status: domain.StatusActive} }
 	bundle := &domain.Bundle{
-		Persons:          []domain.Person{{SourcedID: "stu", Status: domain.StatusActive, GivenName: "A", FamilyName: "B"}},
+		Persons:          []*domain.Person{{SourcedID: "stu", Status: domain.StatusActive, GivenName: "A", FamilyName: "B"}},
 		Organizations:    []*domain.Organization{{Base: base("uni"), Name: "U"}},
 		AcademicSessions: []*domain.AcademicSession{{Base: base("ht26"), Title: "HT26"}},
 		Programs:         []*domain.Program{{Base: base("BSc"), Title: "BSc"}},
@@ -139,7 +139,7 @@ func TestPopulateNewEntities(t *testing.T) {
 func sampleNewEntitiesBundle(b *domain.Bundle) *domain.Bundle {
 	base := func(sid string) domain.Base { return domain.Base{SourcedID: sid, Status: domain.StatusActive} }
 	return &domain.Bundle{
-		Persons:             []domain.Person{{SourcedID: "stu", Status: domain.StatusActive, GivenName: "A", FamilyName: "B"}},
+		Persons:             []*domain.Person{{SourcedID: "stu", Status: domain.StatusActive, GivenName: "A", FamilyName: "B"}},
 		Organizations:       []*domain.Organization{{Base: base("uni"), Name: "U"}},
 		AcademicSessions:    []*domain.AcademicSession{{Base: base("ht26"), Title: "HT26"}},
 		Programs:            []*domain.Program{{Base: base("BSc"), Title: "BSc"}},
@@ -179,7 +179,7 @@ func TestPopulateResolvesStoredRefs(t *testing.T) {
 	_, err := catalog.Courses.Create(ctx, &domain.Course{ID: "c-id", SourcedID: "DA101", Title: "C"})
 	require.NoError(t, err)
 	bundle := &domain.Bundle{
-		Persons: []domain.Person{{SourcedID: "stu", Status: domain.StatusActive, GivenName: "A", FamilyName: "B"}},
+		Persons: []*domain.Person{{SourcedID: "stu", Status: domain.StatusActive, GivenName: "A", FamilyName: "B"}},
 		Results: []*domain.Result{{SourcedID: "r", PersonID: "stu", CourseID: "DA101"}},
 	}
 	_, err = catalog.Populate(ctx, bundle, nil)
@@ -201,7 +201,7 @@ func TestPopulateBatchesStoredRefs(t *testing.T) {
 	bundle := &domain.Bundle{}
 	for i := range 5 {
 		sid := "stu" + strconv.Itoa(i)
-		_, err := catalog.Persons.CreatePerson(ctx, domain.Person{ID: "p" + sid, SourcedID: sid, GivenName: "A", FamilyName: "B", Status: domain.StatusActive})
+		_, err := catalog.Persons.Create(ctx, &domain.Person{ID: "p" + sid, SourcedID: sid, GivenName: "A", FamilyName: "B", Status: domain.StatusActive})
 		require.NoError(t, err)
 		bundle.Enrollments = append(bundle.Enrollments, &domain.Enrollment{
 			SourcedID: "enr" + strconv.Itoa(i), Status: domain.StatusActive,
