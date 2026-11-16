@@ -186,6 +186,31 @@
       "optionalClientScopes": []
     },
     {
+      "clientId": "vc-apigw",
+      "name": "SUNET vc apigw (OIDC login for issuance, make vc-integration)",
+      "secret": "vc-apigw-secret",
+      "publicClient": false,
+      "standardFlowEnabled": true,
+      "redirectUris": ["https://localhost:8081/oidcrp/callback"],
+      "defaultClientScopes": ["basic", "profile", "email"],
+      "optionalClientScopes": [],
+      "protocolMappers": [
+        {
+          "name": "sis person id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "sourcedId",
+            "claim.name": "authentic_source_person_id",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
       "clientId": "sis-web",
       "name": "SIS web UI",
       "publicClient": true,
@@ -221,6 +246,26 @@
           "value": "password"
         }
       ]
+    },
+    {
+      "username": "anna",
+      "email": "anna.andersson@liu.local",
+      "emailVerified": true,
+      "firstName": "Anna",
+      "lastName": "Andersson",
+      "enabled": true,
+      "attributes": { "sourcedId": ["liu:anna.andersson"] },
+      "credentials": [{ "type": "password", "value": "password" }]
+    },
+    {
+      "username": "nobody",
+      "email": "nobody@liu.local",
+      "emailVerified": true,
+      "firstName": "No",
+      "lastName": "Body",
+      "enabled": true,
+      "attributes": { "sourcedId": ["liu:nobody"] },
+      "credentials": [{ "type": "password", "value": "password" }]
     }
   ]
 }

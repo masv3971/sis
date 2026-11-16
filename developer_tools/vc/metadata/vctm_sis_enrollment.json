@@ -1,0 +1,23 @@
+{
+  "vct": "urn:credential:sis_enrollment:1",
+  "name": "SIS Enrollment",
+  "description": "Course enrollment issued from SIS through its Edu-API (make vc-integration).",
+  "display": [
+    {
+      "locale": "en-US",
+      "name": "SIS Enrollment",
+      "rendering": {
+        "simple": { "background_color": "#ffffff", "text_color": "#222222" }
+      }
+    }
+  ],
+  "claims": [
+    { "path": ["given_name"], "mandatory": true, "sd": "always", "display": [{ "locale": "en-US", "label": "Given name" }] },
+    { "path": ["family_name"], "mandatory": true, "sd": "always", "display": [{ "locale": "en-US", "label": "Family name" }] },
+    { "path": ["birth_date"], "mandatory": false, "sd": "always", "display": [{ "locale": "en-US", "label": "Date of birth" }] },
+    { "path": ["course_title"], "mandatory": false, "sd": "always", "display": [{ "locale": "en-US", "label": "Course" }] },
+    { "path": ["institution_name"], "mandatory": false, "sd": "always", "display": [{ "locale": "en-US", "label": "Institution" }] },
+    { "path": ["date_of_issuance"], "mandatory": true, "sd": "always", "display": [{ "locale": "en-US", "label": "Issue date" }] },
+    { "path": ["date_of_expiry"], "mandatory": true, "sd": "never", "display": [{ "locale": "en-US", "label": "Expiry date" }] }
+  ]
+}

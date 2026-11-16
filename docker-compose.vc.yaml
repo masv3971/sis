@@ -1,0 +1,79 @@
+# SUNET/vc stack for `make vc-integration`. An overlay on docker-compose.yaml:
+# it joins that file's sisnet network so vc reaches SIS and mellon by name.
+#
+#   docker compose -f docker-compose.yaml -f docker-compose.vc.yaml up -d
+#
+# VC_IMAGE_TAG pins the vc images; a vc refactor must not break the test
+# silently. Pull them first (docker.sunet.se/iam_vc/{apigw,issuer,registry}).
+services:
+  apigw:
+    image: docker.sunet.se/iam_vc/apigw:${VC_IMAGE_TAG:-latest}
+    hostname: apigw.vc.docker
+    depends_on:
+      - mongo
+      - mellon
+      - sis
+    volumes:
+      - ./developer_tools/vc/config.yaml:/config.yaml:ro
+      - ./developer_tools/vc/metadata:/metadata:ro
+      - ./developer_tools/pki/:/pki:ro
+    environment:
+      - VC_CONFIG_YAML=config.yaml
+      # Trust the dev CA for https://sis:8080 and https://mellon:8443.
+      - SSL_CERT_FILE=/pki/rootCA.crt
+    # Loopback only: the OIDC redirect in realm.json is https://localhost:8081.
+    ports:
+      - "127.0.0.1:8081:8080"
+    networks:
+      sisnet:
+        ipv4_address: 172.28.0.20
+
+  # mellon's tokens carry iss=https://localhost:9443/..., and vc discovers the
+  # issuer at exactly that URL. Inside apigw's network namespace, localhost:9443
+  # is forwarded to mellon.
+  mellon-localhost:
+    image: alpine/socat:latest
+    network_mode: "service:apigw"
+    command: ["TCP-LISTEN:9443,fork,reuseaddr", "TCP:mellon:8443"]
+    depends_on:
+      - apigw
+
+  issuer:
+    image: docker.sunet.se/iam_vc/issuer:${VC_IMAGE_TAG:-latest}
+    hostname: issuer.vc.docker
+    depends_on:
+      - mongo
+    volumes:
+      - ./developer_tools/vc/config.yaml:/config.yaml:ro
+      - ./developer_tools/vc/metadata:/metadata:ro
+      - ./developer_tools/pki/:/pki:ro
+    environment:
+      - VC_CONFIG_YAML=config.yaml
+      - SSL_CERT_FILE=/pki/rootCA.crt
+    networks:
+      sisnet:
+        ipv4_address: 172.28.0.21
+
+  registry:
+    image: docker.sunet.se/iam_vc/registry:${VC_IMAGE_TAG:-latest}
+    hostname: registry.vc.docker
+    depends_on:
+      - mongo
+    volumes:
+      - ./developer_tools/vc/config.yaml:/config.yaml:ro
+      - ./developer_tools/pki/:/pki:ro
+    environment:
+      - VC_CONFIG_YAML=config.yaml
+      - SSL_CERT_FILE=/pki/rootCA.crt
+    networks:
+      sisnet:
+        ipv4_address: 172.28.0.22
+
+  mongo:
+    image: mongo:7.0
+    hostname: mongo.vc.docker
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      start_period: 3s
+    networks:
+      - sisnet

@@ -16,7 +16,7 @@ CURRENT_BRANCH          = $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
 # ==============================================================================
 
 .PHONY: update gosec staticcheck vulncheck lint \
-	pki start stop restart \
+	pki start stop restart vc-integration \
 	vscode gh-install gh-auth \
 	build test vet fmt fmt-check docker-build docker-push \
 	swagger swagger-restadmin swagger-fmt swagger-check \
@@ -84,6 +84,14 @@ stop: ## Stop services
 	docker compose -f docker-compose.yaml rm -s -f
 
 restart: stop start ## Restart services
+
+# Needs the SUNET/vc images (docker.sunet.se/iam_vc/{apigw,issuer,registry}; pin with VC_IMAGE_TAG)
+# and a vc build whose Edu-API client reads Edu-API v1.0 Final: with an older
+# one the tests skip. The sis image is rebuilt like `make start` does.
+vc-integration: pki ## Issue a credential from SIS through SUNET/vc (needs the vc images)
+	$(info Starting SIS and the SUNET/vc stack)
+	docker compose -f docker-compose.yaml -f docker-compose.vc.yaml up -d --remove-orphans --wait
+	SIS_VC_APIGW_URL=https://localhost:8081 go test -tags vcintegration -count=1 -v ./internal/vcintegration/
 
 vscode: gh-install ## Set up VS Code development environment
 	$(info Installing APT packages)

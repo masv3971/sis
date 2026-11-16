@@ -477,6 +477,25 @@ memory, which is fine for trying SIS out but is lost on restart.
 The Postgres integration tests are skipped unless `SIS_TEST_DATABASE_URL`
 is set, and the AMQP broker test unless `SIS_TEST_AMQP_URL` is set.
 
+### Issuing from SIS with SUNET/vc
+
+`make vc-integration` starts SIS plus the SUNET/vc stack
+(`docker-compose.vc.yaml`: apigw, issuer, registry, mongo) and runs
+`internal/vcintegration` (build tag `vcintegration`, not part of `make test`
+or CI). The test plays the wallet: OIDC login at mellon as `anna`, then
+PAR, token and credential request with DPoP. vc's `data_sources.external_api`
+(`remotes.sis`, type `eduapi`) reads the student through SIS's Edu-API, and
+the test compares each issued claim with SIS's own Edu-API answer.
+
+Manual steps: pull `docker.sunet.se/iam_vc/{apigw,issuer,registry}` (pin with
+`VC_IMAGE_TAG`) and run `make pki` once (done by the target). Config is in
+`developer_tools/vc/`; the mellon client `vc-apigw` maps the user attribute
+`sourcedId` to the `authentic_source_person_id` claim vc looks the person up
+by.
+
+The tests skip while vc's Edu-API client asks for OneRoster paths
+(`/ims/oneroster/rostering/v1p2`) instead of Edu-API v1.0 Final.
+
 ### CI
 
 GitHub Actions (`.github/workflows/ci.yaml`) runs on pushes to `main`, on
