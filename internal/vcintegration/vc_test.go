@@ -39,18 +39,20 @@ import (
 
 // These are what developer_tools/vc/config.yaml and realm.json configure.
 const (
-	apigwPublicURL  = "https://localhost:8081"
-	mellonPublicURL = "https://localhost:9443"
-	walletClientID  = "sis-test-wallet"
-	walletRedirect  = "http://localhost:3000"
-	credentialScope = "sis_enrollment"
-	sisPersonID     = "liu:anna.andersson"
-	password        = "password"
+	apigwPublicURL    = "https://localhost:18083"
+	mellonPublicURL   = "https://localhost:9443"
+	studentsPublicURL = "https://localhost:9444"
+	walletClientID    = "sis-test-wallet"
+	walletRedirect    = "http://localhost:3000"
+	credentialScope   = "sis_enrollment"
+	sisPersonID       = "liu:anna.andersson"
+	unknownPersonID   = "liu:nobody"
+	password          = "password"
 )
 
 type stack struct {
-	apigw, mellon, sis string
-	http               *http.Client
+	apigw, mellon, students, sis string
+	http                         *http.Client
 }
 
 func newStack(t *testing.T) *stack {
@@ -65,9 +67,10 @@ func newStack(t *testing.T) *stack {
 	pool := x509.NewCertPool()
 	require.True(t, pool.AppendCertsFromPEM(pem), "no certificate in %s", caFile)
 	return &stack{
-		apigw:  strings.TrimRight(apigw, "/"),
-		mellon: strings.TrimRight(envOr("SIS_VC_MELLON_URL", mellonPublicURL), "/"),
-		sis:    strings.TrimRight(envOr("SIS_VC_SIS_URL", "https://localhost:8080"), "/"),
+		apigw:    strings.TrimRight(apigw, "/"),
+		mellon:   strings.TrimRight(envOr("SIS_VC_MELLON_URL", mellonPublicURL), "/"),
+		students: strings.TrimRight(envOr("SIS_VC_STUDENTS_URL", studentsPublicURL), "/"),
+		sis:      strings.TrimRight(envOr("SIS_VC_SIS_URL", "https://localhost:8080"), "/"),
 		http: &http.Client{
 			Timeout:   30 * time.Second,
 			Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}},
@@ -86,6 +89,7 @@ func envOr(key, def string) string {
 // connect to; the public form stays the one DPoP proofs are bound to.
 func (s *stack) reach(u string) string {
 	u = strings.Replace(u, apigwPublicURL, s.apigw, 1)
+	u = strings.Replace(u, studentsPublicURL, s.students, 1)
 	return strings.Replace(u, mellonPublicURL, s.mellon, 1)
 }
 
@@ -169,9 +173,19 @@ func TestIssueFromSIS(t *testing.T) {
 	assert.Equal(t, org.Name[0].Value, claims["institution_name"])
 }
 
-// A student SIS does not know gets no authorization code, so no credential.
+// A student SIS does not know is never issued a credential. Login and the OIDC
+// callback must succeed, so the stop is vc's lookup of the person in SIS.
 func TestUnknownPersonIsNotIssued(t *testing.T) {
 	s := newStack(t)
+
+	// SIS itself must answer 404 for this person, or the test proves nothing.
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet,
+		s.sis+eduapi.BasePath+"/persons/"+url.PathEscape(unknownPersonID), nil)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+s.sisToken(t))
+	resp, err := s.http.Do(req)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusNotFound, resp.StatusCode, "SIS person lookup: %s", readAll(resp))
 
 	claims, failure := s.issue(t, "nobody")
 	skipIfPreFinalVC(t, failure)
@@ -179,16 +193,18 @@ func TestUnknownPersonIsNotIssued(t *testing.T) {
 	assert.NotEmpty(t, failure, "a person SIS has no record of must not be issued a credential")
 }
 
-// skipIfPreFinalVC skips while vc's Edu-API client still asks for OneRoster
-// paths, which SIS does not serve (it speaks Edu-API v1.0 Final).
+// skipIfPreFinalVC skips when SIS_VC_SKIP_PRE_FINAL=1 and issuance stopped in
+// vc, for a vc build whose Edu-API client still asks for OneRoster paths, which
+// SIS does not serve (it speaks Edu-API v1.0 Final). vc redacts that cause from
+// its responses, so the build cannot be detected from the failure text.
 func skipIfPreFinalVC(t *testing.T, failure string) {
 	t.Helper()
-	if strings.Contains(failure, "oneroster") {
-		t.Skip("this vc build reads OneRoster paths, not Edu-API v1.0 Final: " + failure)
+	if failure != "" && os.Getenv("SIS_VC_SKIP_PRE_FINAL") == "1" {
+		t.Skip("SIS_VC_SKIP_PRE_FINAL=1 and issuance stopped in vc: " + failure)
 	}
 }
 
-// issue runs the wallet side of OpenID4VCI as user (a mellon account) and
+// issue runs the wallet side of OpenID4VCI as user (a student IdP account) and
 // returns the claims of the issued SD-JWT, or why issuance stopped.
 func (s *stack) issue(t *testing.T, user string) (map[string]any, string) {
 	t.Helper()
@@ -245,16 +261,25 @@ func (s *stack) issue(t *testing.T, user string) (map[string]any, string) {
 	loginURL := dataAttr(string(consent), "data-redirect-url")
 	require.NotEmpty(t, loginURL, "consent page has no data-redirect-url")
 
-	callback, failure := s.mellonLogin(t, manual, s.reach(loginURL), user)
-	if failure != "" {
-		return nil, failure
-	}
+	callback := s.studentLogin(t, manual, s.reach(loginURL), user)
 
 	resp, err = manual.Get(s.reach(callback))
 	require.NoError(t, err)
 	body = readAll(resp)
-	if resp.StatusCode >= http.StatusBadRequest {
-		return nil, fmt.Sprintf("oidc callback %d: %s", resp.StatusCode, body)
+	require.Less(t, resp.StatusCode, http.StatusBadRequest, "oidc callback: %s", body)
+
+	// vc fetches the document from SIS when the consent page is visited.
+	if loc := resp.Header.Get("Location"); loc != "" {
+		callbackURL, err := url.Parse(s.reach(callback))
+		require.NoError(t, err)
+		next, err := callbackURL.Parse(loc)
+		require.NoError(t, err)
+		resp, err = follow.Get(s.reach(next.String()))
+		require.NoError(t, err)
+		body = readAll(resp)
+		if resp.StatusCode >= http.StatusBadRequest {
+			return nil, fmt.Sprintf("consent %d: %s", resp.StatusCode, body)
+		}
 	}
 
 	resp, err = manual.Get(s.apigw + "/user/lookup")
@@ -331,25 +356,51 @@ func (s *stack) issue(t *testing.T, user string) (map[string]any, string) {
 	return sdJWTClaims(t, cred.Credentials[0].Credential), ""
 }
 
-var formAction = regexp.MustCompile(`<form[^>]+id="kc-form-login"[^>]+action="([^"]+)"`)
+var (
+	formAction  = regexp.MustCompile(`<form[^>]+action="([^"]+)"`)
+	hiddenField = regexp.MustCompile(`<input type="hidden" name="([^"]+)" value="([^"]*)"`)
+)
 
-// mellonLogin submits mellon's login form and returns the redirect back to apigw.
-func (s *stack) mellonLogin(t *testing.T, c *http.Client, loginURL, user string) (string, string) {
+// studentLogin signs the student in at the student IdP (mellon, standing in for
+// eduID) and returns the redirect back to apigw. A failed login fails the test.
+func (s *stack) studentLogin(t *testing.T, c *http.Client, authURL, user string) string {
 	t.Helper()
-	resp, err := c.Get(loginURL)
-	require.NoError(t, err)
-	page := readAll(resp)
-	m := formAction.FindSubmatch(page)
-	require.NotNil(t, m, "no login form from mellon (status %d): %s", resp.StatusCode, page)
+	current := authURL
+	var page []byte
+	// /auth redirects to the login page.
+	for range 3 {
+		resp, err := c.Get(current)
+		require.NoError(t, err)
+		page = readAll(resp)
+		loc := resp.Header.Get("Location")
+		if resp.StatusCode != http.StatusFound || loc == "" {
+			require.Equal(t, http.StatusOK, resp.StatusCode, "student IdP: %s", page)
+			break
+		}
+		next, err := url.Parse(current)
+		require.NoError(t, err)
+		ref, err := url.Parse(loc)
+		require.NoError(t, err)
+		current = s.reach(next.ResolveReference(ref).String())
+	}
 
-	resp, err = c.PostForm(html.UnescapeString(string(m[1])), url.Values{"username": {user}, "password": {password}})
+	m := formAction.FindSubmatch(page)
+	require.NotNil(t, m, "no login form from the student IdP: %s", page)
+	form := url.Values{"username": {user}, "password": {password}}
+	for _, f := range hiddenField.FindAllSubmatch(page, -1) {
+		form.Set(string(f[1]), html.UnescapeString(string(f[2])))
+	}
+	base, err := url.Parse(current)
+	require.NoError(t, err)
+	ref, err := url.Parse(html.UnescapeString(string(m[1])))
+	require.NoError(t, err)
+
+	resp, err := c.PostForm(base.ResolveReference(ref).String(), form)
 	require.NoError(t, err)
 	body := readAll(resp)
 	loc := resp.Header.Get("Location")
-	if resp.StatusCode != http.StatusFound || loc == "" {
-		return "", fmt.Sprintf("mellon login %d: %s", resp.StatusCode, body)
-	}
-	return loc, ""
+	require.True(t, resp.StatusCode == http.StatusFound && loc != "", "student login %d: %s", resp.StatusCode, body)
+	return loc
 }
 
 func (s *stack) getJSON(t *testing.T, u string, out any) {

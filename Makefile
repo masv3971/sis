@@ -87,11 +87,13 @@ restart: stop start ## Restart services
 
 # Needs the SUNET/vc images (docker.sunet.se/iam_vc/{apigw,issuer,registry}; pin with VC_IMAGE_TAG)
 # and a vc build whose Edu-API client reads Edu-API v1.0 Final: with an older
-# one the tests skip. The sis image is rebuilt like `make start` does.
+# one the tests fail, unless SIS_VC_SKIP_PRE_FINAL=1 turns that into a skip.
+# --build makes the run test the current checkout, not a cached sis image.
 vc-integration: pki ## Issue a credential from SIS through SUNET/vc (needs the vc images)
 	$(info Starting SIS and the SUNET/vc stack)
-	docker compose -f docker-compose.yaml -f docker-compose.vc.yaml up -d --remove-orphans --wait
-	SIS_VC_APIGW_URL=https://localhost:8081 go test -tags vcintegration -count=1 -v ./internal/vcintegration/
+	docker compose -f docker-compose.yaml -f docker-compose.vc.yaml up -d --build --remove-orphans --wait
+	SIS_VC_APIGW_URL=https://172.28.0.20:8080 SIS_VC_SIS_URL=https://172.28.0.10:8080 SIS_VC_MELLON_URL=https://172.28.0.11:8443 SIS_VC_STUDENTS_URL=https://172.28.0.12:8443 \
+		go test -tags vcintegration -count=1 -v ./internal/vcintegration/
 
 vscode: gh-install ## Set up VS Code development environment
 	$(info Installing APT packages)
