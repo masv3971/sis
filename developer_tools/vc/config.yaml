@@ -91,7 +91,7 @@ apigw:
             familyName:
               claim: family_name
               required: true
-            birthDate:
+            dateOfBirth:
               claim: birth_date
             course.title:
               claim: course_title

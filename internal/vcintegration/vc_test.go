@@ -152,7 +152,7 @@ func TestIssueFromSIS(t *testing.T) {
 	assert.Equal(t, person.DateOfBirth, claims["birth_date"])
 
 	var enrollments []eduapi.Enrollment
-	s.sisGet(t, token, "/enrollments?limit=500", &enrollments)
+	s.sisGet(t, token, "/enrollments?filter="+url.QueryEscape("person='"+sisPersonID+"'"), &enrollments)
 	var offeringID string
 	for _, e := range enrollments {
 		if e.Person == sisPersonID && e.IsActive {
