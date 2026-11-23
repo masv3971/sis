@@ -17,7 +17,7 @@ common:
       format: "dc+sd-jwt"
 
 issuer:
-  issuer_url: "https://localhost:8081"
+  issuer_url: "https://localhost:18083"
   api_server:
     addr: :8080
   grpc_server:
@@ -55,13 +55,20 @@ apigw:
       cert_file_path: "/pki/tls_apigw.crt"
       key_file_path: "/pki/tls_apigw.key"
   # Must be byte-identical to delivery.credential_offers.issuer_url and to the
-  # address the test reaches apigw on (published as 127.0.0.1:8081).
-  public_url: "https://localhost:8081"
+  # address the test reaches apigw on (published as 127.0.0.1:18083).
+  public_url: "https://localhost:18083"
   issuer_client:
     addr: issuer.vc.docker:8090
   registry_client:
     addr: registry.vc.docker:8090
+  issuer_metadata:
+    credential_encryption:
+      keys:
+        - private_key_path: "/pki/credential_encryption.pem"
 
+  # vc to SIS is a machine account: one client-credentials client per vc
+  # deployment (the SIS realm's sunet-vc, scope sis.read). Students never get
+  # an account at the SIS token issuer.
   remotes:
     sis:
       type: eduapi
@@ -94,10 +101,12 @@ apigw:
   auth_providers:
     oidc:
       enable: true
-      # Equals the iss mellon puts in tokens; the sidecar in
-      # docker-compose.vc.yaml makes localhost:9443 reach mellon from here.
-      issuer_url: "https://localhost:9443/realms/sis"
-      redirect_uri: "https://localhost:8081/oidcrp/callback"
+      # Student to vc: the IdP students log in at, which only yields their SIS
+      # sourcedId (authentic_source_person_id). Not the SIS token issuer. It is
+      # a separate mellon (realm eduid) standing in for eduID. The sidecar in
+      # docker-compose.vc.yaml makes localhost:9444 reach it from here.
+      issuer_url: "https://localhost:9444/realms/eduid"
+      redirect_uri: "https://localhost:18083/oidcrp/callback"
       scopes: ["openid", "profile", "email"]
       session_duration: 300
       registration:
@@ -108,7 +117,7 @@ apigw:
 
   delivery:
     openid4vci:
-      token_endpoint: "https://localhost:8081/token"
+      token_endpoint: "https://localhost:18083/token"
       clients:
         "sis-test-wallet":
           type: "public"
@@ -116,7 +125,7 @@ apigw:
           scopes:
             - "sis_enrollment"
     credential_offers:
-      issuer_url: "https://localhost:8081"
+      issuer_url: "https://localhost:18083"
       wallets:
         dev_wallet:
           label: "Dev Wallet"

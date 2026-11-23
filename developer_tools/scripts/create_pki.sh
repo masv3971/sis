@@ -19,11 +19,12 @@ cd "${PKI_DIR}"
 # Services that serve TLS, with their fixed IP on the compose network
 # (sisnet, 172.28.0.0/16). Every certificate also covers localhost and
 # 127.0.0.1, because the ports are published on the host's loopback.
-service_names="sis mellon apigw"
+service_names="sis mellon mellon-students apigw"
 service_ip() {
     case "$1" in
         sis)    echo "172.28.0.10" ;;
         mellon) echo "172.28.0.11" ;;
+        mellon-students) echo "172.28.0.12" ;;
         apigw)  echo "172.28.0.20" ;;
         *)      echo "" ;;
     esac

@@ -12,6 +12,7 @@ services:
     depends_on:
       - mongo
       - mellon
+      - mellon-students
       - sis
     volumes:
       - ./developer_tools/vc/config.yaml:/config.yaml:ro
@@ -21,20 +22,41 @@ services:
       - VC_CONFIG_YAML=config.yaml
       # Trust the dev CA for https://sis:8080 and https://mellon:8443.
       - SSL_CERT_FILE=/pki/rootCA.crt
-    # Loopback only: the OIDC redirect in realm.json is https://localhost:8081.
-    ports:
-      - "127.0.0.1:8081:8080"
+    # Not published: the test and a dev container reach it on sisnet, and VS Code's
+    # port forwarding would take a published host port.
     networks:
       sisnet:
         ipv4_address: 172.28.0.20
 
-  # mellon's tokens carry iss=https://localhost:9443/..., and vc discovers the
-  # issuer at exactly that URL. Inside apigw's network namespace, localhost:9443
-  # is forwarded to mellon.
+  # The student IdP: who the user is when they ask vc for a credential. Not the
+  # SIS token issuer. mellon serves one realm per process, so students get
+  # their own instance (realm eduid), standing in for eduID. vc only learns the
+  # person's SIS sourcedId from it (claim authentic_source_person_id).
+  mellon-students:
+    image: docker.sunet.se/iam_vc/mellon:latest
+    environment:
+      - KC_HTTP_PORT=8080
+      - KC_HTTP_ENABLED=true
+      # Tokens carry this as iss; vc discovers the IdP at exactly this URL.
+      - KC_HOSTNAME_URL=https://localhost:9444
+      - KC_PROXY_HEADERS=xforwarded
+      - KC_HTTPS_CERTIFICATE_FILE=/etc/mellon/pki/tls.crt
+      - KC_HTTPS_CERTIFICATE_KEY_FILE=/etc/mellon/pki/tls.key
+    volumes:
+      - ./developer_tools/vc/idp-realm.json:/opt/keycloak/data/import/realm.json:ro
+      - ./developer_tools/pki/tls_mellon-students_chain.pem:/etc/mellon/pki/tls.crt:ro
+      - ./developer_tools/pki/tls_mellon-students.key:/etc/mellon/pki/tls.key:ro
+    networks:
+      sisnet:
+        ipv4_address: 172.28.0.12
+
+  # The IdPs' tokens carry iss=https://localhost:<port>/..., and vc discovers
+  # each at exactly that URL. Inside apigw's network namespace, localhost:9444
+  # is forwarded to the student IdP.
   mellon-localhost:
     image: alpine/socat:latest
     network_mode: "service:apigw"
-    command: ["TCP-LISTEN:9443,fork,reuseaddr", "TCP:mellon:8443"]
+    command: ["TCP-LISTEN:9444,fork,reuseaddr", "TCP:mellon-students:8443"]
     depends_on:
       - apigw
 

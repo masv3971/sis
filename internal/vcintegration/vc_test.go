@@ -137,9 +137,9 @@ func TestIssueFromSIS(t *testing.T) {
 	s := newStack(t)
 
 	claims, failure := s.issue(t, "anna")
-	if failure != "" {
+	if failure != nil {
 		skipIfPreFinalVC(t, failure)
-		require.Fail(t, "issuance failed", failure)
+		require.Fail(t, "issuance failed", failure.String())
 	}
 
 	token := s.sisToken(t)
@@ -173,8 +173,10 @@ func TestIssueFromSIS(t *testing.T) {
 	assert.Equal(t, org.Name[0].Value, claims["institution_name"])
 }
 
-// A student SIS does not know is never issued a credential. Login and the OIDC
-// callback must succeed, so the stop is vc's lookup of the person in SIS.
+// TestUnknownPersonIsNotIssued checks that vc issues no credential for a person
+// that SIS has no record of. A known student issues first as a control, so only
+// the person differs. Login and the OIDC callback must succeed, so issuance
+// stops at vc's fetch of the person from SIS.
 func TestUnknownPersonIsNotIssued(t *testing.T) {
 	s := newStack(t)
 
@@ -187,26 +189,49 @@ func TestUnknownPersonIsNotIssued(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, http.StatusNotFound, resp.StatusCode, "SIS person lookup: %s", readAll(resp))
 
+	control, controlFailure := s.issue(t, "anna")
+	skipIfPreFinalVC(t, controlFailure)
+	require.Nil(t, controlFailure, "control issuance for a known student failed: %v", controlFailure)
+	require.NotEmpty(t, control)
+
 	claims, failure := s.issue(t, "nobody")
-	skipIfPreFinalVC(t, failure)
+	require.NotNil(t, failure, "a person SIS has no record of must not be issued a credential")
 	assert.Nil(t, claims)
-	assert.NotEmpty(t, failure, "a person SIS has no record of must not be issued a credential")
+	assert.Contains(t, []string{stageConsent, stageLookup}, failure.Stage, "stopped before vc fetched the person: %s", failure)
+	assert.GreaterOrEqual(t, failure.Status, http.StatusBadRequest, "%s", failure)
+	assert.NotEqual(t, http.StatusUnauthorized, failure.Status, "a lost session, not a rejected person: %s", failure)
 }
 
 // skipIfPreFinalVC skips when SIS_VC_SKIP_PRE_FINAL=1 and issuance stopped in
 // vc, for a vc build whose Edu-API client still asks for OneRoster paths, which
 // SIS does not serve (it speaks Edu-API v1.0 Final). vc redacts that cause from
 // its responses, so the build cannot be detected from the failure text.
-func skipIfPreFinalVC(t *testing.T, failure string) {
+func skipIfPreFinalVC(t *testing.T, failure *issueFailure) {
 	t.Helper()
-	if failure != "" && os.Getenv("SIS_VC_SKIP_PRE_FINAL") == "1" {
-		t.Skip("SIS_VC_SKIP_PRE_FINAL=1 and issuance stopped in vc: " + failure)
+	if failure != nil && os.Getenv("SIS_VC_SKIP_PRE_FINAL") == "1" {
+		t.Skip("SIS_VC_SKIP_PRE_FINAL=1 and issuance stopped in vc: " + failure.String())
 	}
 }
 
+const (
+	stageConsent = "consent"
+	stageLookup  = "user/lookup"
+)
+
+// issueFailure is where, and with which HTTP status, vc stopped issuance.
+type issueFailure struct {
+	Stage  string
+	Status int
+	Body   string
+}
+
+func (f *issueFailure) String() string {
+	return fmt.Sprintf("%s %d: %s", f.Stage, f.Status, f.Body)
+}
+
 // issue runs the wallet side of OpenID4VCI as user (a student IdP account) and
-// returns the claims of the issued SD-JWT, or why issuance stopped.
-func (s *stack) issue(t *testing.T, user string) (map[string]any, string) {
+// returns the claims of the issued SD-JWT, or where vc stopped issuance.
+func (s *stack) issue(t *testing.T, user string) (map[string]any, *issueFailure) {
 	t.Helper()
 	ctx := t.Context()
 
@@ -278,7 +303,7 @@ func (s *stack) issue(t *testing.T, user string) (map[string]any, string) {
 		require.NoError(t, err)
 		body = readAll(resp)
 		if resp.StatusCode >= http.StatusBadRequest {
-			return nil, fmt.Sprintf("consent %d: %s", resp.StatusCode, body)
+			return nil, &issueFailure{Stage: stageConsent, Status: resp.StatusCode, Body: string(body)}
 		}
 	}
 
@@ -295,7 +320,7 @@ func (s *stack) issue(t *testing.T, user string) (map[string]any, string) {
 		}
 	}
 	if code == "" {
-		return nil, fmt.Sprintf("user/lookup %d: %s", resp.StatusCode, body)
+		return nil, &issueFailure{Stage: stageLookup, Status: resp.StatusCode, Body: string(body)}
 	}
 
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -353,7 +378,7 @@ func (s *stack) issue(t *testing.T, user string) (map[string]any, string) {
 	}
 	require.NoError(t, json.Unmarshal(body, &cred))
 	require.NotEmpty(t, cred.Credentials)
-	return sdJWTClaims(t, cred.Credentials[0].Credential), ""
+	return sdJWTClaims(t, cred.Credentials[0].Credential), nil
 }
 
 var (
