@@ -425,7 +425,7 @@ import _ "github.com/SUNET/sis/pkg/eduapi"
 
 //	@Summary		List enrollments
 //	@ID				list-enrollments
-//	@Description	Lists enrollments. sort and filter accept sourcedId.
+//	@Description	Lists enrollments. sort accepts sourcedId. filter accepts sourcedId and person (the person's sourcedId, with = and != only).
 //	@Tags			enrollments
 //	@Produce		json
 //	@Security		BearerAuth
@@ -433,7 +433,7 @@ import _ "github.com/SUNET/sis/pkg/eduapi"
 //	@Param			offset	query		int					false	"Number of items to skip"											minimum(0)
 //	@Param			sort	query		string				false	"Field to sort by"
 //	@Param			orderBy	query		string				false	"Sort direction"	Enums(asc, desc)
-//	@Param			filter	query		string				false	"One or two terms joined by AND or OR, e.g. sourcedId='x'"
+//	@Param			filter	query		string				false	"One or two terms joined by AND or OR, e.g. person='x'"
 //	@Success		200		{array}		eduapi.Enrollment	"Success"
 //	@Header			200		{integer}	X-Total-Count		"Number of stored records"
 //	@Header			200		{string}	Link				"RFC 8288 first, prev, next and last links"
