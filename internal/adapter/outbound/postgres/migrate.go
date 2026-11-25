@@ -135,6 +135,11 @@ func applyMigration(ctx context.Context, conn *pgxpool.Conn, version, sqlText st
 		if _, err := tx.Exec(ctx, sqlText); err != nil {
 			return fmt.Errorf("apply migration %s: %w", version, err)
 		}
+		if step, ok := goMigrations[version]; ok {
+			if err := step(ctx, tx); err != nil {
+				return fmt.Errorf("apply migration %s: %w", version, err)
+			}
+		}
 		if _, err := tx.Exec(ctx,
 			`INSERT INTO schema_migrations (version) VALUES ($1)`, version,
 		); err != nil {

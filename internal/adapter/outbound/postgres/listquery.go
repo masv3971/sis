@@ -25,13 +25,20 @@ func filterSQL(f *port.Filter, column func(key string) (string, error), args []a
 		}
 		args = append(args, term.Value)
 		n := len(args)
+		left, right := fmt.Sprintf("lower(%s)", expr), fmt.Sprintf("lower($%d)", n)
+		if term.Field == "sourcedId" {
+			// Stored folded by Go; fold the value the same way, not with the
+			// database's locale-dependent lower().
+			args[n-1] = domain.FoldSourcedID(term.Value)
+			left, right = expr, fmt.Sprintf("$%d", n)
+		}
 		switch term.Op {
 		case port.FilterEquals:
-			conds = append(conds, fmt.Sprintf("lower(%s) = lower($%d)", expr, n))
+			conds = append(conds, fmt.Sprintf("%s = %s", left, right))
 		case port.FilterNotEquals:
-			conds = append(conds, fmt.Sprintf("lower(%s) <> lower($%d)", expr, n))
+			conds = append(conds, fmt.Sprintf("%s <> %s", left, right))
 		case port.FilterContains:
-			conds = append(conds, fmt.Sprintf("strpos(lower(%s), lower($%d)) > 0", expr, n))
+			conds = append(conds, fmt.Sprintf("strpos(%s, %s) > 0", left, right))
 		default:
 			return "", nil, fmt.Errorf("postgres: unknown filter operator %d", term.Op)
 		}
