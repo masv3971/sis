@@ -2309,7 +2309,7 @@ const docTemplateeduapi = `{
         },
         "/enrollments": {
             "get": {
-                "description": "Lists enrollments. sort and filter accept sourcedId.",
+                "description": "Lists enrollments. sort accepts sourcedId. filter accepts sourcedId and person (the person's sourcedId, with = and != only).",
                 "produces": [
                     "application/json"
                 ],
@@ -2351,7 +2351,7 @@ const docTemplateeduapi = `{
                     },
                     {
                         "type": "string",
-                        "description": "One or two terms joined by AND or OR, e.g. sourcedId='x'",
+                        "description": "One or two terms joined by AND or OR, e.g. person='x'",
                         "name": "filter",
                         "in": "query"
                     }

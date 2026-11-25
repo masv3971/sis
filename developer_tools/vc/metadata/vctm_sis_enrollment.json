@@ -1,0 +1,115 @@
+{
+  "vct": "urn:credential:sis_enrollment:1",
+  "name": "SIS Enrollment",
+  "description": "Course enrollment issued from SIS through its Edu-API (make vc-integration).",
+  "display": [
+    {
+      "locale": "en-US",
+      "name": "SIS Enrollment",
+      "rendering": {
+        "simple": {
+          "background_color": "#ffffff",
+          "text_color": "#222222",
+          "logo": {
+            "uri": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMCIgaGVpZ2h0PSIxMCI+PHJlY3Qgd2lkdGg9IjEwIiBoZWlnaHQ9IjEwIiBmaWxsPSIjMzMzIi8+PC9zdmc+",
+            "alt_text": "SIS"
+          }
+        }
+      },
+      "description": "Course enrollment issued from SIS through its Edu-API."
+    }
+  ],
+  "claims": [
+    {
+      "path": [
+        "given_name"
+      ],
+      "sd": "always",
+      "display": [
+        {
+          "locale": "en-US",
+          "label": "Given name",
+          "description": "Given name"
+        }
+      ]
+    },
+    {
+      "path": [
+        "family_name"
+      ],
+      "sd": "always",
+      "display": [
+        {
+          "locale": "en-US",
+          "label": "Family name",
+          "description": "Family name"
+        }
+      ]
+    },
+    {
+      "path": [
+        "birth_date"
+      ],
+      "sd": "always",
+      "display": [
+        {
+          "locale": "en-US",
+          "label": "Date of birth",
+          "description": "Date of birth"
+        }
+      ]
+    },
+    {
+      "path": [
+        "course_title"
+      ],
+      "sd": "always",
+      "display": [
+        {
+          "locale": "en-US",
+          "label": "Course",
+          "description": "Course"
+        }
+      ]
+    },
+    {
+      "path": [
+        "institution_name"
+      ],
+      "sd": "always",
+      "display": [
+        {
+          "locale": "en-US",
+          "label": "Institution",
+          "description": "Institution"
+        }
+      ]
+    },
+    {
+      "path": [
+        "date_of_issuance"
+      ],
+      "sd": "always",
+      "display": [
+        {
+          "locale": "en-US",
+          "label": "Issue date",
+          "description": "Issue date"
+        }
+      ]
+    },
+    {
+      "path": [
+        "date_of_expiry"
+      ],
+      "sd": "never",
+      "display": [
+        {
+          "locale": "en-US",
+          "label": "Expiry date",
+          "description": "Expiry date"
+        }
+      ]
+    }
+  ]
+}

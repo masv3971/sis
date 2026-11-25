@@ -477,6 +477,36 @@ memory, which is fine for trying SIS out but is lost on restart.
 The Postgres integration tests are skipped unless `SIS_TEST_DATABASE_URL`
 is set, and the AMQP broker test unless `SIS_TEST_AMQP_URL` is set.
 
+### Issuing from SIS with SUNET/vc
+
+`make vc-integration` starts SIS plus the SUNET/vc stack
+(`docker-compose.vc.yaml`: apigw, issuer, registry, mongo) and runs
+`internal/vcintegration` (build tag `vcintegration`, not part of `make test`
+or CI). The test plays the wallet: student login, then PAR, token and
+credential request with DPoP. vc's `data_sources.external_api` (`remotes.sis`,
+type `eduapi`) reads the student through SIS's Edu-API, and the test compares
+each issued claim with SIS's own Edu-API answer.
+
+Two separate accounts are involved, as in production:
+
+- **vc to SIS** is a machine account. `remotes.sis` holds `token_url`,
+  `client_id` and `client_secret`, and vc uses the client-credentials grant
+  with `sis.read`. It is the `sunet-vc` client in the SIS realm
+  (`realm.json`). Students never get an account there.
+- **Student to vc** only produces an identifier. `auth_providers.oidc` points
+  at an IdP students log in at, standing in for eduID: a second mellon
+  (`mellon-students`, realm `eduid`, `developer_tools/vc/idp-realm.json`). Its
+  client `vc-apigw` maps the user attribute `sourcedId` to the
+  `authentic_source_person_id` claim, which vc uses as the Edu-API person id.
+  Users: `anna` (a student in `fake_students.json`) and `nobody` (unknown to
+  SIS).
+
+Manual steps: pull `docker.sunet.se/iam_vc/{apigw,issuer,registry}` (pin with
+`VC_IMAGE_TAG`) and run `make pki` once (done by the target). Config is in
+`developer_tools/vc/`. The dev container must be attached to `sis_sisnet`
+(`docker network connect sis_sisnet $(hostname)`) to reach the `172.28.0.x`
+addresses `make vc-integration` uses; apigw is not published on the host.
+
 ### CI
 
 GitHub Actions (`.github/workflows/ci.yaml`) runs on pushes to `main`, on

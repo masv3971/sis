@@ -210,7 +210,7 @@ func New(ctx context.Context, cfg *model.Cfg, verifier *auth.Verifier, catalog *
 	edu.GET("/collectionTemplates/:id", eduapi.Get(eduAPI, catalog.Programs, mapper.CollectionTemplate))
 	edu.GET("/courseOfferings", eduAPI.ListCourseOfferings)
 	edu.GET("/courseOfferings/:id", eduAPI.GetCourseOffering)
-	edu.GET("/enrollments", eduapi.List(eduAPI, catalog.Enrollments, mapper.Enrollment))
+	edu.GET("/enrollments", eduAPI.ListEnrollments)
 	edu.GET("/enrollments/:id", eduapi.Get(eduAPI, catalog.Enrollments, mapper.Enrollment))
 	edu.GET("/students", eduAPI.ListStudents)
 	edu.GET("/staff", eduAPI.ListStaff)

@@ -59,7 +59,10 @@ func (c *Client) Mapper() dto.Mapper { return c.mapper }
 // them would disagree with what the response shows.
 var (
 	sourcedIDFields = helpers.ListFields{"sourcedId": "sourcedId"}
-	personFields    = helpers.ListFields{
+	// person is stored as the person's id but published as a sourcedId, so
+	// ListEnrollments rewrites its filter terms and refuses to sort on it.
+	enrollmentFields = helpers.ListFields{"sourcedId": "sourcedId", "person": "personId"}
+	personFields     = helpers.ListFields{
 		"sourcedId":            "sourcedId",
 		"legalName.familyName": "familyName",
 		"legalName.givenName":  "givenName",
@@ -134,6 +137,76 @@ func (c *Client) ListStudents(gc *gin.Context) {
 // ListStaff publishes the persons with the staff or faculty role.
 func (c *Client) ListStaff(gc *gin.Context) {
 	c.listPersonsWith(gc, personFields, c.listByRoles(staffRoles))
+}
+
+// ListEnrollments publishes the enrollments, which a client may filter by
+// the sourcedId of their person (= and != only), as Edu-API clients do.
+func (c *Client) ListEnrollments(gc *gin.Context) {
+	listFrom(c, gc, enrollmentFields, func(ctx context.Context, params port.ListParams) (port.Page[*domain.Enrollment], error) {
+		if params.Sort == "personId" {
+			return port.Page[*domain.Enrollment]{}, queryError("sort", "person cannot be sorted on")
+		}
+		if err := c.resolvePersonTerms(ctx, params.Filter); err != nil {
+			return port.Page[*domain.Enrollment]{}, err
+		}
+		return c.catalog.Enrollments.List(ctx, params)
+	}, each(c.mapper.Enrollment))
+}
+
+// resolvePersonTerms rewrites the filter terms on an enrollment's person from
+// the published sourcedId to the stored person id. An exact match wins; else
+// one match ignoring case is taken, as filters ignore case. Two or more such
+// matches are ambiguous and count as none. A person that does not exist
+// becomes "", which no enrollment has: = matches nothing, != everything.
+// TODO(#23): once sourcedId is unique ignoring case, look up that one match.
+func (c *Client) resolvePersonTerms(ctx context.Context, f *port.Filter) error {
+	if f == nil {
+		return nil
+	}
+	for i, term := range f.Terms {
+		if term.Field != "personId" {
+			continue
+		}
+		if term.Op == port.FilterContains {
+			return queryError("filter", "person supports = and != only")
+		}
+		id, err := c.personIDBySourcedID(ctx, term.Value)
+		if err != nil {
+			return err
+		}
+		f.Terms[i].Value = id
+	}
+	return nil
+}
+
+// personIDBySourcedID returns the stored id of the person with that sourcedId,
+// or "" when there is none or the match is ambiguous.
+func (c *Client) personIDBySourcedID(ctx context.Context, sourcedID string) (string, error) {
+	person, err := c.catalog.Persons.GetBySourcedID(ctx, sourcedID)
+	switch {
+	case err == nil:
+		return person.ID, nil
+	case !errors.Is(err, domain.ErrNotFound):
+		return "", err
+	}
+	// Two page items are enough to tell a unique match from an ambiguous one.
+	page, err := c.catalog.Persons.List(ctx, port.ListParams{
+		Limit:  2,
+		Filter: &port.Filter{Terms: []port.FilterTerm{{Field: "sourcedId", Op: port.FilterEquals, Value: sourcedID}}},
+	})
+	if err != nil {
+		return "", err
+	}
+	if len(page.Items) != 1 {
+		return "", nil
+	}
+	return page.Items[0].ID, nil
+}
+
+// queryError is a 400 for a query parameter the provider cannot honour.
+func queryError(field, msg string) *helpers.Error {
+	return helpers.NewErrorDetailsWithStatus(helpers.ErrValidation,
+		map[string]any{"field": field, "error": msg}, http.StatusBadRequest)
 }
 
 // ListOfferingEnrollments publishes the enrollments on one course offering.

@@ -19,11 +19,13 @@ cd "${PKI_DIR}"
 # Services that serve TLS, with their fixed IP on the compose network
 # (sisnet, 172.28.0.0/16). Every certificate also covers localhost and
 # 127.0.0.1, because the ports are published on the host's loopback.
-service_names="sis mellon"
+service_names="sis mellon mellon-students apigw"
 service_ip() {
     case "$1" in
         sis)    echo "172.28.0.10" ;;
         mellon) echo "172.28.0.11" ;;
+        mellon-students) echo "172.28.0.12" ;;
+        apigw)  echo "172.28.0.20" ;;
         *)      echo "" ;;
     esac
 }
@@ -91,6 +93,19 @@ EOF
 for name in ${service_names}; do
     create_leaf_cert "${name}"
 done
+
+# Signing key for the SUNET/vc stack in docker-compose.vc.yaml (make vc-integration).
+if [ ! -f signing_ec_private.pem ]; then
+    echo "Creating vc signing key"
+    dn "sis_dev_vc_signing" > signing.conf
+    openssl ecparam -name prime256v1 -genkey -noout -out signing_ec_private.pem
+    openssl req -new -key signing_ec_private.pem -out signing.csr -config signing.conf
+    openssl x509 -req -in signing.csr -CA rootCA.crt -CAkey rootCA.key \
+        -CAcreateserial -out signing_ec.crt -days 397 -sha256 2>/dev/null
+    cat signing_ec.crt rootCA.crt > signing_ec_chain.pem
+    chmod 644 signing_ec_private.pem
+    rm -f signing.conf signing.csr signing_ec.crt
+fi
 rm -f rootCA.srl
 
 echo "PKI ready in $(cd "${PKI_DIR}" && pwd). Trust rootCA.crt in your browser."

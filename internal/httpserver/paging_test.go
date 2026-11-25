@@ -36,9 +36,9 @@ func TestEduAPIPaging(t *testing.T) {
 	const stored = 7
 	for i := range stored {
 		id := fmt.Sprintf("o%d", i)
-		_, err := catalog.Courses.Create(ctx, &domain.Course{ID: "c" + id, SourcedID: "c" + id, Title: "T"})
+		_, err := catalog.Courses.Create(ctx, &domain.Course{Base: domain.Base{ID: "c" + id, SourcedID: "c" + id}, Title: "T"})
 		require.NoError(t, err)
-		_, err = catalog.Offerings.Create(ctx, &domain.Offering{ID: id, SourcedID: id, CourseID: "c" + id})
+		_, err = catalog.Offerings.Create(ctx, &domain.Offering{Base: domain.Base{ID: id, SourcedID: id}, CourseID: "c" + id})
 		require.NoError(t, err)
 	}
 	// Orphan the first offering: List leaves it out, X-Total-Count still counts it.
@@ -233,4 +233,123 @@ func TestEduAPISortAndFilter(t *testing.T) {
 			assert.Equal(t, tt.minor, body.Minor.Fields[0].Value)
 		})
 	}
+}
+
+// TestEduAPIEnrollmentsFilterByPerson checks the person filter vc's Edu-API
+// client sends. person is the person's sourcedId, while enrollments store
+// the person's id, so the two differ here.
+func TestEduAPIEnrollmentsFilterByPerson(t *testing.T) {
+	ctx := t.Context()
+	log := logger.NewWithWriter("test", false, "error", io.Discard)
+	catalog := &readmodel.Client{
+		Persons:     service.NewResource(memory.NewDocRepo[domain.Person](), nil, nil, log),
+		Courses:     service.NewResource(memory.NewDocRepo[domain.Course](), nil, nil, log),
+		Offerings:   service.NewResource(memory.NewDocRepo[domain.Offering](), nil, nil, log),
+		Enrollments: service.NewResource(memory.NewDocRepo[domain.Enrollment](), nil, nil, log),
+	}
+	must := func(_ any, err error) {
+		t.Helper()
+		require.NoError(t, err)
+	}
+	for _, p := range []*domain.Person{
+		{ID: "id-anna", SourcedID: "anna", GivenName: "Anna", FamilyName: "A", Status: domain.StatusActive},
+		{ID: "id-bo", SourcedID: "bo", GivenName: "Bo", FamilyName: "B", Status: domain.StatusActive},
+		{ID: "id-bo2", SourcedID: "BO", GivenName: "Bo", FamilyName: "Twin", Status: domain.StatusActive},
+	} {
+		must(catalog.Persons.Create(ctx, p))
+	}
+	must(catalog.Courses.Create(ctx, &domain.Course{Base: domain.Base{ID: "id-c", SourcedID: "c"}, Title: "C"}))
+	must(catalog.Offerings.Create(ctx, &domain.Offering{Base: domain.Base{ID: "id-o", SourcedID: "o"}, CourseID: "id-c"}))
+	for _, e := range []*domain.Enrollment{
+		{Base: domain.Base{ID: "id-e1", SourcedID: "e1"}, PersonID: "id-anna", OfferingID: "id-o", Role: domain.RoleStudent},
+		{Base: domain.Base{ID: "id-e2", SourcedID: "e2"}, PersonID: "id-anna", OfferingID: "id-o", Role: domain.RoleStudent},
+		{Base: domain.Base{ID: "id-e3", SourcedID: "e3"}, PersonID: "id-bo", OfferingID: "id-o", Role: domain.RoleStudent},
+		{Base: domain.Base{ID: "id-e4", SourcedID: "e4"}, PersonID: "id-bo2", OfferingID: "id-o", Role: domain.RoleStudent},
+	} {
+		must(catalog.Enrollments.Create(ctx, e))
+	}
+
+	cfg := testCfg("127.0.0.1:0")
+	cfg.SIS.Adapter.Inbound.EduAPI.DefaultLimit, cfg.SIS.Adapter.Inbound.EduAPI.MaxLimit = 10, 10
+	srv, iss := startWithIssuer(t, cfg, catalog)
+	token := iss.Token(t, "reader", "sis.read")
+
+	do := func(filter string) (*http.Response, []string) {
+		t.Helper()
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+srv.Addr().String()+eduBase+"/enrollments?sort=sourcedId&filter="+url.QueryEscape(filter), nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err, filter)
+		t.Cleanup(func() { _ = resp.Body.Close() })
+		if resp.StatusCode != http.StatusOK {
+			return resp, nil
+		}
+		var body []struct{ SourcedID, Person string }
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&body), filter)
+		ids := make([]string, 0, len(body))
+		for _, item := range body {
+			ids = append(ids, item.SourcedID)
+		}
+		return resp, ids
+	}
+
+	t.Run("person equals a sourcedId", func(t *testing.T) {
+		resp, ids := do("person='anna'")
+		assert.Equal(t, []string{"e1", "e2"}, ids)
+		assert.Equal(t, "2", resp.Header.Get("X-Total-Count"))
+	})
+	t.Run("the stored id is not a person", func(t *testing.T) {
+		_, ids := do("person='id-anna'")
+		assert.Empty(t, ids)
+	})
+	t.Run("unknown person", func(t *testing.T) {
+		resp, ids := do("person='nobody'")
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		assert.Empty(t, ids)
+	})
+	t.Run("person not equals", func(t *testing.T) {
+		_, ids := do("person!='anna'")
+		assert.Equal(t, []string{"e3", "e4"}, ids)
+	})
+	t.Run("person equals ignores case", func(t *testing.T) {
+		resp, ids := do("person='ANNA'")
+		assert.Equal(t, []string{"e1", "e2"}, ids)
+		assert.Equal(t, "2", resp.Header.Get("X-Total-Count"))
+	})
+	t.Run("person not equals ignores case", func(t *testing.T) {
+		_, ids := do("person!='ANNA'")
+		assert.Equal(t, []string{"e3", "e4"}, ids)
+	})
+	t.Run("an exact sourcedId wins over one that differs by case", func(t *testing.T) {
+		_, ids := do("person='bo'")
+		assert.Equal(t, []string{"e3"}, ids)
+		_, ids = do("person='BO'")
+		assert.Equal(t, []string{"e4"}, ids)
+	})
+	t.Run("a sourcedId that matches several persons ignoring case is ambiguous", func(t *testing.T) {
+		_, ids := do("person='Bo'")
+		assert.Empty(t, ids)
+		_, ids = do("person!='Bo'")
+		assert.Equal(t, []string{"e1", "e2", "e3", "e4"}, ids)
+	})
+	t.Run("person with another term", func(t *testing.T) {
+		_, ids := do("person='anna' AND sourcedId='e2'")
+		assert.Equal(t, []string{"e2"}, ids)
+	})
+	t.Run("person contains is refused", func(t *testing.T) {
+		resp, _ := do("person~'ann'")
+		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	})
+	t.Run("sorting on person is refused", func(t *testing.T) {
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+srv.Addr().String()+eduBase+"/enrollments?sort=person", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		_ = resp.Body.Close()
+		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	})
+	t.Run("other fields stay unfilterable", func(t *testing.T) {
+		resp, _ := do("role='student'")
+		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	})
 }

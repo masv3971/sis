@@ -2044,7 +2044,8 @@ paths:
       - educationTemplates
   /enrollments:
     get:
-      description: Lists enrollments. sort and filter accept sourcedId.
+      description: Lists enrollments. sort accepts sourcedId. filter accepts sourcedId
+        and person (the person's sourcedId, with = and != only).
       operationId: list-enrollments
       parameters:
       - description: Page size; defaults to default_limit and is clamped to max_limit
@@ -2068,7 +2069,7 @@ paths:
         in: query
         name: orderBy
         type: string
-      - description: One or two terms joined by AND or OR, e.g. sourcedId='x'
+      - description: One or two terms joined by AND or OR, e.g. person='x'
         in: query
         name: filter
         type: string

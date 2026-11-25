@@ -1,0 +1,128 @@
+# SUNET/vc configuration for `make vc-integration`: apigw issues sis_enrollment
+# from SIS through data_sources.external_api + remotes.sis (type eduapi).
+# Layout follows SUNET/vc config.oidc.example.yaml; check it against the vc
+# version in docker-compose.vc.yaml when bumping that tag.
+#
+# Claim names under attribute_mapping are the keys vc's Edu-API data source
+# flattens a Person, its first active Enrollment, the CourseOffering and the
+# Organization into. They are the contract the test asserts, so revisit them
+# when vc moves to Edu-API v1.0 Final.
+common:
+  production: false
+  mongo:
+    uri: "mongodb://mongo:27017"
+  credential_metadata:
+    sis_enrollment:
+      vctm_file_path: "/metadata/vctm_sis_enrollment.json"
+      format: "dc+sd-jwt"
+
+issuer:
+  issuer_url: "https://localhost:18083"
+  api_server:
+    addr: :8080
+  grpc_server:
+    addr: issuer.vc.docker:8090
+  registry_client:
+    addr: registry.vc.docker:8090
+  key_config:
+    private_key_path: "/pki/signing_ec_private.pem"
+    chain_path: "/pki/signing_ec_chain.pem"
+  jwt_attribute:
+    issuer: https://issuer.sis.local
+    enable_not_before: true
+    valid_duration: 3600
+    verifiable_credential_type: "https://credential.sis.local/identity_credential"
+
+registry:
+  api_server:
+    addr: :8080
+  public_url: "https://registry.vc.docker:8080"
+  grpc_server:
+    addr: :8090
+  token_status_lists:
+    key_config:
+      private_key_path: "/pki/signing_ec_private.pem"
+      chain_path: "/pki/signing_ec_chain.pem"
+
+apigw:
+  key_config:
+    private_key_path: "/pki/signing_ec_private.pem"
+    chain_path: "/pki/signing_ec_chain.pem"
+  api_server:
+    addr: :8080
+    tls:
+      enable: true
+      cert_file_path: "/pki/tls_apigw.crt"
+      key_file_path: "/pki/tls_apigw.key"
+  # Must be byte-identical to delivery.credential_offers.issuer_url and to the
+  # address the test reaches apigw on (published as 127.0.0.1:18083).
+  public_url: "https://localhost:18083"
+  issuer_client:
+    addr: issuer.vc.docker:8090
+  registry_client:
+    addr: registry.vc.docker:8090
+
+  # vc to SIS is a machine account: one client-credentials client per vc
+  # deployment (the SIS realm's sunet-vc, scope sis.read). Students never get
+  # an account at the SIS token issuer.
+  remotes:
+    sis:
+      type: eduapi
+      base_url: "https://sis:8080/1edtech/eduapi/base/v1p0"
+      token_url: "https://mellon:8443/realms/sis/protocol/openid-connect/token"
+      client_id: "sunet-vc"
+      client_secret: "sunet-vc-secret"
+      scopes: ["sis.read"]
+
+  data_sources:
+    external_api:
+      scopes:
+        sis_enrollment:
+          auth_provider: oidc
+          remote: sis
+          attribute_mapping:
+            givenName:
+              claim: given_name
+              required: true
+            familyName:
+              claim: family_name
+              required: true
+            dateOfBirth:
+              claim: birth_date
+            course.title:
+              claim: course_title
+            organization.name:
+              claim: institution_name
+
+  auth_providers:
+    oidc:
+      enable: true
+      # Student to vc: the IdP students log in at, which only yields their SIS
+      # sourcedId (authentic_source_person_id). Not the SIS token issuer. It is
+      # a separate mellon (realm eduid) standing in for eduID. The sidecar in
+      # docker-compose.vc.yaml makes localhost:9444 reach it from here.
+      issuer_url: "https://localhost:9444/realms/eduid"
+      redirect_uri: "https://localhost:18083/oidcrp/callback"
+      scopes: ["openid", "profile", "email"]
+      session_duration: 300
+      registration:
+        preconfigured:
+          enable: true
+          client_id: "vc-apigw"
+          client_secret: "vc-apigw-secret"
+
+  delivery:
+    openid4vci:
+      token_endpoint: "https://localhost:18083/token"
+      clients:
+        "sis-test-wallet":
+          type: "public"
+          redirect_uri: "http://localhost:3000"
+          scopes:
+            - "sis_enrollment"
+    credential_offers:
+      issuer_url: "https://localhost:18083"
+      wallets:
+        dev_wallet:
+          label: "Dev Wallet"
+          redirect_uri: "https://dev.wallet.sunet.se/credential-offer"
