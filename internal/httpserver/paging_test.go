@@ -36,9 +36,9 @@ func TestEduAPIPaging(t *testing.T) {
 	const stored = 7
 	for i := range stored {
 		id := fmt.Sprintf("o%d", i)
-		_, err := catalog.Courses.Create(ctx, &domain.Course{ID: "c" + id, SourcedID: "c" + id, Title: "T"})
+		_, err := catalog.Courses.Create(ctx, &domain.Course{Base: domain.Base{ID: "c" + id, SourcedID: "c" + id}, Title: "T"})
 		require.NoError(t, err)
-		_, err = catalog.Offerings.Create(ctx, &domain.Offering{ID: id, SourcedID: id, CourseID: "c" + id})
+		_, err = catalog.Offerings.Create(ctx, &domain.Offering{Base: domain.Base{ID: id, SourcedID: id}, CourseID: "c" + id})
 		require.NoError(t, err)
 	}
 	// Orphan the first offering: List leaves it out, X-Total-Count still counts it.
@@ -258,13 +258,13 @@ func TestEduAPIEnrollmentsFilterByPerson(t *testing.T) {
 	} {
 		must(catalog.Persons.Create(ctx, p))
 	}
-	must(catalog.Courses.Create(ctx, &domain.Course{ID: "id-c", SourcedID: "c", Title: "C"}))
-	must(catalog.Offerings.Create(ctx, &domain.Offering{ID: "id-o", SourcedID: "o", CourseID: "id-c"}))
+	must(catalog.Courses.Create(ctx, &domain.Course{Base: domain.Base{ID: "id-c", SourcedID: "c"}, Title: "C"}))
+	must(catalog.Offerings.Create(ctx, &domain.Offering{Base: domain.Base{ID: "id-o", SourcedID: "o"}, CourseID: "id-c"}))
 	for _, e := range []*domain.Enrollment{
-		{ID: "id-e1", SourcedID: "e1", PersonID: "id-anna", OfferingID: "id-o", Role: domain.RoleStudent},
-		{ID: "id-e2", SourcedID: "e2", PersonID: "id-anna", OfferingID: "id-o", Role: domain.RoleStudent},
-		{ID: "id-e3", SourcedID: "e3", PersonID: "id-bo", OfferingID: "id-o", Role: domain.RoleStudent},
-		{ID: "id-e4", SourcedID: "e4", PersonID: "id-bo2", OfferingID: "id-o", Role: domain.RoleStudent},
+		{Base: domain.Base{ID: "id-e1", SourcedID: "e1"}, PersonID: "id-anna", OfferingID: "id-o", Role: domain.RoleStudent},
+		{Base: domain.Base{ID: "id-e2", SourcedID: "e2"}, PersonID: "id-anna", OfferingID: "id-o", Role: domain.RoleStudent},
+		{Base: domain.Base{ID: "id-e3", SourcedID: "e3"}, PersonID: "id-bo", OfferingID: "id-o", Role: domain.RoleStudent},
+		{Base: domain.Base{ID: "id-e4", SourcedID: "e4"}, PersonID: "id-bo2", OfferingID: "id-o", Role: domain.RoleStudent},
 	} {
 		must(catalog.Enrollments.Create(ctx, e))
 	}
