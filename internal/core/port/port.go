@@ -59,10 +59,15 @@ const (
 // FilterTerm compares one stored key with Value. Comparison is on text and
 // ignores case. A record that lacks the key matches no term, not even
 // FilterNotEquals.
+//
+// Values are further values for FilterEquals and FilterNotEquals: Equals
+// matches any of Value and Values, NotEquals matches none of them. Contains
+// ignores them.
 type FilterTerm struct {
-	Field string
-	Op    FilterOp
-	Value string
+	Field  string
+	Op     FilterOp
+	Value  string
+	Values []string
 }
 
 // Filter combines terms with AND, or with OR when Any is set. No terms keep
@@ -112,11 +117,21 @@ func (t FilterTerm) match(get func(field string) (string, bool)) bool {
 	value, want := strings.ToLower(value), strings.ToLower(t.Value)
 	switch t.Op {
 	case FilterEquals:
-		return value == want
+		return value == want || t.hasValue(value)
 	case FilterNotEquals:
-		return value != want
+		return value != want && !t.hasValue(value)
 	case FilterContains:
 		return strings.Contains(value, want)
+	}
+	return false
+}
+
+// hasValue reports whether lowered equals one of Values, ignoring case.
+func (t FilterTerm) hasValue(lowered string) bool {
+	for _, v := range t.Values {
+		if strings.ToLower(v) == lowered {
+			return true
+		}
 	}
 	return false
 }

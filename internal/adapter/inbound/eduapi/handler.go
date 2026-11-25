@@ -154,8 +154,10 @@ func (c *Client) ListEnrollments(gc *gin.Context) {
 }
 
 // resolvePersonTerms rewrites the filter terms on an enrollment's person from
-// the published sourcedId to the stored person id. A person that does not
-// exist becomes "", which no enrollment has: = matches nothing, != everything.
+// the published sourcedId to the stored person ids. Filters ignore case, so a
+// sourcedId can match several persons, and all of them count. A person that
+// does not exist becomes "", which no enrollment has: = matches nothing, !=
+// everything.
 func (c *Client) resolvePersonTerms(ctx context.Context, f *port.Filter) error {
 	if f == nil {
 		return nil
@@ -167,14 +169,19 @@ func (c *Client) resolvePersonTerms(ctx context.Context, f *port.Filter) error {
 		if term.Op == port.FilterContains {
 			return queryError("filter", "person supports = and != only")
 		}
-		person, err := c.catalog.Persons.GetBySourcedID(ctx, term.Value)
-		switch {
-		case err == nil:
-			f.Terms[i].Value = person.ID
-		case errors.Is(err, domain.ErrNotFound):
-			f.Terms[i].Value = ""
-		default:
+		page, err := c.catalog.Persons.List(ctx, port.ListParams{Filter: &port.Filter{
+			Terms: []port.FilterTerm{{Field: "sourcedId", Op: port.FilterEquals, Value: term.Value}},
+		}})
+		if err != nil {
 			return err
+		}
+		f.Terms[i].Value, f.Terms[i].Values = "", nil
+		for j, person := range page.Items {
+			if j == 0 {
+				f.Terms[i].Value = person.ID
+				continue
+			}
+			f.Terms[i].Values = append(f.Terms[i].Values, person.ID)
 		}
 	}
 	return nil

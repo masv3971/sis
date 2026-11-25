@@ -94,6 +94,17 @@ func ListQueryDocs(t *testing.T, repo port.Repository[domain.Course, *domain.Cou
 		assert.Equal(t, []string{"alpha"}, got)
 		assert.Equal(t, 1, total)
 	})
+	t.Run("equals matches any of Values", func(t *testing.T) {
+		multi := port.FilterTerm{Field: "title", Op: port.FilterEquals, Value: "BETA" + mark, Values: []string{"gamma" + mark}}
+		got, total := list(port.ListParams{Sort: "title", Filter: &port.Filter{Terms: []port.FilterTerm{multi}}})
+		assert.Equal(t, []string{"Beta", "Gamma"}, got)
+		assert.Equal(t, 2, total)
+	})
+	t.Run("not equals matches none of Values", func(t *testing.T) {
+		multi := port.FilterTerm{Field: "title", Op: port.FilterNotEquals, Value: "BETA" + mark, Values: []string{"gamma" + mark}}
+		got, _ := list(port.ListParams{Sort: "title", Filter: &port.Filter{Terms: []port.FilterTerm{multi}}})
+		assert.Equal(t, []string{"Delta", "alpha"}, got)
+	})
 	t.Run("contains", func(t *testing.T) {
 		got, _ := list(port.ListParams{Sort: "title", Filter: &port.Filter{Terms: []port.FilterTerm{term("title", port.FilterContains, "ta"+mark)}}})
 		assert.Equal(t, []string{"Beta", "Delta"}, got)

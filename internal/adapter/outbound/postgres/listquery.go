@@ -23,13 +23,26 @@ func filterSQL(f *port.Filter, column func(key string) (string, error), args []a
 		if err != nil {
 			return "", nil, err
 		}
-		args = append(args, term.Value)
+		multi := len(term.Values) > 0 && term.Op != port.FilterContains
+		if multi {
+			args = append(args, append([]string{term.Value}, term.Values...))
+		} else {
+			args = append(args, term.Value)
+		}
 		n := len(args)
 		switch term.Op {
 		case port.FilterEquals:
-			conds = append(conds, fmt.Sprintf("lower(%s) = lower($%d)", expr, n))
+			if multi {
+				conds = append(conds, fmt.Sprintf("lower(%s) = ANY (SELECT lower(v) FROM unnest($%d::text[]) v)", expr, n))
+			} else {
+				conds = append(conds, fmt.Sprintf("lower(%s) = lower($%d)", expr, n))
+			}
 		case port.FilterNotEquals:
-			conds = append(conds, fmt.Sprintf("lower(%s) <> lower($%d)", expr, n))
+			if multi {
+				conds = append(conds, fmt.Sprintf("lower(%s) <> ALL (SELECT lower(v) FROM unnest($%d::text[]) v)", expr, n))
+			} else {
+				conds = append(conds, fmt.Sprintf("lower(%s) <> lower($%d)", expr, n))
+			}
 		case port.FilterContains:
 			conds = append(conds, fmt.Sprintf("strpos(lower(%s), lower($%d)) > 0", expr, n))
 		default:
