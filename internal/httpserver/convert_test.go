@@ -129,7 +129,7 @@ func TestParseAndPopulate(t *testing.T) {
 		require.Equal(t, "BI101", primary["identifier"], "course = %v", got)
 		res := do(t, reader, http.MethodGet, "/oeapi/results/urn:epass:learningAchievement:bi101", "", http.StatusOK)
 		assert.Equal(t, "A", res["score"], "oeapi result = %v", res)
-		assert.Equal(t, "urn:epass:learningAchievementSpec:bi101", res["courseId"], "oeapi result = %v", res)
+		assert.Equal(t, "urn:epass:learningachievementspec:bi101", res["courseId"], "sourcedIds publish lowercase; oeapi result = %v", res)
 
 		clock.skew.Store(int64(2 * time.Hour))
 		do(t, reader, http.MethodGet, course, "", http.StatusNotFound)

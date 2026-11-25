@@ -84,9 +84,9 @@ func TestPublishRefsUsesSourcedIDs(t *testing.T) {
 	require.NoError(t, err)
 	_, err = catalog.AcademicSessions.Create(ctx, &domain.AcademicSession{ID: "s-id", SourcedID: "ht26", Title: "HT26"})
 	require.NoError(t, err)
-	_, err = catalog.Courses.Create(ctx, &domain.Course{ID: "c-id", SourcedID: "DA101", Title: "C", OrgID: "o-id"})
+	_, err = catalog.Courses.Create(ctx, &domain.Course{ID: "c-id", SourcedID: "da101", Title: "C", OrgID: "o-id"})
 	require.NoError(t, err)
-	_, err = catalog.Offerings.Create(ctx, &domain.Offering{ID: "f-id", SourcedID: "DA101-ht26", CourseID: "c-id", AcademicSessionID: "s-id", OrgID: "o-id"})
+	_, err = catalog.Offerings.Create(ctx, &domain.Offering{ID: "f-id", SourcedID: "da101-ht26", CourseID: "c-id", AcademicSessionID: "s-id", OrgID: "o-id"})
 	require.NoError(t, err)
 
 	child := &domain.Organization{ParentID: "o-id"}
@@ -101,11 +101,11 @@ func TestPublishRefsUsesSourcedIDs(t *testing.T) {
 	checks := []struct{ name, got, want string }{
 		{"organization.parent", child.ParentID, "uni"},
 		{"course.org", course.OrgID, "uni"},
-		{"offering.course", offering.CourseID, "DA101"},
+		{"offering.course", offering.CourseID, "da101"},
 		{"offering.session", offering.AcademicSessionID, "ht26"},
 		{"offering.org", offering.OrgID, "uni"},
 		{"enrollment.person", enrollment.PersonID, "student-1"},
-		{"enrollment.offering", enrollment.OfferingID, "DA101-ht26"},
+		{"enrollment.offering", enrollment.OfferingID, "da101-ht26"},
 		{"dangling reference cleared", dangling.PersonID, ""},
 	}
 	for _, check := range checks {
@@ -234,9 +234,9 @@ func TestPublishRefsProgramsAndResults(t *testing.T) {
 	require.NoError(t, err)
 	_, err = catalog.Organizations.Create(ctx, &domain.Organization{ID: "o", SourcedID: "uni", Name: "U"})
 	require.NoError(t, err)
-	_, err = catalog.Programs.Create(ctx, &domain.Program{ID: "g", SourcedID: "BSc", Title: "BSc", OrgID: "o"})
+	_, err = catalog.Programs.Create(ctx, &domain.Program{ID: "g", SourcedID: "bsc", Title: "bsc", OrgID: "o"})
 	require.NoError(t, err)
-	_, err = catalog.Courses.Create(ctx, &domain.Course{ID: "c", SourcedID: "DA101", Title: "C"})
+	_, err = catalog.Courses.Create(ctx, &domain.Course{ID: "c", SourcedID: "da101", Title: "C"})
 	require.NoError(t, err)
 
 	program := &domain.Program{OrgID: "o"}
@@ -248,11 +248,11 @@ func TestPublishRefsProgramsAndResults(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []bool{true, true, true, false, false}, publishable, "publishable")
 	assert.Equal(t, "uni", program.OrgID, "program.org")
-	assert.Equal(t, "BSc", forProgram.ProgramID, "result.program")
-	assert.Equal(t, "DA101", forCourse.CourseID, "result.course")
+	assert.Equal(t, "bsc", forProgram.ProgramID, "result.program")
+	assert.Equal(t, "da101", forCourse.CourseID, "result.course")
 	assert.Equal(t, "stu", forCourse.PersonID, "result.person")
 	assert.Empty(t, forCourse.OfferingID, "dangling optional offering must be cleared")
-	assert.Error(t, catalog.CheckRefs(ctx, &domain.Result{PersonID: "p", ProgramID: "BSc"}), "CheckRefs must refuse a program sourcedId")
+	assert.Error(t, catalog.CheckRefs(ctx, &domain.Result{PersonID: "p", ProgramID: "bsc"}), "CheckRefs must refuse a program sourcedId")
 }
 
 // TestPublishRefsNewEntities checks the new entities publish sourcedIds, that
@@ -265,13 +265,13 @@ func TestPublishRefsNewEntities(t *testing.T) {
 	create(catalog.Persons.Create(ctx, &domain.Person{ID: "p", SourcedID: "stu", GivenName: "A", FamilyName: "B", Status: domain.StatusActive}))
 	create(catalog.Organizations.Create(ctx, &domain.Organization{ID: "o", SourcedID: "uni", Name: "U"}))
 	create(catalog.AcademicSessions.Create(ctx, &domain.AcademicSession{ID: "s", SourcedID: "ht26", Title: "S"}))
-	create(catalog.Programs.Create(ctx, &domain.Program{ID: "g1", SourcedID: "BSc", Title: "BSc"}))
-	create(catalog.Programs.Create(ctx, &domain.Program{ID: "g2", SourcedID: "MSc", Title: "MSc"}))
-	create(catalog.Courses.Create(ctx, &domain.Course{ID: "c", SourcedID: "DA101", Title: "C"}))
-	create(catalog.CollectionOfferings.Create(ctx, &domain.CollectionOffering{ID: "k", SourcedID: "BSc-ht26", ProgramID: "g1"}))
+	create(catalog.Programs.Create(ctx, &domain.Program{ID: "g1", SourcedID: "bsc", Title: "bsc"}))
+	create(catalog.Programs.Create(ctx, &domain.Program{ID: "g2", SourcedID: "msc", Title: "msc"}))
+	create(catalog.Courses.Create(ctx, &domain.Course{ID: "c", SourcedID: "da101", Title: "C"}))
+	create(catalog.CollectionOfferings.Create(ctx, &domain.CollectionOffering{ID: "k", SourcedID: "bsc-ht26", ProgramID: "g1"}))
 	create(catalog.CollectionOfferings.Create(ctx, &domain.CollectionOffering{ID: "k-orphan", SourcedID: "MSc-ht26", ProgramID: "g2"}))
-	create(catalog.Offerings.Create(ctx, &domain.Offering{ID: "f", SourcedID: "DA101-ht26", CourseID: "c"}))
-	create(catalog.ComponentTemplates.Create(ctx, &domain.ComponentTemplate{ID: "t", SourcedID: "DA101-lab", Title: "Lab"}))
+	create(catalog.Offerings.Create(ctx, &domain.Offering{ID: "f", SourcedID: "da101-ht26", CourseID: "c"}))
+	create(catalog.ComponentTemplates.Create(ctx, &domain.ComponentTemplate{ID: "t", SourcedID: "da101-lab", Title: "Lab"}))
 	require.NoError(t, catalog.Programs.Delete(ctx, "g2"))
 
 	course := &domain.Course{ProgramIDs: []string{"g1", "g2", "g-never"}}
@@ -289,15 +289,15 @@ func TestPublishRefsNewEntities(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []bool{true, true, true, true, true, true, false, false, false}, publishable)
 
-	assert.Equal(t, []string{"BSc"}, course.ProgramIDs, "dangling list entries are dropped")
-	assert.Equal(t, []string{"BSc-ht26"}, offering.CollectionOfferingIDs, "an entry whose program is gone is dropped like a missing one")
+	assert.Equal(t, []string{"bsc"}, course.ProgramIDs, "dangling list entries are dropped")
+	assert.Equal(t, []string{"bsc-ht26"}, offering.CollectionOfferingIDs, "an entry whose program is gone is dropped like a missing one")
 	assert.Equal(t, "stu", affiliation.PersonID)
 	assert.Equal(t, "uni", affiliation.OrgID)
-	assert.Equal(t, "BSc", collection.ProgramID)
+	assert.Equal(t, "bsc", collection.ProgramID)
 	assert.Equal(t, "ht26", collection.AcademicSessionID)
-	assert.Equal(t, []string{"DA101"}, componentTemplate.CourseIDs)
-	assert.Equal(t, "DA101-lab", componentOffering.ComponentID)
-	assert.Equal(t, []string{"DA101-ht26"}, componentOffering.CourseOfferingIDs)
+	assert.Equal(t, []string{"da101"}, componentTemplate.CourseIDs)
+	assert.Equal(t, "da101-lab", componentOffering.ComponentID)
+	assert.Equal(t, []string{"da101-ht26"}, componentOffering.CourseOfferingIDs)
 }
 
 // TestCheckRefsListEntries checks ingress validates every entry of a list
@@ -305,18 +305,18 @@ func TestPublishRefsNewEntities(t *testing.T) {
 func TestCheckRefsListEntries(t *testing.T) {
 	ctx := t.Context()
 	catalog := newFixture(t).catalog
-	_, err := catalog.Programs.Create(ctx, &domain.Program{ID: "g", SourcedID: "BSc", Title: "BSc"})
+	_, err := catalog.Programs.Create(ctx, &domain.Program{ID: "g", SourcedID: "bsc", Title: "bsc"})
 	require.NoError(t, err)
 
 	require.NoError(t, catalog.CheckRefs(ctx, &domain.Course{Title: "T", ProgramIDs: []string{"g"}}))
-	for name, ids := range map[string][]string{"sourcedId": {"g", "BSc"}, "unknown": {"nope"}} {
+	for name, ids := range map[string][]string{"sourcedId": {"g", "bsc"}, "unknown": {"nope"}} {
 		err := catalog.CheckRefs(ctx, &domain.Course{Title: "T", ProgramIDs: ids})
 		var verr *domain.ValidationError
 		require.ErrorAs(t, err, &verr, name)
 		assert.Contains(t, verr.Field, "programIds[", name)
 	}
 	var verr *domain.ValidationError
-	require.ErrorAs(t, catalog.CheckRefs(ctx, &domain.Course{Title: "T", ProgramIDs: []string{"g", "BSc"}}), &verr)
+	require.ErrorAs(t, catalog.CheckRefs(ctx, &domain.Course{Title: "T", ProgramIDs: []string{"g", "bsc"}}), &verr)
 	assert.Equal(t, "programIds[1]", verr.Field, "the second entry is the bad one")
 	require.ErrorAs(t, catalog.CheckRefs(ctx, &domain.Affiliation{PersonID: "p-none", OrgID: "o-none"}), &verr)
 	assert.Equal(t, "personId", verr.Field)
@@ -340,9 +340,9 @@ func TestCheckRefsRequiresCanonicalIDs(t *testing.T) {
 	catalog := newFixture(t).catalog
 	_, err := catalog.Persons.Create(ctx, &domain.Person{ID: "p-id", SourcedID: "student-1", GivenName: "A", FamilyName: "B", Status: domain.StatusActive})
 	require.NoError(t, err)
-	_, err = catalog.Courses.Create(ctx, &domain.Course{ID: "c-id", SourcedID: "DA101", Title: "C"})
+	_, err = catalog.Courses.Create(ctx, &domain.Course{ID: "c-id", SourcedID: "da101", Title: "C"})
 	require.NoError(t, err)
-	_, err = catalog.Offerings.Create(ctx, &domain.Offering{ID: "f-id", SourcedID: "DA101-ht26", CourseID: "c-id"})
+	_, err = catalog.Offerings.Create(ctx, &domain.Offering{ID: "f-id", SourcedID: "da101-ht26", CourseID: "c-id"})
 	require.NoError(t, err)
 
 	cases := []struct {
@@ -354,7 +354,7 @@ func TestCheckRefsRequiresCanonicalIDs(t *testing.T) {
 		{"empty optional ref", &domain.Course{Title: "T"}, ""},
 		{"sourcedId refused", &domain.Enrollment{PersonID: "student-1", OfferingID: "f-id"}, "personId"},
 		{"unknown id refused", &domain.Enrollment{PersonID: "p-id", OfferingID: "nope"}, "offeringId"},
-		{"offering sourcedId refused", &domain.Offering{CourseID: "DA101"}, "courseId"},
+		{"offering sourcedId refused", &domain.Offering{CourseID: "da101"}, "courseId"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

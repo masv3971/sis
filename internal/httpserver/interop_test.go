@@ -51,8 +51,8 @@ func TestHubInterop(t *testing.T) {
 	// sourcedId, while /api/v1 references use the canonical id.
 	write("organizations", `{"id":"o-int","sourcedId":"uni","name":"University"}`)
 	write("academic-sessions", `{"id":"s-int","sourcedId":"ht26","title":"HT26"}`)
-	write("courses", `{"id":"c-int","sourcedId":"DA101","code":"DA101","title":"Databases","orgId":"o-int"}`)
-	write("offerings", `{"id":"f-int","sourcedId":"DA101-ht26","courseId":"c-int","academicSessionId":"s-int","orgId":"o-int"}`)
+	write("courses", `{"id":"c-int","sourcedId":"da101","code":"da101","title":"Databases","orgId":"o-int"}`)
+	write("offerings", `{"id":"f-int","sourcedId":"da101-ht26","courseId":"c-int","academicSessionId":"s-int","orgId":"o-int"}`)
 	write("persons", `{"id":"p-int","sourcedId":"ada","status":"active","givenName":"Ada","familyName":"Lovelace","roles":["student"]}`)
 	write("persons", `{"id":"p-grace","sourcedId":"grace","status":"active","givenName":"Grace","familyName":"Hopper","roles":["faculty"]}`)
 	write("enrollments", `{"id":"e-int","sourcedId":"enr-ada","personId":"p-int","offeringId":"f-int","role":"student"}`)
@@ -107,15 +107,15 @@ func TestHubInterop(t *testing.T) {
 
 	t.Run("course", func(t *testing.T) {
 		var oe struct{ CourseID, Name, OrganizationID string }
-		read(t, "/oeapi/courses/DA101", http.StatusOK, &oe)
+		read(t, "/oeapi/courses/da101", http.StatusOK, &oe)
 		var edu struct {
 			SourcedID    string `json:"sourcedId"`
 			Title        text   `json:"title"`
 			Organization string `json:"organization"`
 		}
-		read(t, eduBase+"/courseTemplates/DA101", http.StatusOK, &edu)
-		assert.Equal(t, "DA101", oe.CourseID)
-		assert.Equal(t, "DA101", edu.SourcedID)
+		read(t, eduBase+"/courseTemplates/da101", http.StatusOK, &edu)
+		assert.Equal(t, "da101", oe.CourseID)
+		assert.Equal(t, "da101", edu.SourcedID)
 		assert.Equal(t, "Databases", oe.Name)
 		require.Len(t, edu.Title, 1)
 		assert.Equal(t, "Databases", edu.Title[0].Value)
@@ -125,18 +125,18 @@ func TestHubInterop(t *testing.T) {
 
 	t.Run("offering", func(t *testing.T) {
 		var oe struct{ OfferingID, CourseID, AcademicSessionID string }
-		read(t, "/oeapi/offerings/DA101-ht26", http.StatusOK, &oe)
+		read(t, "/oeapi/offerings/da101-ht26", http.StatusOK, &oe)
 		var edu struct {
 			SourcedID       string `json:"sourcedId"`
 			Course          string `json:"course"`
 			AcademicSession string `json:"academicSession"`
 			Organization    string `json:"organization"`
 		}
-		read(t, eduBase+"/courseOfferings/DA101-ht26", http.StatusOK, &edu)
-		assert.Equal(t, "DA101-ht26", oe.OfferingID)
-		assert.Equal(t, "DA101-ht26", edu.SourcedID)
-		assert.Equal(t, "DA101", oe.CourseID)
-		assert.Equal(t, "DA101", edu.Course)
+		read(t, eduBase+"/courseOfferings/da101-ht26", http.StatusOK, &edu)
+		assert.Equal(t, "da101-ht26", oe.OfferingID)
+		assert.Equal(t, "da101-ht26", edu.SourcedID)
+		assert.Equal(t, "da101", oe.CourseID)
+		assert.Equal(t, "da101", edu.Course)
 		assert.Equal(t, "ht26", oe.AcademicSessionID)
 		assert.Equal(t, "ht26", edu.AcademicSession)
 		assert.Equal(t, "uni", edu.Organization)
@@ -169,8 +169,8 @@ func TestHubInterop(t *testing.T) {
 		assert.Equal(t, "enr-ada", eduEnr.SourcedID)
 		assert.Equal(t, "ada", oeEnr.PersonID)
 		assert.Equal(t, "ada", eduEnr.Person)
-		assert.Equal(t, "DA101-ht26", oeEnr.OfferingID)
-		assert.Equal(t, "DA101-ht26", eduEnr.EducationOffering)
+		assert.Equal(t, "da101-ht26", oeEnr.OfferingID)
+		assert.Equal(t, "da101-ht26", eduEnr.EducationOffering)
 		assert.Equal(t, "student", oeEnr.Role)
 		assert.Equal(t, "student", eduEnr.Role)
 
@@ -189,8 +189,8 @@ func TestHubInterop(t *testing.T) {
 		read(t, "/oeapi/results/res-ada", http.StatusOK, &oe)
 		assert.Equal(t, "res-ada", oe.ResultID)
 		assert.Equal(t, "ada", oe.PersonID)
-		assert.Equal(t, "DA101", oe.CourseID)
-		assert.Equal(t, "DA101-ht26", oe.OfferingID)
+		assert.Equal(t, "da101", oe.CourseID)
+		assert.Equal(t, "da101-ht26", oe.OfferingID)
 		assert.Equal(t, "A", oe.Score)
 		assert.InDelta(t, 7.5, oe.ECTS, 0)
 
@@ -242,11 +242,11 @@ func TestHubInterop(t *testing.T) {
 	t.Run("edu-api nested routes", func(t *testing.T) {
 		assert.Equal(t, []string{"ada"}, eduIDs(t, "/students"))
 		assert.Equal(t, []string{"grace"}, eduIDs(t, "/staff"))
-		offering := "/courseOfferings/DA101-ht26"
+		offering := "/courseOfferings/da101-ht26"
 		assert.ElementsMatch(t, []string{"enr-ada", "enr-grace"}, eduIDs(t, offering+"/enrollments"))
 		assert.Equal(t, []string{"ada"}, eduIDs(t, offering+"/students"))
 		assert.Equal(t, []string{"grace"}, eduIDs(t, offering+"/staff"))
-		assert.Equal(t, []string{"DA101-ht26"}, eduIDs(t, "/academicSessions/ht26/courseOfferings"))
+		assert.Equal(t, []string{"da101-ht26"}, eduIDs(t, "/academicSessions/ht26/courseOfferings"))
 		assert.ElementsMatch(t, []string{"enr-ada", "enr-grace"}, eduIDs(t, "/academicSessions/ht26/enrollments"))
 		read(t, eduBase+"/courseOfferings/none/enrollments", http.StatusNotFound, nil)
 	})
@@ -281,10 +281,10 @@ func TestHubInterop(t *testing.T) {
 			read(t, path, http.StatusNotFound, nil)
 		}
 		// The catalog and the other person stay.
-		read(t, "/oeapi/offerings/DA101-ht26", http.StatusOK, nil)
-		read(t, eduBase+"/courseOfferings/DA101-ht26", http.StatusOK, nil)
+		read(t, "/oeapi/offerings/da101-ht26", http.StatusOK, nil)
+		read(t, eduBase+"/courseOfferings/da101-ht26", http.StatusOK, nil)
 		assert.Empty(t, eduIDs(t, "/students"))
 		assert.Equal(t, []string{"grace"}, eduIDs(t, "/staff"))
-		assert.Equal(t, []string{"enr-grace"}, eduIDs(t, "/courseOfferings/DA101-ht26/enrollments"))
+		assert.Equal(t, []string{"enr-grace"}, eduIDs(t, "/courseOfferings/da101-ht26/enrollments"))
 	})
 }

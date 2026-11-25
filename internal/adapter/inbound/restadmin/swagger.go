@@ -109,7 +109,7 @@ package restadmin
 
 //	@Summary		Create organization
 //	@ID				create-organization
-//	@Description	Creates an organization. name is required; parentId, when set, must be the id (not sourcedId) of an existing organization. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.
+//	@Description	Creates an organization. name is required; parentId, when set, must be the id (not sourcedId) of an existing organization. id is generated when empty, sourcedId defaults to id (printable ASCII, stored lowercase, unique ignoring case), and createdAt/updatedAt are set by the server.
 //	@Tags			organizations
 //	@Accept			json
 //	@Produce		json
@@ -190,7 +190,7 @@ package restadmin
 
 //	@Summary		Create academic session
 //	@ID				create-academic-session
-//	@Description	Creates an academic session. title is required. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.
+//	@Description	Creates an academic session. title is required. id is generated when empty, sourcedId defaults to id (printable ASCII, stored lowercase, unique ignoring case), and createdAt/updatedAt are set by the server.
 //	@Tags			academic-sessions
 //	@Accept			json
 //	@Produce		json
@@ -271,7 +271,7 @@ package restadmin
 
 //	@Summary		Create course
 //	@ID				create-course
-//	@Description	Creates a course. title is required; orgId, when set, must be the id (not sourcedId) of an existing organization. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.
+//	@Description	Creates a course. title is required; orgId, when set, must be the id (not sourcedId) of an existing organization. id is generated when empty, sourcedId defaults to id (printable ASCII, stored lowercase, unique ignoring case), and createdAt/updatedAt are set by the server.
 //	@Tags			courses
 //	@Accept			json
 //	@Produce		json
@@ -352,7 +352,7 @@ package restadmin
 
 //	@Summary		Create offering
 //	@ID				create-offering
-//	@Description	Creates an offering. courseId is required; courseId, academicSessionId and orgId must be ids (not sourcedIds) of existing records. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.
+//	@Description	Creates an offering. courseId is required; courseId, academicSessionId and orgId must be ids (not sourcedIds) of existing records. id is generated when empty, sourcedId defaults to id (printable ASCII, stored lowercase, unique ignoring case), and createdAt/updatedAt are set by the server.
 //	@Tags			offerings
 //	@Accept			json
 //	@Produce		json
@@ -433,7 +433,7 @@ package restadmin
 
 //	@Summary		Create enrollment
 //	@ID				create-enrollment
-//	@Description	Creates an enrollment. personId and offeringId are required and must be the ids (not sourcedIds) of an existing person and offering. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.
+//	@Description	Creates an enrollment. personId and offeringId are required and must be the ids (not sourcedIds) of an existing person and offering. id is generated when empty, sourcedId defaults to id (printable ASCII, stored lowercase, unique ignoring case), and createdAt/updatedAt are set by the server.
 //	@Tags			enrollments
 //	@Accept			json
 //	@Produce		json
@@ -514,7 +514,7 @@ package restadmin
 
 //	@Summary		Create program
 //	@ID				create-program
-//	@Description	Creates a program. title is required; orgId, when set, must be the id (not sourcedId) of an existing organization. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.
+//	@Description	Creates a program. title is required; orgId, when set, must be the id (not sourcedId) of an existing organization. id is generated when empty, sourcedId defaults to id (printable ASCII, stored lowercase, unique ignoring case), and createdAt/updatedAt are set by the server.
 //	@Tags			programs
 //	@Accept			json
 //	@Produce		json
@@ -595,7 +595,7 @@ package restadmin
 
 //	@Summary		Create result
 //	@ID				create-result
-//	@Description	Creates a result. personId is required, and exactly one of courseId and programId; offeringId is optional. All must be the ids (not sourcedIds) of existing records. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.
+//	@Description	Creates a result. personId is required, and exactly one of courseId and programId; offeringId is optional. All must be the ids (not sourcedIds) of existing records. id is generated when empty, sourcedId defaults to id (printable ASCII, stored lowercase, unique ignoring case), and createdAt/updatedAt are set by the server.
 //	@Tags			results
 //	@Accept			json
 //	@Produce		json
@@ -676,7 +676,7 @@ package restadmin
 
 //	@Summary		Create entitlement
 //	@ID				create-entitlement
-//	@Description	Creates an entitlement. personId and title are required; orgId and resultId are optional. All references must be the ids (not sourcedIds) of existing records. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.
+//	@Description	Creates an entitlement. personId and title are required; orgId and resultId are optional. All references must be the ids (not sourcedIds) of existing records. id is generated when empty, sourcedId defaults to id (printable ASCII, stored lowercase, unique ignoring case), and createdAt/updatedAt are set by the server.
 //	@Tags			entitlements
 //	@Accept			json
 //	@Produce		json
@@ -757,7 +757,7 @@ package restadmin
 
 //	@Summary		Create affiliation
 //	@ID				create-affiliations
-//	@Description	Creates a affiliation. personId and orgId are required; role is one of student, staff, faculty, guest. personId and orgId must be the ids (not sourcedIds) of an existing person and organization. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.
+//	@Description	Creates a affiliation. personId and orgId are required; role is one of student, staff, faculty, guest. personId and orgId must be the ids (not sourcedIds) of an existing person and organization. id is generated when empty, sourcedId defaults to id (printable ASCII, stored lowercase, unique ignoring case), and createdAt/updatedAt are set by the server.
 //	@Tags			affiliations
 //	@Accept			json
 //	@Produce		json
@@ -838,7 +838,7 @@ package restadmin
 
 //	@Summary		Create collection offering
 //	@ID				create-collection-offerings
-//	@Description	Creates a collection offering. programId is required; academicSessionId and orgId are optional. All must be the ids (not sourcedIds) of existing records. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.
+//	@Description	Creates a collection offering. programId is required; academicSessionId and orgId are optional. All must be the ids (not sourcedIds) of existing records. id is generated when empty, sourcedId defaults to id (printable ASCII, stored lowercase, unique ignoring case), and createdAt/updatedAt are set by the server.
 //	@Tags			collection-offerings
 //	@Accept			json
 //	@Produce		json
@@ -919,7 +919,7 @@ package restadmin
 
 //	@Summary		Create component template
 //	@ID				create-component-templates
-//	@Description	Creates a component template. title is required; orgId and each of courseIds, when set, must be the ids (not sourcedIds) of existing records. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.
+//	@Description	Creates a component template. title is required; orgId and each of courseIds, when set, must be the ids (not sourcedIds) of existing records. id is generated when empty, sourcedId defaults to id (printable ASCII, stored lowercase, unique ignoring case), and createdAt/updatedAt are set by the server.
 //	@Tags			component-templates
 //	@Accept			json
 //	@Produce		json
@@ -1000,7 +1000,7 @@ package restadmin
 
 //	@Summary		Create component offering
 //	@ID				create-component-offerings
-//	@Description	Creates a component offering. componentId is required and must be the id (not sourcedId) of an existing component template; academicSessionId, orgId and each of courseOfferingIds are optional and must be ids of existing records. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.
+//	@Description	Creates a component offering. componentId is required and must be the id (not sourcedId) of an existing component template; academicSessionId, orgId and each of courseOfferingIds are optional and must be ids of existing records. id is generated when empty, sourcedId defaults to id (printable ASCII, stored lowercase, unique ignoring case), and createdAt/updatedAt are set by the server.
 //	@Tags			component-offerings
 //	@Accept			json
 //	@Produce		json

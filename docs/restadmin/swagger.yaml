@@ -841,8 +841,8 @@ paths:
       consumes:
       - application/json
       description: Creates an academic session. title is required. id is generated
-        when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the
-        server.
+        when empty, sourcedId defaults to id (printable ASCII, stored lowercase, unique
+        ignoring case), and createdAt/updatedAt are set by the server.
       operationId: create-academic-session
       parameters:
       - description: Academic session to create
@@ -1067,7 +1067,8 @@ paths:
       description: Creates a affiliation. personId and orgId are required; role is
         one of student, staff, faculty, guest. personId and orgId must be the ids
         (not sourcedIds) of an existing person and organization. id is generated when
-        empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.
+        empty, sourcedId defaults to id (printable ASCII, stored lowercase, unique
+        ignoring case), and createdAt/updatedAt are set by the server.
       operationId: create-affiliations
       parameters:
       - description: Affiliation to create
@@ -1292,8 +1293,8 @@ paths:
       - application/json
       description: Creates a collection offering. programId is required; academicSessionId
         and orgId are optional. All must be the ids (not sourcedIds) of existing records.
-        id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt
-        are set by the server.
+        id is generated when empty, sourcedId defaults to id (printable ASCII, stored
+        lowercase, unique ignoring case), and createdAt/updatedAt are set by the server.
       operationId: create-collection-offerings
       parameters:
       - description: Collection offering to create
@@ -1519,8 +1520,9 @@ paths:
       description: Creates a component offering. componentId is required and must
         be the id (not sourcedId) of an existing component template; academicSessionId,
         orgId and each of courseOfferingIds are optional and must be ids of existing
-        records. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt
-        are set by the server.
+        records. id is generated when empty, sourcedId defaults to id (printable ASCII,
+        stored lowercase, unique ignoring case), and createdAt/updatedAt are set by
+        the server.
       operationId: create-component-offerings
       parameters:
       - description: Component offering to create
@@ -1745,8 +1747,8 @@ paths:
       - application/json
       description: Creates a component template. title is required; orgId and each
         of courseIds, when set, must be the ids (not sourcedIds) of existing records.
-        id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt
-        are set by the server.
+        id is generated when empty, sourcedId defaults to id (printable ASCII, stored
+        lowercase, unique ignoring case), and createdAt/updatedAt are set by the server.
       operationId: create-component-templates
       parameters:
       - description: Component template to create
@@ -1971,7 +1973,8 @@ paths:
       - application/json
       description: Creates a course. title is required; orgId, when set, must be the
         id (not sourcedId) of an existing organization. id is generated when empty,
-        sourcedId defaults to id, and createdAt/updatedAt are set by the server.
+        sourcedId defaults to id (printable ASCII, stored lowercase, unique ignoring
+        case), and createdAt/updatedAt are set by the server.
       operationId: create-course
       parameters:
       - description: Course to create
@@ -2196,8 +2199,8 @@ paths:
       - application/json
       description: Creates an enrollment. personId and offeringId are required and
         must be the ids (not sourcedIds) of an existing person and offering. id is
-        generated when empty, sourcedId defaults to id, and createdAt/updatedAt are
-        set by the server.
+        generated when empty, sourcedId defaults to id (printable ASCII, stored lowercase,
+        unique ignoring case), and createdAt/updatedAt are set by the server.
       operationId: create-enrollment
       parameters:
       - description: Enrollment to create
@@ -2422,8 +2425,9 @@ paths:
       - application/json
       description: Creates an entitlement. personId and title are required; orgId
         and resultId are optional. All references must be the ids (not sourcedIds)
-        of existing records. id is generated when empty, sourcedId defaults to id,
-        and createdAt/updatedAt are set by the server.
+        of existing records. id is generated when empty, sourcedId defaults to id
+        (printable ASCII, stored lowercase, unique ignoring case), and createdAt/updatedAt
+        are set by the server.
       operationId: create-entitlement
       parameters:
       - description: Entitlement to create
@@ -2648,8 +2652,8 @@ paths:
       - application/json
       description: Creates an offering. courseId is required; courseId, academicSessionId
         and orgId must be ids (not sourcedIds) of existing records. id is generated
-        when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the
-        server.
+        when empty, sourcedId defaults to id (printable ASCII, stored lowercase, unique
+        ignoring case), and createdAt/updatedAt are set by the server.
       operationId: create-offering
       parameters:
       - description: Offering to create
@@ -2874,8 +2878,8 @@ paths:
       - application/json
       description: Creates an organization. name is required; parentId, when set,
         must be the id (not sourcedId) of an existing organization. id is generated
-        when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the
-        server.
+        when empty, sourcedId defaults to id (printable ASCII, stored lowercase, unique
+        ignoring case), and createdAt/updatedAt are set by the server.
       operationId: create-organization
       parameters:
       - description: Organization to create
@@ -3159,8 +3163,9 @@ paths:
       consumes:
       - application/json
       description: Creates a person. givenName, familyName and status are required.
-        id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt
-        are set by the server. Requires scope sis.write.
+        id is generated when empty, sourcedId defaults to id (printable ASCII, stored
+        lowercase, unique ignoring case), and createdAt/updatedAt are set by the server.
+        Requires scope sis.write.
       operationId: create-person
       parameters:
       - description: Person to create
@@ -3549,7 +3554,8 @@ paths:
       - application/json
       description: Creates a program. title is required; orgId, when set, must be
         the id (not sourcedId) of an existing organization. id is generated when empty,
-        sourcedId defaults to id, and createdAt/updatedAt are set by the server.
+        sourcedId defaults to id (printable ASCII, stored lowercase, unique ignoring
+        case), and createdAt/updatedAt are set by the server.
       operationId: create-program
       parameters:
       - description: Program to create
@@ -3774,8 +3780,9 @@ paths:
       - application/json
       description: Creates a result. personId is required, and exactly one of courseId
         and programId; offeringId is optional. All must be the ids (not sourcedIds)
-        of existing records. id is generated when empty, sourcedId defaults to id,
-        and createdAt/updatedAt are set by the server.
+        of existing records. id is generated when empty, sourcedId defaults to id
+        (printable ASCII, stored lowercase, unique ignoring case), and createdAt/updatedAt
+        are set by the server.
       operationId: create-result
       parameters:
       - description: Result to create

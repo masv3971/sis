@@ -40,8 +40,8 @@ func TestProvidersPublishReferencesAsSourcedIDs(t *testing.T) {
 	must(catalog.Organizations.Create(ctx, &domain.Organization{ID: "o-root", SourcedID: "uni", Name: "U"}))
 	must(catalog.Organizations.Create(ctx, &domain.Organization{ID: "o-dept", SourcedID: "dept", Name: "D", ParentID: "o-root"}))
 	must(catalog.AcademicSessions.Create(ctx, &domain.AcademicSession{ID: "s-internal", SourcedID: "ht26", Title: "HT26"}))
-	must(catalog.Courses.Create(ctx, &domain.Course{ID: "c-internal", SourcedID: "DA101", Title: "C", OrgID: "o-dept"}))
-	must(catalog.Offerings.Create(ctx, &domain.Offering{ID: "f-internal", SourcedID: "DA101-ht26", CourseID: "c-internal", AcademicSessionID: "s-internal", OrgID: "o-dept"}))
+	must(catalog.Courses.Create(ctx, &domain.Course{ID: "c-internal", SourcedID: "da101", Title: "C", OrgID: "o-dept"}))
+	must(catalog.Offerings.Create(ctx, &domain.Offering{ID: "f-internal", SourcedID: "da101-ht26", CourseID: "c-internal", AcademicSessionID: "s-internal", OrgID: "o-dept"}))
 	must(catalog.Enrollments.Create(ctx, &domain.Enrollment{ID: "e-internal", SourcedID: "enr-1", PersonID: "p-internal", OfferingID: "f-internal", Role: domain.RoleStudent}))
 	must(catalog.Results.Create(ctx, &domain.Result{ID: "r-internal", SourcedID: "res-1", PersonID: "p-internal", CourseID: "c-internal", OfferingID: "f-internal", Grade: "A"}))
 
@@ -69,9 +69,9 @@ func TestProvidersPublishReferencesAsSourcedIDs(t *testing.T) {
 		var org struct{ ParentOrganization string }
 		get(t, "/oeapi/organizations/dept", &org)
 		var course struct{ OrganizationID string }
-		get(t, "/oeapi/courses/DA101", &course)
+		get(t, "/oeapi/courses/da101", &course)
 		var off struct{ CourseID, AcademicSessionID string }
-		get(t, "/oeapi/offerings/DA101-ht26", &off)
+		get(t, "/oeapi/offerings/da101-ht26", &off)
 		type nested struct{ ResultID, PersonID, CourseID, OfferingID, Score string }
 		var assoc struct {
 			PersonID, OfferingID string
@@ -92,15 +92,15 @@ func TestProvidersPublishReferencesAsSourcedIDs(t *testing.T) {
 		checks := []struct{ name, got, want string }{
 			{"organization.parentOrganization", org.ParentOrganization, "uni"},
 			{"course.organizationId", course.OrganizationID, "dept"},
-			{"offering.courseId", off.CourseID, "DA101"},
+			{"offering.courseId", off.CourseID, "da101"},
 			{"offering.academicSessionId", off.AcademicSessionID, "ht26"},
 			{"association.personId", assoc.PersonID, "p-external"},
-			{"association.offeringId", assoc.OfferingID, "DA101-ht26"},
+			{"association.offeringId", assoc.OfferingID, "da101-ht26"},
 			{"list association.personId", list.Items[0].PersonID, "p-external"},
 			{"association.result.resultId", assoc.Result.ResultID, "res-1"},
 			{"association.result.personId", assoc.Result.PersonID, "p-external"},
-			{"association.result.courseId", assoc.Result.CourseID, "DA101"},
-			{"association.result.offeringId", assoc.Result.OfferingID, "DA101-ht26"},
+			{"association.result.courseId", assoc.Result.CourseID, "da101"},
+			{"association.result.offeringId", assoc.Result.OfferingID, "da101-ht26"},
 			{"association.result.score", assoc.Result.Score, "A"},
 			{"list association.result.resultId", list.Items[0].Result.ResultID, "res-1"},
 		}
@@ -119,20 +119,20 @@ func TestProvidersPublishReferencesAsSourcedIDs(t *testing.T) {
 		var org struct{ Parent string }
 		get(t, eduBase+"/organizations/dept", &org)
 		var course struct{ Organization string }
-		get(t, eduBase+"/courseTemplates/DA101", &course)
+		get(t, eduBase+"/courseTemplates/da101", &course)
 		var offering struct{ Course, AcademicSession, Organization, StartDate string }
-		get(t, eduBase+"/courseOfferings/DA101-ht26", &offering)
+		get(t, eduBase+"/courseOfferings/da101-ht26", &offering)
 		var enr struct{ Person, EducationOffering string }
 		get(t, eduBase+"/enrollments/enr-1", &enr)
 
 		checks := []struct{ name, got, want string }{
 			{"organization.parent", org.Parent, "uni"},
 			{"courseTemplate.organization", course.Organization, "dept"},
-			{"courseOffering.course", offering.Course, "DA101"},
+			{"courseOffering.course", offering.Course, "da101"},
 			{"courseOffering.academicSession", offering.AcademicSession, "ht26"},
 			{"courseOffering.organization", offering.Organization, "dept"},
 			{"enrollment.person", enr.Person, "p-external"},
-			{"enrollment.educationOffering", enr.EducationOffering, "DA101-ht26"},
+			{"enrollment.educationOffering", enr.EducationOffering, "da101-ht26"},
 		}
 		for _, check := range checks {
 			assert.Equal(t, check.want, check.got, check.name)

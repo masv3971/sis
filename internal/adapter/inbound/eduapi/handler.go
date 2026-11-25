@@ -154,11 +154,8 @@ func (c *Client) ListEnrollments(gc *gin.Context) {
 }
 
 // resolvePersonTerms rewrites the filter terms on an enrollment's person from
-// the published sourcedId to the stored person id. An exact match wins; else
-// one match ignoring case is taken, as filters ignore case. Two or more such
-// matches are ambiguous and count as none. A person that does not exist
-// becomes "", which no enrollment has: = matches nothing, != everything.
-// TODO(#23): once sourcedId is unique ignoring case, look up that one match.
+// the published sourcedId to the stored person id. A person that does not
+// exist becomes "", which no enrollment has: = matches nothing, != everything.
 func (c *Client) resolvePersonTerms(ctx context.Context, f *port.Filter) error {
 	if f == nil {
 		return nil
@@ -179,28 +176,17 @@ func (c *Client) resolvePersonTerms(ctx context.Context, f *port.Filter) error {
 	return nil
 }
 
-// personIDBySourcedID returns the stored id of the person with that sourcedId,
-// or "" when there is none or the match is ambiguous.
+// personIDBySourcedID returns the stored id of the person with that sourcedId
+// (ignoring case), or "" when there is none.
 func (c *Client) personIDBySourcedID(ctx context.Context, sourcedID string) (string, error) {
 	person, err := c.catalog.Persons.GetBySourcedID(ctx, sourcedID)
 	switch {
 	case err == nil:
 		return person.ID, nil
-	case !errors.Is(err, domain.ErrNotFound):
-		return "", err
-	}
-	// Two page items are enough to tell a unique match from an ambiguous one.
-	page, err := c.catalog.Persons.List(ctx, port.ListParams{
-		Limit:  2,
-		Filter: &port.Filter{Terms: []port.FilterTerm{{Field: "sourcedId", Op: port.FilterEquals, Value: sourcedID}}},
-	})
-	if err != nil {
-		return "", err
-	}
-	if len(page.Items) != 1 {
+	case errors.Is(err, domain.ErrNotFound):
 		return "", nil
 	}
-	return page.Items[0].ID, nil
+	return "", err
 }
 
 // queryError is a 400 for a query parameter the provider cannot honour.

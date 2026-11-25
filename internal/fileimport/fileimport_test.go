@@ -61,6 +61,7 @@ func TestFakeStudentsImport(t *testing.T) {
 	require.Len(t, anna.Identifiers, 2, "anna identifiers")
 
 	// References are stored as canonical ids and publish back as sourcedIds.
+	// Lookups ignore case; sourcedIds are stored lowercase.
 	result, err := catalog.Results.GetBySourcedID(ctx, "liu:anna.andersson:TDDE01")
 	require.NoError(t, err)
 	require.Equal(t, anna.ID, result.PersonID, "result personId must be anna's id")
@@ -68,7 +69,7 @@ func TestFakeStudentsImport(t *testing.T) {
 	_, err = catalog.PublishRefs(ctx, result)
 	require.NoError(t, err, "PublishRefs")
 	require.Equal(t, "liu:anna.andersson", result.PersonID, "published personId")
-	require.Equal(t, "liu:TDDE01", result.CourseID, "published courseId")
+	require.Equal(t, "liu:tdde01", result.CourseID, "published courseId")
 	dept, err := catalog.Organizations.GetBySourcedID(ctx, "liu-ida")
 	require.NoError(t, err)
 	require.NotEmpty(t, dept.ParentID, "dept parentId")
