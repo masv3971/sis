@@ -61,10 +61,6 @@ apigw:
     addr: issuer.vc.docker:8090
   registry_client:
     addr: registry.vc.docker:8090
-  issuer_metadata:
-    credential_encryption:
-      keys:
-        - private_key_path: "/pki/credential_encryption.pem"
 
   # vc to SIS is a machine account: one client-credentials client per vc
   # deployment (the SIS realm's sunet-vc, scope sis.read). Students never get
