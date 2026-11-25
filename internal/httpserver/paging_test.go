@@ -320,11 +320,17 @@ func TestEduAPIEnrollmentsFilterByPerson(t *testing.T) {
 		_, ids := do("person!='ANNA'")
 		assert.Equal(t, []string{"e3", "e4"}, ids)
 	})
-	t.Run("person equals every person whose sourcedId differs only by case", func(t *testing.T) {
+	t.Run("an exact sourcedId wins over one that differs by case", func(t *testing.T) {
+		_, ids := do("person='bo'")
+		assert.Equal(t, []string{"e3"}, ids)
+		_, ids = do("person='BO'")
+		assert.Equal(t, []string{"e4"}, ids)
+	})
+	t.Run("a sourcedId that matches several persons ignoring case is ambiguous", func(t *testing.T) {
 		_, ids := do("person='Bo'")
-		assert.Equal(t, []string{"e3", "e4"}, ids)
-		_, ids = do("person!='bO'")
-		assert.Equal(t, []string{"e1", "e2"}, ids)
+		assert.Empty(t, ids)
+		_, ids = do("person!='Bo'")
+		assert.Equal(t, []string{"e1", "e2", "e3", "e4"}, ids)
 	})
 	t.Run("person with another term", func(t *testing.T) {
 		_, ids := do("person='anna' AND sourcedId='e2'")
