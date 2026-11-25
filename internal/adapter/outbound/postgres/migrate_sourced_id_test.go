@@ -2,9 +2,12 @@ package postgres
 
 import (
 	"os"
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -102,6 +105,100 @@ func TestFoldSourcedIDsRefusesCollisions(t *testing.T) {
 	assert.Contains(t, err.Error(), "collide ignoring case")
 	assert.Contains(t, err.Error(), "course:BIO | bio")
 	assert.NotContains(t, err.Error(), "other")
+}
+
+// lockTestPool returns a pool whose search_path is a scratch schema holding a
+// real entities table, so separate connections contend for it. A temp table
+// would be private to one session.
+func lockTestPool(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	url := os.Getenv("SIS_TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("SIS_TEST_DATABASE_URL not set; skipping Postgres integration test")
+	}
+	admin, err := pgxpool.New(t.Context(), url)
+	require.NoError(t, err)
+	t.Cleanup(admin.Close)
+
+	schema := "fold_lock_" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	_, err = admin.Exec(t.Context(), `CREATE SCHEMA `+schema)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = admin.Exec(t.Context(), `DROP SCHEMA `+schema+` CASCADE`) })
+	_, err = admin.Exec(t.Context(), `CREATE TABLE `+schema+`.entities (
+		type TEXT NOT NULL, id TEXT NOT NULL, sourced_id TEXT NOT NULL, data JSONB NOT NULL,
+		PRIMARY KEY (type, id), UNIQUE (type, sourced_id))`)
+	require.NoError(t, err)
+
+	cfg, err := pgxpool.ParseConfig(url)
+	require.NoError(t, err)
+	cfg.ConnConfig.RuntimeParams["search_path"] = schema
+	pool, err := pgxpool.NewWithConfig(t.Context(), cfg)
+	require.NoError(t, err)
+	t.Cleanup(pool.Close)
+	return pool
+}
+
+const insertEntity = `INSERT INTO entities (type, id, sourced_id, data) VALUES ('course', $1, $2, jsonb_build_object('sourcedId', $2::text))`
+
+// A write still open when the fold starts must finish first, or the fold
+// would scan without it and leave its mixed-case id behind.
+func TestFoldSourcedIDsWaitsForOpenWriter(t *testing.T) {
+	pool := lockTestPool(t)
+	ctx := t.Context()
+
+	writer, err := pool.Begin(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = writer.Rollback(ctx) })
+	_, err = writer.Exec(ctx, insertEntity, "c1", "BIO")
+	require.NoError(t, err)
+
+	folder, err := pool.Begin(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = folder.Rollback(ctx) })
+	done := make(chan error, 1)
+	go func() { done <- foldSourcedIDs(ctx, folder) }()
+
+	select {
+	case err := <-done:
+		t.Fatalf("fold finished while a write was open: %v", err)
+	case <-time.After(300 * time.Millisecond):
+	}
+	require.NoError(t, writer.Commit(ctx))
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("fold did not resume after the write committed")
+	}
+	assert.Equal(t, map[string]string{"c1": "bio"}, readSourced(t, folder), "the late write is folded too")
+}
+
+// Once the fold has scanned, a write must wait for its commit, so it cannot be
+// overwritten by a queued update or slip in unfolded.
+func TestFoldSourcedIDsBlocksWritesUntilCommit(t *testing.T) {
+	pool := lockTestPool(t)
+	ctx := t.Context()
+	_, err := pool.Exec(ctx, insertEntity, "c1", "BIO")
+	require.NoError(t, err)
+
+	folder, err := pool.Begin(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = folder.Rollback(ctx) })
+	require.NoError(t, foldSourcedIDs(ctx, folder))
+
+	writer, err := pool.Begin(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = writer.Rollback(ctx) })
+	_, err = writer.Exec(ctx, `SET LOCAL lock_timeout = '200ms'`)
+	require.NoError(t, err)
+	_, err = writer.Exec(ctx, insertEntity, "c2", "CHEM")
+	var pgErr *pgconn.PgError
+	require.ErrorAs(t, err, &pgErr, "the insert must wait for the migration")
+	assert.Equal(t, "55P03", pgErr.Code, "lock_not_available")
+
+	require.NoError(t, folder.Commit(ctx))
+	_, err = pool.Exec(ctx, insertEntity, "c3", "after")
+	require.NoError(t, err, "writes resume once the migration commits")
 }
 
 func TestFoldSourcedIDsRefusesNonASCII(t *testing.T) {

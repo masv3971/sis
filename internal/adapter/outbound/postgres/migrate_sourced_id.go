@@ -26,6 +26,11 @@ const maxListed = 20
 // It stops, naming the rows, on a non-ASCII id or on two ids of one type that
 // fold to the same value, and changes nothing then.
 func foldSourcedIDs(ctx context.Context, tx pgx.Tx) error {
+	// Blocks writes (reads continue) until commit, so none lands between the
+	// scan and the updates; the advisory lock only serialises migrations.
+	if _, err := tx.Exec(ctx, `LOCK TABLE entities IN SHARE ROW EXCLUSIVE MODE`); err != nil {
+		return fmt.Errorf("lock entities: %w", err)
+	}
 	rows, err := tx.Query(ctx, `SELECT type, id, sourced_id FROM entities`)
 	if err != nil {
 		return fmt.Errorf("read sourcedIds: %w", err)
