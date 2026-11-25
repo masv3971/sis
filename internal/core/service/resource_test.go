@@ -73,6 +73,10 @@ func TestResource_SourcedIDIgnoresCase(t *testing.T) {
 	require.Len(t, many, 1)
 	assert.Equal(t, created.GetID(), many[0].GetID())
 
+	dups, err := svc.GetBySourcedIDs(ctx, []string{"BIO202601", "bio202601"})
+	require.NoError(t, err)
+	require.Len(t, dups, 1, "inputs differing only in case return the entity once")
+
 	upserted, err := svc.UpsertBySourcedID(ctx, &domain.Organization{SourcedID: "bIo202601", Name: "Biology 2"})
 	require.NoError(t, err)
 	assert.Equal(t, created.GetID(), upserted.GetID(), "upsert in another case updates the record")

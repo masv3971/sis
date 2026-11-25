@@ -206,9 +206,15 @@ func (s *Resource[T, PT]) GetBySourcedID(ctx context.Context, sourcedID string) 
 
 // GetBySourcedIDs is GetByIDs by sourcedId. The match ignores case.
 func (s *Resource[T, PT]) GetBySourcedIDs(ctx context.Context, sourcedIDs []string) ([]PT, error) {
-	folded := make([]string, len(sourcedIDs))
-	for i, sid := range sourcedIDs {
-		folded[i] = domain.FoldSourcedID(sid)
+	folded := make([]string, 0, len(sourcedIDs))
+	seen := make(map[string]struct{}, len(sourcedIDs))
+	for _, sid := range sourcedIDs {
+		k := domain.FoldSourcedID(sid)
+		if _, dup := seen[k]; dup {
+			continue
+		}
+		seen[k] = struct{}{}
+		folded = append(folded, k)
 	}
 	return s.repo.GetBySourcedIDs(ctx, folded)
 }
