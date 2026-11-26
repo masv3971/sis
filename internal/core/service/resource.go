@@ -79,6 +79,9 @@ func (s *Resource[T, PT]) create(ctx context.Context, e PT) (PT, error) {
 	if e.GetSourcedID() == "" {
 		e.SetSourcedID(e.GetID())
 	}
+	if err := domain.NormalizeSourcedID(e); err != nil {
+		return nil, err
+	}
 	e.SetCreatedAt(now)
 	e.SetUpdatedAt(now)
 	if err := s.repo.Create(ctx, e); err != nil {
@@ -110,6 +113,9 @@ func (s *Resource[T, PT]) update(ctx context.Context, e PT, expiry func(existing
 		return nil, domain.Required("id")
 	}
 	if err := e.Validate(); err != nil {
+		return nil, err
+	}
+	if err := domain.NormalizeSourcedID(e); err != nil {
 		return nil, err
 	}
 	sourcedID := e.GetSourcedID()
@@ -153,6 +159,9 @@ func (s *Resource[T, PT]) UpsertWithExpiry(ctx context.Context, e PT, expiresAt 
 	if e.GetSourcedID() == "" {
 		return nil, false, &domain.ValidationError{Field: "sourcedId", Msg: domain.MsgRequiredForUpsert}
 	}
+	if err := domain.NormalizeSourcedID(e); err != nil {
+		return nil, false, err
+	}
 	merge := func(existing PT) *time.Time { return MergeExpiry(existing.GetExpiresAt(), expiresAt) }
 	existing, err := s.repo.GetBySourcedID(ctx, e.GetSourcedID())
 	switch {
@@ -190,14 +199,24 @@ func (s *Resource[T, PT]) GetByIDs(ctx context.Context, ids []string) ([]PT, err
 }
 
 // GetBySourcedID returns an entity by business key (used by standards providers,
-// which address resources by sourcedId).
+// which address resources by sourcedId). The match ignores case.
 func (s *Resource[T, PT]) GetBySourcedID(ctx context.Context, sourcedID string) (PT, error) {
-	return s.repo.GetBySourcedID(ctx, sourcedID)
+	return s.repo.GetBySourcedID(ctx, domain.FoldSourcedID(sourcedID))
 }
 
-// GetBySourcedIDs is GetByIDs by sourcedId.
+// GetBySourcedIDs is GetByIDs by sourcedId. The match ignores case.
 func (s *Resource[T, PT]) GetBySourcedIDs(ctx context.Context, sourcedIDs []string) ([]PT, error) {
-	return s.repo.GetBySourcedIDs(ctx, sourcedIDs)
+	folded := make([]string, 0, len(sourcedIDs))
+	seen := make(map[string]struct{}, len(sourcedIDs))
+	for _, sid := range sourcedIDs {
+		k := domain.FoldSourcedID(sid)
+		if _, dup := seen[k]; dup {
+			continue
+		}
+		seen[k] = struct{}{}
+		folded = append(folded, k)
+	}
+	return s.repo.GetBySourcedIDs(ctx, folded)
 }
 
 // List returns a page of entities.

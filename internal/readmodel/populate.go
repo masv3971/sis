@@ -103,6 +103,9 @@ func (p *populator) plan(ctx context.Context, b *domain.Bundle) ([]*domain.Organ
 	var all []domain.Entity
 	collect := func(records ...domain.Entity) error {
 		for _, e := range records {
+			if err := foldBundleIDs(e); err != nil {
+				return &domain.ValidationError{Field: e.EntityType() + "[" + e.GetSourcedID() + "]." + err.Field, Msg: err.Msg}
+			}
 			if err := p.member(e.EntityType(), e.GetSourcedID(), e.Validate()); err != nil {
 				return err
 			}
@@ -289,6 +292,19 @@ func upsertAll[T any, PT domain.EntityPtr[T]](ctx context.Context, p *populator,
 			return fmt.Errorf("populate %s %s: %w", svc.TypeName(), e.GetSourcedID(), err)
 		}
 		add(svc.TypeName(), out.GetSourcedID(), out.GetID(), created)
+	}
+	return nil
+}
+
+// foldBundleIDs lowercases a bundle record's sourcedId and the sourcedIds in
+// its references, so bundle keys match the stored (folded) form.
+func foldBundleIDs(e domain.Entity) *domain.ValidationError {
+	if err := domain.NormalizeSourcedID(e); err != nil {
+		ve, _ := errors.AsType[*domain.ValidationError](err)
+		return ve
+	}
+	for _, reference := range refsOf(e) {
+		*reference.target = domain.FoldSourcedID(*reference.target)
 	}
 	return nil
 }

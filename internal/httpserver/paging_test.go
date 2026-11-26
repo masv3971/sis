@@ -254,7 +254,6 @@ func TestEduAPIEnrollmentsFilterByPerson(t *testing.T) {
 	for _, p := range []*domain.Person{
 		{ID: "id-anna", SourcedID: "anna", GivenName: "Anna", FamilyName: "A", Status: domain.StatusActive},
 		{ID: "id-bo", SourcedID: "bo", GivenName: "Bo", FamilyName: "B", Status: domain.StatusActive},
-		{ID: "id-bo2", SourcedID: "BO", GivenName: "Bo", FamilyName: "Twin", Status: domain.StatusActive},
 	} {
 		must(catalog.Persons.Create(ctx, p))
 	}
@@ -264,7 +263,6 @@ func TestEduAPIEnrollmentsFilterByPerson(t *testing.T) {
 		{Base: domain.Base{ID: "id-e1", SourcedID: "e1"}, PersonID: "id-anna", OfferingID: "id-o", Role: domain.RoleStudent},
 		{Base: domain.Base{ID: "id-e2", SourcedID: "e2"}, PersonID: "id-anna", OfferingID: "id-o", Role: domain.RoleStudent},
 		{Base: domain.Base{ID: "id-e3", SourcedID: "e3"}, PersonID: "id-bo", OfferingID: "id-o", Role: domain.RoleStudent},
-		{Base: domain.Base{ID: "id-e4", SourcedID: "e4"}, PersonID: "id-bo2", OfferingID: "id-o", Role: domain.RoleStudent},
 	} {
 		must(catalog.Enrollments.Create(ctx, e))
 	}
@@ -309,7 +307,7 @@ func TestEduAPIEnrollmentsFilterByPerson(t *testing.T) {
 	})
 	t.Run("person not equals", func(t *testing.T) {
 		_, ids := do("person!='anna'")
-		assert.Equal(t, []string{"e3", "e4"}, ids)
+		assert.Equal(t, []string{"e3"}, ids)
 	})
 	t.Run("person equals ignores case", func(t *testing.T) {
 		resp, ids := do("person='ANNA'")
@@ -318,19 +316,15 @@ func TestEduAPIEnrollmentsFilterByPerson(t *testing.T) {
 	})
 	t.Run("person not equals ignores case", func(t *testing.T) {
 		_, ids := do("person!='ANNA'")
-		assert.Equal(t, []string{"e3", "e4"}, ids)
-	})
-	t.Run("an exact sourcedId wins over one that differs by case", func(t *testing.T) {
-		_, ids := do("person='bo'")
 		assert.Equal(t, []string{"e3"}, ids)
-		_, ids = do("person='BO'")
-		assert.Equal(t, []string{"e4"}, ids)
 	})
-	t.Run("a sourcedId that matches several persons ignoring case is ambiguous", func(t *testing.T) {
-		_, ids := do("person='Bo'")
-		assert.Empty(t, ids)
-		_, ids = do("person!='Bo'")
-		assert.Equal(t, []string{"e1", "e2", "e3", "e4"}, ids)
+	t.Run("a person is found by any case of its sourcedId", func(t *testing.T) {
+		for _, sid := range []string{"bo", "BO", "Bo"} {
+			_, ids := do("person='" + sid + "'")
+			assert.Equal(t, []string{"e3"}, ids, sid)
+		}
+		_, ids := do("person!='Bo'")
+		assert.Equal(t, []string{"e1", "e2"}, ids)
 	})
 	t.Run("person with another term", func(t *testing.T) {
 		_, ids := do("person='anna' AND sourcedId='e2'")

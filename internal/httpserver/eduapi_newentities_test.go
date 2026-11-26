@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -74,7 +75,7 @@ func TestEduAPINewEntities(t *testing.T) {
 	must(catalog.Programs.Create(ctx, &domain.Program{ID: "g-1", SourcedID: "BSc", Title: "BSc Biology"}))
 	must(catalog.Courses.Create(ctx, &domain.Course{ID: "c-1", SourcedID: "DA101", Title: "C", ProgramIDs: []string{"g-1"}}))
 	must(catalog.Offerings.Create(ctx, &domain.Offering{ID: "f-1", SourcedID: "DA101-ht26", CourseID: "c-1", AcademicSessionID: "s-1", CollectionOfferingIDs: []string{"k-1"}}))
-	must(catalog.CollectionOfferings.Create(ctx, &domain.CollectionOffering{ID: "k-1", SourcedID: "BSc-ht26", ProgramID: "g-1", AcademicSessionID: "s-1"}))
+	must(catalog.CollectionOfferings.Create(ctx, &domain.CollectionOffering{ID: "k-1", SourcedID: "bsc-ht26", ProgramID: "g-1", AcademicSessionID: "s-1"}))
 	// Its program does not exist: an orphan, which is not published.
 	must(catalog.CollectionOfferings.Create(ctx, &domain.CollectionOffering{ID: "k-orphan", SourcedID: "ORPHAN-ht26", ProgramID: "g-gone", AcademicSessionID: "s-1"}))
 	must(catalog.ComponentTemplates.Create(ctx, &domain.ComponentTemplate{ID: "t-1", SourcedID: "DA101-lab", Title: "Lab", Type: "laboratory", CourseIDs: []string{"c-1"}}))
@@ -133,17 +134,17 @@ func TestEduAPINewEntities(t *testing.T) {
 	t.Run("component template", func(t *testing.T) {
 		_, _, _, one := get("/componentTemplates/DA101-lab")
 		assert.Equal(t, "laboratory", one["componentType"])
-		assert.Equal(t, []any{"DA101"}, one["parent"], "parent holds the course's sourcedId")
+		assert.Equal(t, []any{"da101"}, one["parent"], "parent holds the course's sourcedId")
 	})
 
 	t.Run("collection offering", func(t *testing.T) {
 		status, total, list, _ := get("/collectionOfferings")
 		require.Equal(t, http.StatusOK, status)
-		assert.Equal(t, []any{"BSc-ht26"}, ids(list), "the orphan is not published")
+		assert.Equal(t, []any{"bsc-ht26"}, ids(list), "the orphan is not published")
 		assert.Equal(t, 2, total, "X-Total-Count counts stored records")
 
 		_, _, _, one := get("/collectionOfferings/BSc-ht26")
-		assert.Equal(t, "BSc", one["collection"])
+		assert.Equal(t, "bsc", one["collection"])
 		assert.Equal(t, "ht26", one["academicSession"])
 		assert.Equal(t, "2026-08-31T00:00:00Z", one["startDate"], "dates come from the session")
 		title := one["title"].([]any)[0].(map[string]any)
@@ -153,44 +154,44 @@ func TestEduAPINewEntities(t *testing.T) {
 		assert.Equal(t, http.StatusNotFound, status)
 
 		_, _, list, _ = get("/academicSessions/ht26/collectionOfferings")
-		assert.Equal(t, []any{"BSc-ht26"}, ids(list))
+		assert.Equal(t, []any{"bsc-ht26"}, ids(list))
 		status, _, _, _ = get("/academicSessions/none/collectionOfferings")
 		assert.Equal(t, http.StatusNotFound, status)
 	})
 
 	t.Run("component offering", func(t *testing.T) {
 		_, _, _, one := get("/componentOfferings/DA101-lab-ht26")
-		assert.Equal(t, "DA101-lab", one["component"])
+		assert.Equal(t, "da101-lab", one["component"])
 		assert.Equal(t, "laboratory", one["offeringType"])
-		assert.Equal(t, []any{"DA101-ht26"}, one["parent"])
+		assert.Equal(t, []any{"da101-ht26"}, one["parent"])
 
 		_, _, list, _ := get("/academicSessions/ht26/componentOfferings")
-		assert.Equal(t, []any{"DA101-lab-ht26"}, ids(list))
+		assert.Equal(t, []any{"da101-lab-ht26"}, ids(list))
 	})
 
 	t.Run("parent references", func(t *testing.T) {
 		_, _, _, one := get("/courseOfferings/DA101-ht26")
-		assert.Equal(t, []any{"BSc-ht26"}, one["parent"])
+		assert.Equal(t, []any{"bsc-ht26"}, one["parent"])
 		_, _, _, course := get("/courseTemplates/DA101")
-		assert.Equal(t, []any{"BSc"}, course["parent"])
+		assert.Equal(t, []any{"bsc"}, course["parent"])
 	})
 
 	t.Run("education templates", func(t *testing.T) {
 		status, total, list, _ := get("/educationTemplates")
 		require.Equal(t, http.StatusOK, status)
 		assert.Equal(t, 3, total)
-		assert.Equal(t, []any{"BSc", "DA101", "DA101-lab"}, ids(list), "ordered by sourcedId")
+		assert.Equal(t, []any{"bsc", "da101", "da101-lab"}, ids(list), "ordered by sourcedId")
 		for _, item := range list {
 			assert.NotContains(t, item, "courseType")
 			assert.NotContains(t, item, "parent")
 		}
 
 		_, _, page, _ := get("/educationTemplates?limit=1&offset=1")
-		assert.Equal(t, []any{"DA101"}, ids(page))
+		assert.Equal(t, []any{"da101"}, ids(page))
 
 		for _, id := range []string{"DA101", "BSc", "DA101-lab"} {
 			_, _, _, one := get("/educationTemplates/" + id)
-			assert.Equal(t, id, one["sourcedId"])
+			assert.Equal(t, strings.ToLower(id), one["sourcedId"], "any case finds the record")
 		}
 		status, _, _, _ = get("/educationTemplates/none")
 		assert.Equal(t, http.StatusNotFound, status)
@@ -202,31 +203,31 @@ func TestEduAPINewEntities(t *testing.T) {
 		status, total, list, _ := get("/educationOfferings")
 		require.Equal(t, http.StatusOK, status)
 		assert.Equal(t, 4, total, "X-Total-Count counts stored records, the orphan included")
-		assert.Equal(t, []any{"BSc-ht26", "DA101-ht26", "DA101-lab-ht26"}, ids(list))
+		assert.Equal(t, []any{"bsc-ht26", "da101-ht26", "da101-lab-ht26"}, ids(list))
 		kinds := map[any]any{}
 		for _, item := range list {
 			kinds[item["sourcedId"]] = item["offeringType"]
 			assert.NotContains(t, item, "parent")
 		}
-		assert.Equal(t, map[any]any{"BSc-ht26": "collection", "DA101-ht26": "course", "DA101-lab-ht26": "component"}, kinds)
+		assert.Equal(t, map[any]any{"bsc-ht26": "collection", "da101-ht26": "course", "da101-lab-ht26": "component"}, kinds)
 
-		for _, id := range []string{"DA101-ht26", "BSc-ht26", "DA101-lab-ht26"} {
+		for _, id := range []string{"DA101-ht26", "bsc-ht26", "DA101-lab-ht26"} {
 			_, _, _, one := get("/educationOfferings/" + id)
-			assert.Equal(t, id, one["sourcedId"])
+			assert.Equal(t, strings.ToLower(id), one["sourcedId"], "any case finds the record")
 		}
 		status, _, _, _ = get("/educationOfferings/ORPHAN-ht26")
 		assert.Equal(t, http.StatusNotFound, status)
 
 		// One at a time, a page spans the kinds in sourcedId order. The last
 		// stored record is the orphan, so its page is empty but not the end.
-		for offset, want := range [][]any{{"BSc-ht26"}, {"DA101-ht26"}, {"DA101-lab-ht26"}, {}, {}} {
+		for offset, want := range [][]any{{"bsc-ht26"}, {"da101-ht26"}, {"da101-lab-ht26"}, {}, {}} {
 			status, total, page, _ := get("/educationOfferings?limit=1&offset=" + strconv.Itoa(offset))
 			require.Equal(t, http.StatusOK, status, "offset %d", offset)
 			assert.Equal(t, 4, total, "offset %d", offset)
 			assert.Equal(t, want, ids(page), "offset %d", offset)
 		}
 		_, _, page, _ := get("/educationOfferings?limit=2&offset=1")
-		assert.Equal(t, []any{"DA101-ht26", "DA101-lab-ht26"}, ids(page))
+		assert.Equal(t, []any{"da101-ht26", "da101-lab-ht26"}, ids(page))
 		_, _, page, _ = get("/educationOfferings?offset=9223372036854775807&limit=10")
 		assert.Empty(t, page, "a huge offset must not overflow")
 	})
@@ -248,18 +249,18 @@ func TestEduAPINewEntities(t *testing.T) {
 	// Last, because it adds records the counts above do not expect.
 	t.Run("parent skips a collection offering whose program is gone", func(t *testing.T) {
 		must(catalog.Programs.Create(ctx, &domain.Program{ID: "g-2", SourcedID: "MSc", Title: "MSc"}))
-		must(catalog.CollectionOfferings.Create(ctx, &domain.CollectionOffering{ID: "k-2", SourcedID: "MSc-ht26", ProgramID: "g-2"}))
+		must(catalog.CollectionOfferings.Create(ctx, &domain.CollectionOffering{ID: "k-2", SourcedID: "msc-ht26", ProgramID: "g-2"}))
 		must(catalog.Offerings.Create(ctx, &domain.Offering{ID: "f-2", SourcedID: "DA102-ht26", CourseID: "c-1", CollectionOfferingIDs: []string{"k-1", "k-2"}}))
 
 		_, _, _, one := get("/courseOfferings/DA102-ht26")
-		assert.Equal(t, []any{"BSc-ht26", "MSc-ht26"}, one["parent"])
+		assert.Equal(t, []any{"bsc-ht26", "msc-ht26"}, one["parent"])
 
 		require.NoError(t, catalog.Programs.Delete(ctx, "g-2"))
 
 		status, _, _, _ := get("/collectionOfferings/MSc-ht26")
 		require.Equal(t, http.StatusNotFound, status, "the offering is an orphan now")
 		_, _, _, one = get("/courseOfferings/DA102-ht26")
-		assert.Equal(t, []any{"BSc-ht26"}, one["parent"], "parent must not list an offering that answers 404")
+		assert.Equal(t, []any{"bsc-ht26"}, one["parent"], "parent must not list an offering that answers 404")
 	})
 
 	assert.Zero(t, unboundedLists.Load(), "no request may read a whole kind to serve a page")

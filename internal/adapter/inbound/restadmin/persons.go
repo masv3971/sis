@@ -96,7 +96,7 @@ func (c *Client) ListPersons(gc *gin.Context) {
 //
 //	@Summary		Create person
 //	@ID				create-person
-//	@Description	Creates a person. givenName, familyName and status are required. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server. Requires scope sis.write.
+//	@Description	Creates a person. givenName, familyName and status are required. id is generated when empty, sourcedId defaults to id (printable ASCII, stored lowercase, unique ignoring case), and createdAt/updatedAt are set by the server. Requires scope sis.write.
 //	@Tags			persons
 //	@Accept			json
 //	@Produce		json

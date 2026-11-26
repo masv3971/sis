@@ -22,15 +22,57 @@ func sampleBundle() *domain.Bundle {
 			{Base: base("uni"), Name: "U"},
 		},
 		AcademicSessions: []*domain.AcademicSession{{Base: base("ht25"), Title: "HT25"}},
-		Courses:          []*domain.Course{{Base: base("BI101"), Title: "Bio", OrgID: "dept"}},
-		Programs:         []*domain.Program{{Base: base("BSc"), Title: "BSc", OrgID: "uni"}},
-		Offerings:        []*domain.Offering{{Base: base("BI101-ht25"), CourseID: "BI101", AcademicSessionID: "ht25"}},
-		Enrollments:      []*domain.Enrollment{{Base: base("enr"), PersonID: "stu", OfferingID: "BI101-ht25", Role: domain.RoleStudent}},
+		Courses:          []*domain.Course{{Base: base("bi101"), Title: "Bio", OrgID: "dept"}},
+		Programs:         []*domain.Program{{Base: base("bsc"), Title: "bsc", OrgID: "uni"}},
+		Offerings:        []*domain.Offering{{Base: base("bi101-ht25"), CourseID: "bi101", AcademicSessionID: "ht25"}},
+		Enrollments:      []*domain.Enrollment{{Base: base("enr"), PersonID: "stu", OfferingID: "bi101-ht25", Role: domain.RoleStudent}},
 		Results: []*domain.Result{
-			{Base: base("r1"), PersonID: "stu", CourseID: "BI101", OfferingID: "BI101-ht25", Grade: "A"},
-			{Base: base("r2"), PersonID: "stu", ProgramID: "BSc"},
+			{Base: base("r1"), PersonID: "stu", CourseID: "bi101", OfferingID: "bi101-ht25", Grade: "A"},
+			{Base: base("r2"), PersonID: "stu", ProgramID: "bsc"},
 		},
 	}
+}
+
+// TestPopulateIgnoresSourcedIDCase checks a bundle may spell a reference in
+// another case than its target's sourcedId, that ids differing only in case
+// are a duplicate, and that a non-ASCII sourcedId is refused.
+func TestPopulateIgnoresSourcedIDCase(t *testing.T) {
+	ctx := t.Context()
+	base := func(sid string) domain.Base { return domain.Base{SourcedID: sid, Status: domain.StatusActive} }
+	bundle := func() *domain.Bundle {
+		return &domain.Bundle{
+			Persons:     []*domain.Person{{SourcedID: "ANNA", Status: domain.StatusActive, GivenName: "A", FamilyName: "B"}},
+			Courses:     []*domain.Course{{Base: base("DA101"), Title: "C"}},
+			Offerings:   []*domain.Offering{{Base: base("DA101-HT26"), CourseID: "da101"}},
+			Enrollments: []*domain.Enrollment{{Base: base("E1"), PersonID: "anna", OfferingID: "Da101-ht26", Role: domain.RoleStudent}},
+		}
+	}
+
+	catalog := newFixture(t).catalog
+	items, err := catalog.Populate(ctx, bundle(), nil)
+	require.NoError(t, err)
+	require.Len(t, items, 4)
+	for _, item := range items {
+		assert.Equal(t, item.SourcedID, domain.FoldSourcedID(item.SourcedID), "published lowercase: %+v", item)
+	}
+	again, err := catalog.Populate(ctx, bundle(), nil)
+	require.NoError(t, err)
+	for _, item := range again {
+		assert.Equal(t, ActionUpdated, item.Action, "a second run updates: %+v", item)
+	}
+
+	dup := bundle()
+	dup.Courses = append(dup.Courses, &domain.Course{Base: base("da101"), Title: "Twin"})
+	_, err = newFixture(t).catalog.Populate(ctx, dup, nil)
+	var ve *domain.ValidationError
+	require.ErrorAs(t, err, &ve)
+	assert.Contains(t, ve.Msg, "duplicate sourcedId")
+
+	ascii := bundle()
+	ascii.Persons[0].SourcedID = "åsa"
+	_, err = newFixture(t).catalog.Populate(ctx, ascii, nil)
+	require.ErrorAs(t, err, &ve)
+	assert.Equal(t, domain.MsgSourcedID, ve.Msg)
 }
 
 // TestPopulateStoresWithCanonicalRefs checks every record is stored and its
@@ -58,8 +100,8 @@ func TestPopulateStoresWithCanonicalRefs(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []bool{true}, publishable, "publishable")
 	require.Equal(t, "stu", result.PersonID, "published personId")
-	require.Equal(t, "BI101", result.CourseID, "published courseId")
-	require.Equal(t, "BI101-ht25", result.OfferingID, "published offeringId")
+	require.Equal(t, "bi101", result.CourseID, "published courseId")
+	require.Equal(t, "bi101-ht25", result.OfferingID, "published offeringId")
 	dept, err := catalog.Organizations.GetBySourcedID(ctx, "dept")
 	require.NoError(t, err)
 	require.NoError(t, catalog.CheckRefs(ctx, dept))
@@ -88,29 +130,29 @@ func TestPopulateNewEntities(t *testing.T) {
 		Persons:          []*domain.Person{{SourcedID: "stu", Status: domain.StatusActive, GivenName: "A", FamilyName: "B"}},
 		Organizations:    []*domain.Organization{{Base: base("uni"), Name: "U"}},
 		AcademicSessions: []*domain.AcademicSession{{Base: base("ht26"), Title: "HT26"}},
-		Programs:         []*domain.Program{{Base: base("BSc"), Title: "BSc"}},
-		Courses:          []*domain.Course{{Base: base("DA101"), Title: "C", ProgramIDs: []string{"BSc"}}},
+		Programs:         []*domain.Program{{Base: base("bsc"), Title: "bsc"}},
+		Courses:          []*domain.Course{{Base: base("da101"), Title: "C", ProgramIDs: []string{"bsc"}}},
 		// Dependants listed before what they reference: Populate must order the writes.
-		ComponentOfferings:  []*domain.ComponentOffering{{Base: base("lab-ht26"), ComponentID: "lab", AcademicSessionID: "ht26", CourseOfferingIDs: []string{"DA101-ht26"}}},
-		CollectionOfferings: []*domain.CollectionOffering{{Base: base("BSc-ht26"), ProgramID: "BSc", AcademicSessionID: "ht26", OrgID: "uni"}},
-		ComponentTemplates:  []*domain.ComponentTemplate{{Base: base("lab"), Title: "Lab", Type: "laboratory", CourseIDs: []string{"DA101"}}},
-		Offerings:           []*domain.Offering{{Base: base("DA101-ht26"), CourseID: "DA101", AcademicSessionID: "ht26", CollectionOfferingIDs: []string{"BSc-ht26"}}},
+		ComponentOfferings:  []*domain.ComponentOffering{{Base: base("lab-ht26"), ComponentID: "lab", AcademicSessionID: "ht26", CourseOfferingIDs: []string{"da101-ht26"}}},
+		CollectionOfferings: []*domain.CollectionOffering{{Base: base("bsc-ht26"), ProgramID: "bsc", AcademicSessionID: "ht26", OrgID: "uni"}},
+		ComponentTemplates:  []*domain.ComponentTemplate{{Base: base("lab"), Title: "Lab", Type: "laboratory", CourseIDs: []string{"da101"}}},
+		Offerings:           []*domain.Offering{{Base: base("da101-ht26"), CourseID: "da101", AcademicSessionID: "ht26", CollectionOfferingIDs: []string{"bsc-ht26"}}},
 		Affiliations:        []*domain.Affiliation{{Base: base("stu-uni"), PersonID: "stu", OrgID: "uni", Role: domain.RoleStudent}},
 	}
 	items, err := catalog.Populate(ctx, bundle, nil)
 	require.NoError(t, err)
 	require.Len(t, items, bundle.Len())
 
-	course, err := catalog.Courses.GetBySourcedID(ctx, "DA101")
+	course, err := catalog.Courses.GetBySourcedID(ctx, "da101")
 	require.NoError(t, err)
-	program, err := catalog.Programs.GetBySourcedID(ctx, "BSc")
+	program, err := catalog.Programs.GetBySourcedID(ctx, "bsc")
 	require.NoError(t, err)
 	assert.Equal(t, []string{program.ID}, course.ProgramIDs, "stored as the program's canonical id")
 	require.NoError(t, catalog.CheckRefs(ctx, course))
 
-	offering, err := catalog.Offerings.GetBySourcedID(ctx, "DA101-ht26")
+	offering, err := catalog.Offerings.GetBySourcedID(ctx, "da101-ht26")
 	require.NoError(t, err)
-	collection, err := catalog.CollectionOfferings.GetBySourcedID(ctx, "BSc-ht26")
+	collection, err := catalog.CollectionOfferings.GetBySourcedID(ctx, "bsc-ht26")
 	require.NoError(t, err)
 	assert.Equal(t, []string{collection.ID}, offering.CollectionOfferingIDs)
 	assert.Equal(t, program.ID, collection.ProgramID)
@@ -122,7 +164,7 @@ func TestPopulateNewEntities(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []bool{true}, published)
 	assert.Equal(t, "lab", component.ComponentID)
-	assert.Equal(t, []string{"DA101-ht26"}, component.CourseOfferingIDs)
+	assert.Equal(t, []string{"da101-ht26"}, component.CourseOfferingIDs)
 	affiliation, err := catalog.Affiliations.GetBySourcedID(ctx, "stu-uni")
 	require.NoError(t, err)
 	require.NoError(t, catalog.CheckRefs(ctx, affiliation))
@@ -142,12 +184,12 @@ func sampleNewEntitiesBundle(b *domain.Bundle) *domain.Bundle {
 		Persons:             []*domain.Person{{SourcedID: "stu", Status: domain.StatusActive, GivenName: "A", FamilyName: "B"}},
 		Organizations:       []*domain.Organization{{Base: base("uni"), Name: "U"}},
 		AcademicSessions:    []*domain.AcademicSession{{Base: base("ht26"), Title: "HT26"}},
-		Programs:            []*domain.Program{{Base: base("BSc"), Title: "BSc"}},
-		Courses:             []*domain.Course{{Base: base("DA101"), Title: "C", ProgramIDs: []string{"BSc"}}},
-		ComponentOfferings:  []*domain.ComponentOffering{{Base: base("lab-ht26"), ComponentID: "lab", AcademicSessionID: "ht26", CourseOfferingIDs: []string{"DA101-ht26"}}},
-		CollectionOfferings: []*domain.CollectionOffering{{Base: base("BSc-ht26"), ProgramID: "BSc", AcademicSessionID: "ht26", OrgID: "uni"}},
-		ComponentTemplates:  []*domain.ComponentTemplate{{Base: base("lab"), Title: "Lab", Type: "laboratory", CourseIDs: []string{"DA101"}}},
-		Offerings:           []*domain.Offering{{Base: base("DA101-ht26"), CourseID: "DA101", AcademicSessionID: "ht26", CollectionOfferingIDs: []string{"BSc-ht26"}}},
+		Programs:            []*domain.Program{{Base: base("bsc"), Title: "bsc"}},
+		Courses:             []*domain.Course{{Base: base("da101"), Title: "C", ProgramIDs: []string{"bsc"}}},
+		ComponentOfferings:  []*domain.ComponentOffering{{Base: base("lab-ht26"), ComponentID: "lab", AcademicSessionID: "ht26", CourseOfferingIDs: []string{"da101-ht26"}}},
+		CollectionOfferings: []*domain.CollectionOffering{{Base: base("bsc-ht26"), ProgramID: "bsc", AcademicSessionID: "ht26", OrgID: "uni"}},
+		ComponentTemplates:  []*domain.ComponentTemplate{{Base: base("lab"), Title: "Lab", Type: "laboratory", CourseIDs: []string{"da101"}}},
+		Offerings:           []*domain.Offering{{Base: base("da101-ht26"), CourseID: "da101", AcademicSessionID: "ht26", CollectionOfferingIDs: []string{"bsc-ht26"}}},
 		Affiliations:        []*domain.Affiliation{{Base: base("stu-uni"), PersonID: "stu", OrgID: "uni", Role: domain.RoleStudent}},
 	}
 }
@@ -159,12 +201,12 @@ func TestPopulateRejectsBadListRefs(t *testing.T) {
 	catalog := newFixture(t).catalog
 	base := func(sid string) domain.Base { return domain.Base{SourcedID: sid, Status: domain.StatusActive} }
 	_, err := catalog.Populate(ctx, &domain.Bundle{
-		Programs: []*domain.Program{{Base: base("BSc"), Title: "BSc"}},
-		Courses:  []*domain.Course{{Base: base("DA101"), Title: "C", ProgramIDs: []string{"BSc", "nowhere"}}},
+		Programs: []*domain.Program{{Base: base("bsc"), Title: "bsc"}},
+		Courses:  []*domain.Course{{Base: base("da101"), Title: "C", ProgramIDs: []string{"bsc", "nowhere"}}},
 	}, nil)
 	var verr *domain.ValidationError
 	require.ErrorAs(t, err, &verr)
-	assert.Equal(t, "course[DA101].programIds[1]", verr.Field)
+	assert.Equal(t, "course[da101].programIds[1]", verr.Field)
 	assert.Contains(t, verr.Msg, "nowhere")
 	page, err := catalog.Programs.List(ctx, port.ListParams{})
 	require.NoError(t, err)
@@ -176,11 +218,11 @@ func TestPopulateRejectsBadListRefs(t *testing.T) {
 func TestPopulateResolvesStoredRefs(t *testing.T) {
 	ctx := t.Context()
 	catalog := newFixture(t).catalog
-	_, err := catalog.Courses.Create(ctx, &domain.Course{ID: "c-id", SourcedID: "DA101", Title: "C"})
+	_, err := catalog.Courses.Create(ctx, &domain.Course{ID: "c-id", SourcedID: "da101", Title: "C"})
 	require.NoError(t, err)
 	bundle := &domain.Bundle{
 		Persons: []*domain.Person{{SourcedID: "stu", Status: domain.StatusActive, GivenName: "A", FamilyName: "B"}},
-		Results: []*domain.Result{{SourcedID: "r", PersonID: "stu", CourseID: "DA101"}},
+		Results: []*domain.Result{{SourcedID: "r", PersonID: "stu", CourseID: "da101"}},
 	}
 	_, err = catalog.Populate(ctx, bundle, nil)
 	require.NoError(t, err)
@@ -196,7 +238,7 @@ func TestPopulateBatchesStoredRefs(t *testing.T) {
 	ctx := t.Context()
 	fx := newFixture(t)
 	catalog := fx.catalog
-	_, err := catalog.Offerings.Create(ctx, &domain.Offering{ID: "f-id", SourcedID: "DA101-ht26", CourseID: "c-id"})
+	_, err := catalog.Offerings.Create(ctx, &domain.Offering{ID: "f-id", SourcedID: "da101-ht26", CourseID: "c-id"})
 	require.NoError(t, err)
 	bundle := &domain.Bundle{}
 	for i := range 5 {
@@ -205,7 +247,7 @@ func TestPopulateBatchesStoredRefs(t *testing.T) {
 		require.NoError(t, err)
 		bundle.Enrollments = append(bundle.Enrollments, &domain.Enrollment{
 			SourcedID: "enr" + strconv.Itoa(i), Status: domain.StatusActive,
-			PersonID: sid, OfferingID: "DA101-ht26", Role: domain.RoleStudent,
+			PersonID: sid, OfferingID: "da101-ht26", Role: domain.RoleStudent,
 		})
 	}
 	fx.persons.bulk, fx.persons.single, fx.offering.bulk, fx.offering.single = 0, 0, 0, 0

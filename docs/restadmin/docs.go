@@ -85,7 +85,7 @@ const docTemplate = `{
                 ]
             },
             "post": {
-                "description": "Creates an academic session. title is required. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.",
+                "description": "Creates an academic session. title is required. id is generated when empty, sourcedId defaults to id (printable ASCII, stored lowercase, unique ignoring case), and createdAt/updatedAt are set by the server.",
                 "consumes": [
                     "application/json"
                 ],
@@ -425,7 +425,7 @@ const docTemplate = `{
                 ]
             },
             "post": {
-                "description": "Creates a affiliation. personId and orgId are required; role is one of student, staff, faculty, guest. personId and orgId must be the ids (not sourcedIds) of an existing person and organization. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.",
+                "description": "Creates a affiliation. personId and orgId are required; role is one of student, staff, faculty, guest. personId and orgId must be the ids (not sourcedIds) of an existing person and organization. id is generated when empty, sourcedId defaults to id (printable ASCII, stored lowercase, unique ignoring case), and createdAt/updatedAt are set by the server.",
                 "consumes": [
                     "application/json"
                 ],
@@ -765,7 +765,7 @@ const docTemplate = `{
                 ]
             },
             "post": {
-                "description": "Creates a collection offering. programId is required; academicSessionId and orgId are optional. All must be the ids (not sourcedIds) of existing records. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.",
+                "description": "Creates a collection offering. programId is required; academicSessionId and orgId are optional. All must be the ids (not sourcedIds) of existing records. id is generated when empty, sourcedId defaults to id (printable ASCII, stored lowercase, unique ignoring case), and createdAt/updatedAt are set by the server.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1105,7 +1105,7 @@ const docTemplate = `{
                 ]
             },
             "post": {
-                "description": "Creates a component offering. componentId is required and must be the id (not sourcedId) of an existing component template; academicSessionId, orgId and each of courseOfferingIds are optional and must be ids of existing records. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.",
+                "description": "Creates a component offering. componentId is required and must be the id (not sourcedId) of an existing component template; academicSessionId, orgId and each of courseOfferingIds are optional and must be ids of existing records. id is generated when empty, sourcedId defaults to id (printable ASCII, stored lowercase, unique ignoring case), and createdAt/updatedAt are set by the server.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1445,7 +1445,7 @@ const docTemplate = `{
                 ]
             },
             "post": {
-                "description": "Creates a component template. title is required; orgId and each of courseIds, when set, must be the ids (not sourcedIds) of existing records. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.",
+                "description": "Creates a component template. title is required; orgId and each of courseIds, when set, must be the ids (not sourcedIds) of existing records. id is generated when empty, sourcedId defaults to id (printable ASCII, stored lowercase, unique ignoring case), and createdAt/updatedAt are set by the server.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1785,7 +1785,7 @@ const docTemplate = `{
                 ]
             },
             "post": {
-                "description": "Creates a course. title is required; orgId, when set, must be the id (not sourcedId) of an existing organization. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.",
+                "description": "Creates a course. title is required; orgId, when set, must be the id (not sourcedId) of an existing organization. id is generated when empty, sourcedId defaults to id (printable ASCII, stored lowercase, unique ignoring case), and createdAt/updatedAt are set by the server.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2125,7 +2125,7 @@ const docTemplate = `{
                 ]
             },
             "post": {
-                "description": "Creates an enrollment. personId and offeringId are required and must be the ids (not sourcedIds) of an existing person and offering. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.",
+                "description": "Creates an enrollment. personId and offeringId are required and must be the ids (not sourcedIds) of an existing person and offering. id is generated when empty, sourcedId defaults to id (printable ASCII, stored lowercase, unique ignoring case), and createdAt/updatedAt are set by the server.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2465,7 +2465,7 @@ const docTemplate = `{
                 ]
             },
             "post": {
-                "description": "Creates an entitlement. personId and title are required; orgId and resultId are optional. All references must be the ids (not sourcedIds) of existing records. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.",
+                "description": "Creates an entitlement. personId and title are required; orgId and resultId are optional. All references must be the ids (not sourcedIds) of existing records. id is generated when empty, sourcedId defaults to id (printable ASCII, stored lowercase, unique ignoring case), and createdAt/updatedAt are set by the server.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2805,7 +2805,7 @@ const docTemplate = `{
                 ]
             },
             "post": {
-                "description": "Creates an offering. courseId is required; courseId, academicSessionId and orgId must be ids (not sourcedIds) of existing records. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.",
+                "description": "Creates an offering. courseId is required; courseId, academicSessionId and orgId must be ids (not sourcedIds) of existing records. id is generated when empty, sourcedId defaults to id (printable ASCII, stored lowercase, unique ignoring case), and createdAt/updatedAt are set by the server.",
                 "consumes": [
                     "application/json"
                 ],
@@ -3145,7 +3145,7 @@ const docTemplate = `{
                 ]
             },
             "post": {
-                "description": "Creates an organization. name is required; parentId, when set, must be the id (not sourcedId) of an existing organization. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.",
+                "description": "Creates an organization. name is required; parentId, when set, must be the id (not sourcedId) of an existing organization. id is generated when empty, sourcedId defaults to id (printable ASCII, stored lowercase, unique ignoring case), and createdAt/updatedAt are set by the server.",
                 "consumes": [
                     "application/json"
                 ],
@@ -3562,7 +3562,7 @@ const docTemplate = `{
                 ]
             },
             "post": {
-                "description": "Creates a person. givenName, familyName and status are required. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server. Requires scope sis.write.",
+                "description": "Creates a person. givenName, familyName and status are required. id is generated when empty, sourcedId defaults to id (printable ASCII, stored lowercase, unique ignoring case), and createdAt/updatedAt are set by the server. Requires scope sis.write.",
                 "consumes": [
                     "application/json"
                 ],
@@ -4136,7 +4136,7 @@ const docTemplate = `{
                 ]
             },
             "post": {
-                "description": "Creates a program. title is required; orgId, when set, must be the id (not sourcedId) of an existing organization. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.",
+                "description": "Creates a program. title is required; orgId, when set, must be the id (not sourcedId) of an existing organization. id is generated when empty, sourcedId defaults to id (printable ASCII, stored lowercase, unique ignoring case), and createdAt/updatedAt are set by the server.",
                 "consumes": [
                     "application/json"
                 ],
@@ -4476,7 +4476,7 @@ const docTemplate = `{
                 ]
             },
             "post": {
-                "description": "Creates a result. personId is required, and exactly one of courseId and programId; offeringId is optional. All must be the ids (not sourcedIds) of existing records. id is generated when empty, sourcedId defaults to id, and createdAt/updatedAt are set by the server.",
+                "description": "Creates a result. personId is required, and exactly one of courseId and programId; offeringId is optional. All must be the ids (not sourcedIds) of existing records. id is generated when empty, sourcedId defaults to id (printable ASCII, stored lowercase, unique ignoring case), and createdAt/updatedAt are set by the server.",
                 "consumes": [
                     "application/json"
                 ],

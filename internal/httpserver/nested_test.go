@@ -44,11 +44,11 @@ func TestEduAPINestedRoutes(t *testing.T) {
 
 	must(catalog.AcademicSessions.Create(ctx, &domain.AcademicSession{ID: "s-1", SourcedID: "ht26", Title: "HT26"}))
 	must(catalog.AcademicSessions.Create(ctx, &domain.AcademicSession{ID: "s-2", SourcedID: "vt27", Title: "VT27"}))
-	must(catalog.Courses.Create(ctx, &domain.Course{ID: "c-1", SourcedID: "DA101", Title: "C"}))
-	must(catalog.Courses.Create(ctx, &domain.Course{ID: "c-gone", SourcedID: "GONE", Title: "G"}))
-	must(catalog.Offerings.Create(ctx, &domain.Offering{ID: "f-1", SourcedID: "DA101-ht26", CourseID: "c-1", AcademicSessionID: "s-1"}))
-	must(catalog.Offerings.Create(ctx, &domain.Offering{ID: "f-2", SourcedID: "DA101-vt27", CourseID: "c-1", AcademicSessionID: "s-2"}))
-	must(catalog.Offerings.Create(ctx, &domain.Offering{ID: "f-orphan", SourcedID: "GONE-ht26", CourseID: "c-gone", AcademicSessionID: "s-1"}))
+	must(catalog.Courses.Create(ctx, &domain.Course{ID: "c-1", SourcedID: "da101", Title: "C"}))
+	must(catalog.Courses.Create(ctx, &domain.Course{ID: "c-gone", SourcedID: "gone", Title: "G"}))
+	must(catalog.Offerings.Create(ctx, &domain.Offering{ID: "f-1", SourcedID: "da101-ht26", CourseID: "c-1", AcademicSessionID: "s-1"}))
+	must(catalog.Offerings.Create(ctx, &domain.Offering{ID: "f-2", SourcedID: "da101-vt27", CourseID: "c-1", AcademicSessionID: "s-2"}))
+	must(catalog.Offerings.Create(ctx, &domain.Offering{ID: "f-orphan", SourcedID: "gone-ht26", CourseID: "c-gone", AcademicSessionID: "s-1"}))
 	enroll := func(id, personID, offeringID string, role domain.Role) {
 		must(catalog.Enrollments.Create(ctx, &domain.Enrollment{ID: "e-" + id, SourcedID: id, PersonID: personID, OfferingID: offeringID, Role: role}))
 	}
@@ -96,17 +96,17 @@ func TestEduAPINestedRoutes(t *testing.T) {
 	}{
 		{"/students", 200, 2, []string{"ann", "bob"}},
 		{"/staff", 200, 2, []string{"cat", "dan"}},
-		{"/courseOfferings/DA101-ht26/enrollments", 200, 3, []string{"e1", "e2", "e3"}},
-		{"/courseOfferings/DA101-ht26/students", 200, 2, []string{"ann", "bob"}},
-		{"/courseOfferings/DA101-ht26/staff", 200, 1, []string{"cat"}},
-		{"/courseOfferings/DA101-vt27/students?limit=1&offset=0", 200, 1, []string{"ann"}},
-		{"/academicSessions/ht26/courseOfferings", 200, 2, []string{"DA101-ht26"}}, // the orphan is not published
+		{"/courseOfferings/da101-ht26/enrollments", 200, 3, []string{"e1", "e2", "e3"}},
+		{"/courseOfferings/da101-ht26/students", 200, 2, []string{"ann", "bob"}},
+		{"/courseOfferings/da101-ht26/staff", 200, 1, []string{"cat"}},
+		{"/courseOfferings/da101-vt27/students?limit=1&offset=0", 200, 1, []string{"ann"}},
+		{"/academicSessions/ht26/courseOfferings", 200, 2, []string{"da101-ht26"}}, // the orphan is not published
 		{"/academicSessions/ht26/enrollments", 200, 3, []string{"e1", "e2", "e3"}},
 		{"/academicSessions/vt27/enrollments", 200, 1, []string{"e4"}},
 		{"/courseOfferings/none/enrollments", 404, 0, nil},
 		{"/courseOfferings/GONE-ht26/enrollments", 404, 0, nil},
 		{"/academicSessions/none/courseOfferings", 404, 0, nil},
-		{"/courseOfferings/DA101-ht26/students?sort=x", 400, 0, nil},
+		{"/courseOfferings/da101-ht26/students?sort=x", 400, 0, nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {

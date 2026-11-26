@@ -48,6 +48,68 @@ func TestResource_UpsertIsIdempotent(t *testing.T) {
 	assert.Equal(t, "Dept A (renamed)", page.Items[0].Name, "expected updated name")
 }
 
+// TestResource_SourcedIDIgnoresCase checks a sourcedId is stored lowercase,
+// that ids differing only in case are one key, and that lookups ignore case.
+func TestResource_SourcedIDIgnoresCase(t *testing.T) {
+	svc := newOrgResource()
+	ctx := t.Context()
+
+	created, err := svc.Create(ctx, &domain.Organization{SourcedID: "BIO202601", Name: "Biology"})
+	require.NoError(t, err)
+	assert.Equal(t, "bio202601", created.GetSourcedID(), "stored lowercase")
+
+	_, err = svc.Create(ctx, &domain.Organization{SourcedID: "bio202601", Name: "Twin"})
+	require.ErrorIs(t, err, domain.ErrConflict, "same id in another case")
+	_, err = svc.Create(ctx, &domain.Organization{SourcedID: "Bio202601", Name: "Twin"})
+	require.ErrorIs(t, err, domain.ErrConflict, "same id in another case")
+
+	for _, sid := range []string{"bio202601", "BIO202601", "Bio202601"} {
+		got, err := svc.GetBySourcedID(ctx, sid)
+		require.NoError(t, err, sid)
+		assert.Equal(t, created.GetID(), got.GetID(), sid)
+	}
+	many, err := svc.GetBySourcedIDs(ctx, []string{"BIO202601", "missing"})
+	require.NoError(t, err)
+	require.Len(t, many, 1)
+	assert.Equal(t, created.GetID(), many[0].GetID())
+
+	dups, err := svc.GetBySourcedIDs(ctx, []string{"BIO202601", "bio202601"})
+	require.NoError(t, err)
+	require.Len(t, dups, 1, "inputs differing only in case return the entity once")
+
+	upserted, err := svc.UpsertBySourcedID(ctx, &domain.Organization{SourcedID: "bIo202601", Name: "Biology 2"})
+	require.NoError(t, err)
+	assert.Equal(t, created.GetID(), upserted.GetID(), "upsert in another case updates the record")
+	page, err := svc.List(ctx, port.ListParams{Limit: 10})
+	require.NoError(t, err)
+	assert.Equal(t, 1, page.Total)
+
+	other, err := svc.Create(ctx, &domain.Organization{SourcedID: "chem", Name: "Chemistry"})
+	require.NoError(t, err)
+	other.SourcedID = "BIO202601"
+	_, err = svc.Update(ctx, other)
+	require.ErrorIs(t, err, domain.ErrConflict, "update to a colliding id in another case")
+}
+
+func TestResource_SourcedIDMustBeASCII(t *testing.T) {
+	svc := newOrgResource()
+	ctx := t.Context()
+
+	_, err := svc.Create(ctx, &domain.Organization{SourcedID: "åsa", Name: "A"})
+	var ve *domain.ValidationError
+	require.ErrorAs(t, err, &ve, "create")
+	assert.Equal(t, "sourcedId", ve.Field)
+
+	_, err = svc.UpsertBySourcedID(ctx, &domain.Organization{SourcedID: "åsa", Name: "A"})
+	require.ErrorAs(t, err, &ve, "upsert")
+
+	org, err := svc.Create(ctx, &domain.Organization{SourcedID: "asa", Name: "A"})
+	require.NoError(t, err)
+	org.SourcedID = "åsa"
+	_, err = svc.Update(ctx, org)
+	require.ErrorAs(t, err, &ve, "update")
+}
+
 // TestResource_UpsertWithExpiry checks expiry is set on create, refreshed on
 // re-upsert, never added to a permanent record, and that /api/v1-style
 // Create/Update cannot set or clear it.
