@@ -108,6 +108,9 @@ vscode: gh-install ## Set up VS Code development environment
 	$(info Installing yq)
 	sudo wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq &&\
     sudo chmod +x /usr/local/bin/yq
+	$(info Installing sync-skills)
+	sudo curl -fsSL -o /usr/local/bin/sync-skills.sh https://github.com/masv3971/coding-skills/releases/latest/download/sync-skills.sh &&\
+	sudo chmod +x /usr/local/bin/sync-skills.sh
 	$(info Installing act for local GitHub Actions testing)
 	curl -sfL https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash -s -- -b /usr/local/bin
 	$(info Installing go packages)
